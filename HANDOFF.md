@@ -28,8 +28,10 @@ The 2026-08-03 review changed V0.md in ways worth knowing about if you read it b
   node you don't control.
 - **Worktrees resolve to the main checkout's store** via `--git-common-dir`, or the one-time daemon
   question becomes per-worktree.
-- **`show` copies files from outside the project root** into `.sideview/blobs/`, because screenshots
-  land in `$TMPDIR` and would otherwise be refused, then cleaned up underneath the page.
+- **`show` and the `image` block are cut entirely** (decided 2026-08-03, after the rest of this
+  review). A front door with one type behind it isn't a front door, and `<img src="…">` in a markup
+  block reaches the same result with nothing new to learn. The file endpoint and its root confinement
+  stay, because `<img>` needs them. Three block types now, not four.
 - **`markup` renders with no shadow root**, against DESIGN.md's rung-2 note.
 - **A v0 schema exists** in V0.md, along with per-session `short_id`s and a defined fallback
   rendering for unknown block types.
@@ -51,9 +53,13 @@ the product is one long-lived stream, and if Tailscale's reverse proxy buffers i
 identity story goes with it. Stand up any trickling SSE endpoint behind `tailscale serve --bg` and watch
 whether events arrive one at a time.
 
-**Set up kitty's graphics protocol.** Displaying images in the terminal is available today at zero
-build cost, and one of the motivating complaints was that seeing a screenshot from a CLI agent is
-painful. Find out how much of that pain has an existing answer before building software for it.
+**Terminal graphics are no longer on this list.** An earlier version said to set up kitty's graphics
+protocol first, on the grounds that if `kitten icat` already solved "show me a screenshot" then the
+image block was solving a solved problem. With `show` and the `image` block cut, the item has lost its
+reason — and it would have failed anyway: measured in an agent Bash call, `TERM=xterm-256color`, no
+`KITTY_WINDOW_ID`, and stdout is a pipe with no tty, so the escape sequence never reaches the terminal
+emulator. Terminal graphics need a live tty, which is the coupling sideview exists to avoid; it works
+when *you* type the command, not when an agent runs one.
 
 **The service-block spike, on the other hand, can wait** — the 2026-08-03 review argued for deferring
 it and this section originally said the opposite. The spike itself is unchanged and still worth doing:
