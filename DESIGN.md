@@ -679,6 +679,10 @@ spawn, and wait on a readiness signal — the daemon writing its port to a file 
 `listen()` succeeds. Getting this wrong produces intermittent, maddening failures rather than
 clean ones.
 
+> **V0.md specifies the mechanism** — a non-blocking `flock` on `.sideview/spawn.lock` — and drops the
+> port file: the daemon claims the daemon row after binding, so the row appearing is already the
+> readiness signal. Losers of the lock don't wait at all.
+
 **One window, not one per command.** If a viewer is already connected for this session,
 `sideview show` must patch that page and *not* launch anything. The daemon knows whether a
 live socket exists, so this is cheap — and it is the whole difference between delightful and
