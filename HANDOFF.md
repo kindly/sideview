@@ -1,11 +1,41 @@
 # Handoff
 
-Written 2026-08-02, at the end of the design conversation that produced this repo. Everything here
-is either current state or something that exists nowhere else in the docs.
+Written 2026-08-02, at the end of the design conversation that produced this repo. Revised
+2026-08-03 after a review pass over all five documents, immediately before starting to code.
+Everything here is either current state or something that exists nowhere else in the docs.
 
 ## State
 
-Nothing is built. Six documents, an MIT licence, one commit on `main`, no remote.
+Nothing is built. Six documents, an MIT licence, no remote.
+
+The 2026-08-03 review changed V0.md in ways worth knowing about if you read it before then:
+
+- **Sandbox detection is in, and `$CLAUDECODE` is not the test** — it is set both inside and outside
+  the sandbox. The rule is now *auto-spawn unless the namespace is provably unreachable* (no
+  non-loopback interface, no routes), with the daemon recording `netns` and `reachable` on its row.
+  This closes a failure the design walked into: a daemon spawned inside a sandbox answers ping/pong
+  perfectly and looks healthy to everything except the browser.
+- **The CLI cannot escalate, but the agent can** — via the harness permission gate, re-running with
+  the sandbox disabled, which is verified to produce a surviving host-bound daemon. The skill offers
+  it; the printed instruction is the fallback. (A first pass of this review said escalation was
+  impossible, conflating the CLI process with the agent driving it.)
+- **Remote binding is tailnet-by-default** (`--bind auto`), because detection is free — interface
+  enumeration measures 29µs in-process, once at daemon start, never on a CLI call. Detect by the
+  `100.64.0.0/10` CGNAT range rather than the `tailscale0` name, print the raw IP rather than a
+  hostname (this host's `hostname` is `cachyos-x8664`, which is *not* necessarily its MagicDNS name),
+  never bind the wildcard, and fall back to loopback with a printed note when `bind()` gives
+  `EADDRNOTAVAIL`. `--bind loopback` opts out; no token, with the revisit trigger being a tailnet
+  node you don't control.
+- **Worktrees resolve to the main checkout's store** via `--git-common-dir`, or the one-time daemon
+  question becomes per-worktree.
+- **`show` copies files from outside the project root** into `.sideview/blobs/`, because screenshots
+  land in `$TMPDIR` and would otherwise be refused, then cleaned up underneath the page.
+- **`markup` renders with no shadow root**, against DESIGN.md's rung-2 note.
+- **A v0 schema exists** in V0.md, along with per-session `short_id`s and a defined fallback
+  rendering for unknown block types.
+- **`sideview daemon --restart` is gone**, incoherent with the daemon living in your foreground.
+- **The Tailscale/token section is gone** — v0 binds loopback; `ssh -L` and `tailscale serve` need
+  no code.
 
 The design is settled enough to start coding from [V0.md](V0.md). It went through three reframes
 getting there — from "richer plans than markdown", to "embed live pieces of a project", to "a
@@ -15,16 +45,26 @@ does. Plans are now the flagship *use case*, not the definition.
 
 ## Do these before writing code
 
-Both are cheap and both could change what gets built.
+**Check whether `tailscale serve` buffers SSE.** Ten minutes, and it gates the entire remote story:
+the product is one long-lived stream, and if Tailscale's reverse proxy buffers it despite
+`X-Accel-Buffering: no`, then direct tailnet binding and `ssh -L` are the only remote paths and the
+identity story goes with it. Stand up any trickling SSE endpoint behind `tailscale serve --bg` and watch
+whether events arrive one at a time.
 
 **Set up kitty's graphics protocol.** Displaying images in the terminal is available today at zero
 build cost, and one of the motivating complaints was that seeing a screenshot from a CLI agent is
 painful. Find out how much of that pain has an existing answer before building software for it.
 
-**Spend an afternoon on the service-block spike.** Throwaway code: can a dev server be started,
-proxied, iframed into a page, and killed cleanly? Service blocks are cut from v0 but they are the
-long-term thesis, and this is the only experiment that could reshape the roadmap. Doing it while
-nothing depends on it is much cheaper than discovering it in month three.
+**The service-block spike, on the other hand, can wait** — the 2026-08-03 review argued for deferring
+it and this section originally said the opposite. The spike itself is unchanged and still worth doing:
+throwaway code, can a dev server be started, proxied, iframed into a page, and killed cleanly? It is
+the long-term thesis and the only experiment that could reshape the roadmap.
+
+But nothing in v0 depends on the answer, and the thing that will teach you most right now is the
+latency feel and the class vocabulary against real plans — both of which need v0 running. So: **first
+afternoon v0 is blocked on something else, do the spike.** The original argument for doing it first
+was that discovering it in month three is expensive, which is true, and the counter is that week two
+is early enough for a capability with no v0 dependents.
 
 Optionally, an hour with [Wave Terminal](https://github.com/wavetermdev/waveterm) — its `wsh`
 drives graphical blocks from the shell and is the closest existing thing to this idea. It was
@@ -32,12 +72,47 @@ rejected because the display is bound to its client app, but the ergonomics are 
 
 ## Not documented anywhere else
 
-**A host proxy is reachable from inside the sandbox.** The agent environment sets
-`CLAUDE_CODE_HOST_HTTP_PROXY_PORT` and `CLAUDE_CODE_HOST_SOCKS_PROXY_PORT`. If the SOCKS proxy
-forwards arbitrary localhost connections, a sandboxed CLI could reach the daemon directly — which
-would make several of v0's workarounds unnecessary (store-based liveness, polling for change
-notification, possibly the hand-started daemon itself). **Worth a ten-minute test before v1.** It
-was found too late in the conversation to act on, and the store-based design works regardless.
+**The host proxy DOES forward localhost — tested properly 2026-08-03, with a listener actually
+running on the host.** An earlier version of this section concluded the opposite; it was wrong, and
+the way it was wrong is instructive enough to record. What holds:
+
+- The advertised `CLAUDE_CODE_HOST_HTTP_PROXY_PORT` (`39669`, `36113` — it varies) is **refused** from
+  inside. The reachable endpoints are in-namespace `socat` forwarders on `127.0.0.1:3128` (HTTP) and
+  `:1080` (SOCKS), which relay to a host-side proxy over a bind-mounted unix socket.
+- They need **proxy auth**, and the credentials are in `$HTTP_PROXY` — regenerated per sandbox
+  invocation, so nothing can be hardcoded.
+- With `python3 -m http.server 8765 --bind 127.0.0.1` running on the host: **200 through both the HTTP
+  and SOCKS proxies**, confirmed in the server's own access log. A raw TCP connect to the same address
+  is refused, and so is anything that bypasses the proxy.
+
+**Why the first attempt said "hang, therefore blocked":** nothing was listening on the ports probed
+(`:9`, `:22`), and `$no_proxy` lists `127.0.0.1`, so curl silently ignored the `-x` proxy it was
+supposedly testing and went direct. Both mistakes point the same way — if you re-test this, start a
+listener first and clear `no_proxy` explicitly.
+
+**What it changes, and mostly doesn't.** V0's core constraint is untouched: a daemon bound *inside*
+the sandbox is invisible to the host in both directions (verified), so the browser still cannot reach
+an agent-spawned daemon. What is now false is "the store is the only channel" — a sandboxed CLI can
+HTTP a host daemon. V0 keeps the store as the mandatory path anyway (works everywhere, no credentials,
+~100ms nobody perceives) and treats the proxy as an optional better liveness check.
+
+**Escalation is real, via the agent rather than the CLI.** A `setsid nohup`'d listener started from a
+sandbox-disabled Bash call binds a host port and **survives after the call returns** — verified. So
+the skill can have the agent offer to start the daemon, which is one approval instead of a thing you
+type. The CLI process itself still cannot escalate and never prompts.
+
+**One stray process found while testing.** An orphaned `bwrap` from an earlier session is still
+running `python3 -m http.server 41777` with a `sideview-bind-test-ok` index, rooted at
+`/home/david/compuse` — a leftover from a previous bind experiment. Harmless, but it is the exact
+failure mode the design's "teardown validates the lifecycle decision" note is about, arriving before
+any code was written.
+
+**The sandbox measurements, for reference**, taken the same day from one sandboxed Bash call and one
+with the sandbox disabled. The full table is in V0.md; the short version is that the sandbox has only
+`lo` and no routes, `/proc/1/comm` is `bwrap` at pid 2, `uid_map` is `1000 0 1`, and the net-ns inode
+is `4026532958` against the host's `4026531833`. `$CLAUDE_CODE_SESSION_ID` is present and stable
+(Claude Code 2.1.220), and `$CLAUDE_CODE_CHILD_SESSION=1` accompanies the *same* session id in
+subagents.
 
 **Naming research, so it isn't repeated.** `sideview` is free on crates.io. Also checked:
 `showme` is taken by a terminal image viewer (adjacently confusing), `vitrine` by a static site
@@ -64,10 +139,13 @@ Left unspecified because it wants a real page in front of you.
 
 **The `sv-` class list.** Six to ten classes for what Pico and Bootstrap naming don't cover —
 metric/delta, option cards, decision matrix. Needs designing against real plans, not in the
-abstract.
+abstract. The same now applies to *which* Bootstrap names to implement: the review moved that from
+"the common subset" to a thing to derive from three or four plans an agent actually wrote.
 
-**Build order in DESIGN.md predates the v0 cut.** It reads `html` → `service` → `diff` → `table`;
-V0.md supersedes it, and service blocks are out. Reconcile the two when v0 is done rather than now.
+**Which DESIGN.md sections are stale** — each now carries a marker in place, so this list is only a
+map: the schema sketch (predates the cut), "Identifying the session" (tty-based chain), "Lifecycle"
+(per machine, idle exit), rung 2's shadow root, and build order. Reconcile them properly when v0
+ships rather than now.
 
 ## The conversation's own summary
 

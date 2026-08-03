@@ -122,6 +122,11 @@ already looked at. That's a better story than the one the design started with.
 
 ### Identifying the session
 
+> **Superseded by [V0.md](V0.md)'s "Which session am I?".** The chain below includes the controlling
+> tty, which V0 removes with reasons — agent Bash calls have no tty and each is a fresh shell — and
+> V0 names the harness variable (`$CLAUDE_CODE_SESSION_ID`) rather than leaving it abstract. Build
+> from V0.
+
 The CLI has to resolve a session without the agent remembering an id. A fallback chain, first
 match wins: `$SIDEVIEW_SESSION` → the agent harness's own session identifier if exposed →
 multiplexer pane (`$TMUX_PANE` and equivalents) → controlling tty → cwd. First call creates
@@ -198,6 +203,10 @@ representation of a plan to keep consistent with the first. Every format we migh
 invented for this was going to be a worse version of "a list of commands".
 
 ## Schema sketch
+
+> **Predates the v0 cut.** This is the long-term shape — plans, outputs, params, provenance — and
+> none of it is in v0 except `sessions` and `blocks`. The tables to actually create are in
+> [V0.md](V0.md)'s "The v0 schema"; keep this as the target the migrations walk towards.
 
 ```sql
 sessions(id, label, cwd, detected_from, started_at, ended_at)
@@ -492,6 +501,11 @@ participation in page layout, and none of the iframe's sizing and theming pain. 
 DOM is awkward, scoping the block's CSS to its own subtree (`@scope`, or selector prefixing)
 is the simpler fallback.
 
+> **v0 does not do this** — see V0.md's "`markup` renders directly into the page". A shadow root
+> stops Pico's element selectors reaching inside unless every sheet is adopted, which fights the
+> whole *the page is already styled* promise for a robustness benefit that only matters once blocks
+> come from code you didn't write. The right trigger to revisit is plugin blocks.
+
 Note the reason: this is **robustness, not security**. A hand-written block shouldn't be able
 to break the page by accident. It is not a boundary against the agent that authored it, and
 it isn't trying to be — see below.
@@ -606,6 +620,13 @@ solve remote access itself, which is exactly the machinery Wave had to build.
 
 ## Lifecycle: invisible infrastructure
 
+> **Superseded by [V0.md](V0.md)'s "Starting the daemon".** Three things below are reversed there
+> and the reasons are specific, so don't code from this section: the daemon is **per project**, not
+> per machine (this section also contradicts DESIGN's own scope section, which says per project);
+> there is **no idle exit**, because auto-exit requires auto-restart and a sandboxed agent cannot
+> restart anything; and **auto-start is conditional** on the namespace being provably reachable.
+> What survives intact is *never parented to a tty*, and the three layers of persistence.
+
 One daemon per machine, per the scope section above. An earlier draft said "one per project,
 started by the agent, dying with it", which was ambiguous in a dangerous way — read literally,
 an implementation could tie the daemon to the invoking shell's tty, and it would then die on
@@ -687,6 +708,11 @@ with no other command typed, and the CLI returns in under 50ms. Run it three mor
 same window updates, and no new tabs appear.
 
 ## Build order
+
+> **Superseded by [V0.md](V0.md).** Service blocks are cut from v0, so this ordering describes the
+> version after it. The argument for putting a minimal `service` block early still stands on its own
+> terms and is preserved in V0's "The spike that isn't v0" as a throwaway afternoon. Reconcile this
+> section properly once v0 ships rather than now.
 
 `html`, then a minimal `service`, then `diff`, then `table`.
 

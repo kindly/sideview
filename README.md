@@ -121,6 +121,12 @@ Concretely — the agent runs one command, a browser window appears with the con
 the daemon starting up is invisible. If anyone ever has to type `sideview start`, the aim has
 been missed.
 
+**v0 meets this unsandboxed, and gets close under a sandbox** — where spawning a listener the browser
+can reach is the one thing an agent cannot do, so the agent instead offers to start the daemon in a
+non-sandboxed call and you approve it once per project. One prompt, nothing to type, and no
+`sideview start` anywhere. The honest caveat is that the prompt exists at all, and that if you decline
+it the CLI falls back to printing the command for you. See [V0.md](V0.md)'s "Starting the daemon".
+
 The bar is beatable, though, because of where the time actually goes. Opening an HTML plan
 costs a browser launch **plus waiting for the model to write the whole document** — tens of
 seconds before there is anything to look at. Sideview's added cost over writing a file is a
