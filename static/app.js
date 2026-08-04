@@ -68,7 +68,7 @@ if (window.mermaid) {
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
   const v = dark
     ? { bg: '#16181c', fg: '#dcdad5', soft: '#22252b', line: '#2b2e34' }
-    : { bg: '#fbfaf9', fg: '#23272d', soft: '#f0eeea', line: '#e7e4df' };
+    : { bg: '#f6f4ef', fg: '#23272d', soft: '#ece8df', line: '#e4e0d7' };
   window.mermaid.initialize({
     startOnLoad: false,
     theme: 'base',

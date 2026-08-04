@@ -40,8 +40,9 @@
 :root {
   --sv-ink: #3357d0;          /* blueprint drafting ink — the one accent */
   --sv-ink-soft: rgba(51, 87, 208, 0.35);
-  --sv-paper: #fbfaf9;        /* faintly warm, deliberately not cream */
-  --sv-hairline: #e7e4df;
+  --sv-paper: #f6f4ef;        /* warm enough to read as paper, not white
+                                 (round-2 verdict: #fbfaf9 was a claim, not a percept) */
+  --sv-hairline: #e4e0d7;
   --sv-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --sv-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 
@@ -223,10 +224,10 @@ body.sv-rail .sv-block > table {
   margin-top: 0.5rem;
   margin-bottom: 0.75rem;
 }
-#sv-blocks h1 { font-size: 2.4rem; line-height: 1.1; }
-#sv-blocks h2 { font-size: 1.7rem; line-height: 1.15; }
-#sv-blocks h3 { font-size: 1.25rem; }
-#sv-blocks h4 { font-size: 1.05rem; }
+#sv-blocks h1 { font-size: 2.9rem; line-height: 1.05; letter-spacing: -0.03em; }
+#sv-blocks h2 { font-size: 2rem; line-height: 1.1; letter-spacing: -0.025em; }
+#sv-blocks h3 { font-size: 1.35rem; }
+#sv-blocks h4 { font-size: 1.1rem; }
 
 /* Anything the rail scrolls to must land below the sticky header, not
    under it — the block itself for section jumps, headings for anchors. */
