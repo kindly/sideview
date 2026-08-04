@@ -88,8 +88,8 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
             match TcpListener::bind((ip, port)) {
                 Ok(l) => {
                     urls.push(match ip {
-                        IpAddr::V4(v4) => format!("http://{v4}:{port}      (any tailnet node can read this)"),
-                        IpAddr::V6(v6) => format!("http://[{v6}]:{port}    (any tailnet node can read this)"),
+                        IpAddr::V4(v4) => format!("http://{v4}:{port}"),
+                        IpAddr::V6(v6) => format!("http://[{v6}]:{port}"),
                     });
                     listeners.push(l);
                 }
@@ -115,9 +115,16 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
         reachable: verdict.reachable,
     })?;
     store.set_meta("port", &port.to_string())?;
+    // The bound URLs, durably — so the CLI can print the tailnet addresses
+    // instead of them living only in this log.
+    store.set_meta("urls", &serde_json::to_string(&urls)?)?;
 
     for (i, url) in urls.iter().enumerate() {
-        eprintln!("{} {url}", if i == 0 { "local:  " } else { "tailnet:" });
+        if i == 0 {
+            eprintln!("local:   {url}");
+        } else {
+            eprintln!("tailnet: {url}      (any tailnet node can read this)");
+        }
     }
 
     if opts.open_browser {
@@ -376,6 +383,22 @@ async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Re
             full.display()
         ));
     }
+    // The store's internals are not project content — the db holds every
+    // session's blocks and is otherwise readable by any tailnet node. Only
+    // the named internals are refused: other files under .sideview/ still
+    // serve (the dogfood comparison pages iframe from there).
+    if let Ok(store_dir) = root.join(crate::store::DIR_NAME).canonicalize() {
+        if full.starts_with(&store_dir) {
+            let name = full.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with(crate::store::DB_FILE)
+                || name == "daemon.log"
+                || name == crate::store::SPAWN_LOCK
+            {
+                return HttpResponse::Forbidden()
+                    .body(format!("refusing {rel:?}: the store's internals are not served"));
+            }
+        }
+    }
     match std::fs::read(&full) {
         Ok(bytes) => HttpResponse::Ok()
             .content_type(mime_guess::from_path(&full).first_or_octet_stream().to_string())
@@ -422,6 +445,42 @@ mod tests {
                 "a lagged stream must terminate (forcing replay), not skip ahead"
             );
         });
+    }
+
+    #[actix_web::test]
+    async fn file_endpoint_refuses_store_internals_but_serves_neighbours() {
+        let dir = std::env::temp_dir().join(format!("sv-fe-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        std::fs::write(store.root.join("ok.html"), "<p>ok</p>").unwrap();
+        std::fs::write(store.dir.join("lab.html"), "<p>lab</p>").unwrap();
+        std::fs::write(store.dir.join("sideview.db-pre-v4"), "backup").unwrap();
+        std::fs::write(store.dir.join(crate::store::SPAWN_LOCK), "").unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState { root: store.root.clone(), store: Mutex::new(store), tx });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state)
+                .route("/f/{path:.*}", web::get().to(project_file)),
+        )
+        .await;
+        for (path, expect_ok) in [
+            ("/f/ok.html", true),
+            ("/f/.sideview/lab.html", true),                // labs iframe from here
+            ("/f/.sideview/sideview.db", false),            // every session's blocks
+            ("/f/.sideview/sideview.db-pre-v4", false),     // backups too
+            ("/f/.sideview/spawn.lock", false),
+        ] {
+            let req = actix_web::test::TestRequest::get().uri(path).to_request();
+            let res = actix_web::test::call_service(&app, req).await;
+            // Absent internals must still refuse, not 404 into existence checks.
+            let ok = res.status().is_success();
+            let refused = res.status() == actix_web::http::StatusCode::FORBIDDEN;
+            if expect_ok {
+                assert!(ok, "{path} should serve, got {}", res.status());
+            } else {
+                assert!(refused, "{path} must be forbidden, got {}", res.status());
+            }
+        }
     }
 
     /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed

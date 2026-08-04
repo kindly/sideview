@@ -26,15 +26,19 @@ Eleven unit tests pass, and the following were verified live on this machine:
   matters for SSE reconnection) but not across supersession. Acceptable; noting it so the
   claim in V0.md's port section is read with that asterisk.
 
-Deliberate skeleton gaps, all marked `TODO(v0)` in source or visible in the code: unknown
-class/`style=` logging (unblocked once `scraper` landed on 2026-08-04, still unbuilt), iframe
-autosizing (fixed 24rem until ResizeObserver + postMessage), the spawn-lock release window
-between CLI exit and the child's claim (healed by supersession), and scroll behaviour is the
-provisional only-when-at-bottom guess in app.js. The `tailscale serve` SSE-buffering check below
-is still not done, and the "Done when" regression trap (a stale row from a namespaced daemon,
-claimed by bare `sideview`) has never been staged. (Session labels gained a writer on 2026-08-04
-— `session set` — and the two code-review bugs, the swallowed SSE `Lagged` error and unencoded
-session ids in printed URLs, were fixed with pinning tests before the first commit.)
+**The v0 → v1 line, drawn by the author on 2026-08-04.** v0 closed with the file-endpoint
+exclusion and `--detach` printing the tailnet URLs. Moved to v1: iframe autosizing (fixed 24rem
+until ResizeObserver + postMessage), staging the "Done when" regression trap (stale namespaced
+row, claimed by bare `sideview` — implemented, never staged), the third done-when bar (skill
+offers the sandbox-disabled `--detach` with nothing running), and the `tailscale serve`
+SSE-buffering check. **v1 itself is the real dogfood**: genuine work sessions writing genuine
+plans through the skill — every experiment so far was showcase-shaped, and the product is plans.
+Deprioritized rather than moved: unknown-class/`style=` logging — full Bootstrap made silent
+no-ops mostly moot; the `TODO` stays in render.rs for when the vocabulary-data curiosity
+returns. Still open by design: the spawn-lock release window (healed by supersession) and the
+provisional scroll behaviour. (Historical: session labels gained a writer and the two
+code-review bugs — swallowed SSE `Lagged`, unencoded session ids — were fixed with pinning
+tests before the first commit.)
 
 **Later the same day, the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
 only, with a prose layer for bare markdown elements and a v4-compat shim in `sideview.css`.
@@ -203,11 +207,11 @@ corrupt `Last-Event-ID` replay — the rev counter must survive any future delet
 `meta`-held floor, or tombstoned sessions). A `session rm`/archive belongs in the next batch of
 session work; until then, labs cost a permanent chip each.
 
-**The file endpoint serves `.sideview/` itself** — noticed 2026-08-04 when `/f/` got its first
-real use (serving the dogfood experiment's HTML over the tailnet, which worked perfectly).
-`.sideview/` is inside the project root, so `/f/.sideview/sideview.db` is fetchable by any
-tailnet node. Within v0's accepted exposure model, but excluding the store's internals from an
-endpoint that exists for project content is a five-line fix worth making.
+**The file endpoint no longer serves the store's internals** — noticed 2026-08-04 when `/f/`
+got its first real use (`/f/.sideview/sideview.db` was fetchable by any tailnet node), fixed
+same day: `sideview.db*` (backups included), `daemon.log` and `spawn.lock` return 403 by name,
+while other files under `.sideview/` still serve — the dogfood comparison pages iframe their
+rival entries from there. Pinned by test.
 
 **First controlled dogfood (2026-08-04):** three identical subagents summarized this project
 visually — one on sideview (given nothing but the installed skill), one as a local HTML file,

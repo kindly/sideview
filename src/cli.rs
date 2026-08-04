@@ -168,9 +168,8 @@ pub fn open(detach: bool, bind: &str) -> Result<()> {
                 );
                 std::process::exit(1);
             }
-            let url = format!("http://127.0.0.1:{}/", d.port);
             eprintln!("daemon already running");
-            eprintln!("local:   {url}");
+            let url = print_urls(&store, d.port);
             open_browser(&url);
             return Ok(());
         }
@@ -198,8 +197,7 @@ pub fn open(detach: bool, bind: &str) -> Result<()> {
         loop {
             if let Some(d) = store.daemon_alive()? {
                 if d.reachable {
-                    let url = format!("http://127.0.0.1:{}/", d.port);
-                    eprintln!("local:   {url}");
+                    let url = print_urls(&store, d.port);
                     open_browser(&url);
                     return Ok(());
                 }
@@ -344,6 +342,27 @@ fn parse_bind(bind: &str) -> Result<bool> {
         "loopback" => Ok(false),
         other => bail!("--bind takes `auto` or `loopback`, not {other:?}"),
     }
+}
+
+/// Print every URL the daemon bound (recorded in meta at claim time), and
+/// return the local one for the browser. Falls back to loopback+port when
+/// the meta is missing — an older daemon, or a row left by a crash.
+fn print_urls(store: &Store, port: u16) -> String {
+    let urls: Vec<String> = store
+        .meta("urls")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let urls = if urls.is_empty() { vec![format!("http://127.0.0.1:{port}")] } else { urls };
+    for (i, url) in urls.iter().enumerate() {
+        if i == 0 {
+            eprintln!("local:   {url}");
+        } else {
+            eprintln!("tailnet: {url}      (any tailnet node can read this)");
+        }
+    }
+    format!("{}/", urls[0])
 }
 
 /// Try to open a browser; failure just means the printed URL is the path.
