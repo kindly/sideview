@@ -196,6 +196,13 @@ distribution model. Worth fixing independently.
 **Scroll behaviour when a block arrives.** Likely answer: scroll only when already at the bottom.
 Left unspecified because it wants a real page in front of you.
 
+**Sessions cannot be deleted, and the design labs made that visible.** The theme/font/combo lab
+sessions (2026-08-04) did their job and now sit in the switcher forever: `rm` tombstones blocks
+but nothing removes a session, and hard-DELETEing rows by hand would regress `MAX(rev)` and
+corrupt `Last-Event-ID` replay — the rev counter must survive any future deletion feature (a
+`meta`-held floor, or tombstoned sessions). A `session rm`/archive belongs in the next batch of
+session work; until then, labs cost a permanent chip each.
+
 **The file endpoint serves `.sideview/` itself** — noticed 2026-08-04 when `/f/` got its first
 real use (serving the dogfood experiment's HTML over the tailnet, which worked perfectly).
 `.sideview/` is inside the project root, so `/f/.sideview/sideview.db` is fetchable by any

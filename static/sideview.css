@@ -1,10 +1,39 @@
 /* sideview's layer over Bootstrap 5.
    The page is an engineering memo that happens to be alive: warm paper,
-   serif display, monospace as the instrument voice, and one accent —
-   blueprint drafting ink — spent only on what is live or selected.
-   No webfonts: the binary is self-contained, so identity comes from
-   stacks, spacing and color. Everything themes through --bs-* variables
-   plus the --sv-* tokens below, so light and dark are one system. */
+   IBM Plex display and mono voices, print-duotone components — heavy
+   rules, zero radius, typographic labels — and one accent, blueprint
+   drafting ink, spent only on what is live or selected. Chosen 2026-08-04
+   through live theme/font labs; see V0.md's design-system section.
+   Fonts are vendored woff2, same rule as Bootstrap: no external origins.
+   Everything themes through --bs-* variables plus the --sv-* tokens below,
+   so light and dark are one system. */
+
+/* --- fonts ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/assets/vendor/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/assets/vendor/fonts/ibm-plex-sans-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/assets/vendor/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/assets/vendor/fonts/ibm-plex-mono-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
 
 /* --- tokens ---------------------------------------------------------------- */
 
@@ -13,13 +42,13 @@
   --sv-ink-soft: rgba(51, 87, 208, 0.35);
   --sv-paper: #fbfaf9;        /* faintly warm, deliberately not cream */
   --sv-hairline: #e7e4df;
-  --sv-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --sv-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sv-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sv-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 
   --bs-body-bg: var(--sv-paper);
   --bs-body-color: #23272d;
   --bs-border-color: var(--sv-hairline);
-  --bs-border-radius: 0.25rem;
+  --bs-border-radius: 0;      /* print: nothing rounds */
   --bs-link-color: var(--sv-ink);
   --bs-link-color-rgb: 51, 87, 208;
   --bs-link-hover-color: #24409f;
@@ -185,23 +214,19 @@ body.sv-rail .sv-block > table {
   margin-bottom: 1.75rem;
 }
 
-/* Serif display for the document's own voice. Components (cards, alerts)
-   keep the sans so agent-authored UI still reads as UI. */
-#sv-blocks h1, #sv-blocks h2, #sv-blocks h3 {
-  font-family: var(--sv-serif);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+/* Plex Sans display for headings — bigger and bolder than the system-stack
+   scale it replaced; the font lab showed timidity was half the problem. */
+#sv-blocks :is(h1, h2, h3, h4) {
+  font-family: var(--sv-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin-top: 0.5rem;
   margin-bottom: 0.75rem;
 }
-#sv-blocks h1 { font-size: 2rem; }
-#sv-blocks h2 { font-size: 1.5rem; }
-#sv-blocks h3 { font-size: 1.2rem; }
-#sv-blocks .card h1, #sv-blocks .card h2, #sv-blocks .card h3,
-#sv-blocks .alert h1, #sv-blocks .alert h2, #sv-blocks .alert h3 {
-  font-family: inherit;
-  letter-spacing: normal;
-}
+#sv-blocks h1 { font-size: 2.4rem; line-height: 1.1; }
+#sv-blocks h2 { font-size: 1.7rem; line-height: 1.15; }
+#sv-blocks h3 { font-size: 1.25rem; }
+#sv-blocks h4 { font-size: 1.05rem; }
 
 /* Anything the rail scrolls to must land below the sticky header, not
    under it — the block itself for section jumps, headings for anchors. */
@@ -253,12 +278,14 @@ body.sv-rail .sv-block > table {
   vertical-align: top;
 }
 
-.sv-block thead th {
-  border-bottom: 2px solid var(--bs-secondary-color);
+.sv-block thead th,
+.sv-block .table thead th {
+  border-bottom: 2px solid var(--bs-emphasis-color);
   font-family: var(--sv-mono);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--bs-secondary-color);
 }
 
@@ -347,6 +374,74 @@ body.sv-rail .sv-block > table {
 .font-weight-normal { font-weight: 400 !important; }
 .font-weight-light  { font-weight: 300 !important; }
 .font-italic        { font-style: italic !important; }
+
+/* --- print duotone: the component theme --------------------------------------
+   Chosen in the combo lab, 2026-08-04: heavy rules on the emphasis color,
+   zero radius, typographic labels doing the work color usually does, and
+   badges as outlined small caps. Placed after the v4 shim on purpose — the
+   badge treatment overrides contextual colors, shimmed or not. */
+
+.card {
+  border: 1.5px solid var(--bs-emphasis-color);
+  box-shadow: none;
+  --bs-card-bg: transparent;
+}
+
+.btn {
+  border-radius: 0;
+  border-width: 1.5px;
+  font-family: var(--sv-mono);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+  padding: 0.45em 1em;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--bs-emphasis-color);
+  --bs-btn-border-color: var(--bs-emphasis-color);
+  --bs-btn-color: var(--bs-body-bg);
+  --bs-btn-hover-bg: var(--sv-ink);
+  --bs-btn-hover-border-color: var(--sv-ink);
+}
+
+.alert {
+  border: 1.5px solid var(--bs-emphasis-color);
+  border-radius: 0;
+  background: transparent;
+  color: var(--bs-body-color);
+}
+
+.alert::before {
+  font-family: var(--sv-mono);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+.alert-info::before    { content: "NOTE";    color: var(--bs-info-text-emphasis); }
+.alert-warning::before { content: "CAUTION"; color: var(--bs-warning-text-emphasis); }
+.alert-danger::before  { content: "STOP";    color: var(--bs-danger-text-emphasis); }
+.alert-success::before { content: "OK";      color: var(--bs-success-text-emphasis); }
+
+.badge {
+  background: transparent !important;
+  color: var(--bs-body-color) !important;
+  border: 1.2px solid currentColor;
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.progress {
+  border-radius: 0;
+  border: 1.2px solid var(--bs-emphasis-color);
+  background: transparent;
+  --bs-progress-bar-bg: var(--bs-emphasis-color);
+}
 
 /* --- the sv- domain layer ---------------------------------------------------- */
 
