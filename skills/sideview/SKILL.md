@@ -45,16 +45,21 @@ corrected block reads better than a correction below a mistake.
 it fully — headings, tables, task lists, code. Reach for `markup` only when you need
 components or layout markdown can't express (cards, grids, badges, metrics).
 
-**Diagrams the argument hinges on — architecture, data flow, a comparison — deserve
-hand-authored inline SVG in a markup block.** Native shapes and `<text>`; size with
-`viewBox` (the page scales it); strokes and text in `currentColor` so light and dark
-both work, with at most one literal accent on the element that carries the meaning;
-label the arrows (`writes`, `polls every 30s` — an unlabeled arrow is just "related
-somehow"); align to a grid; wrap in `<figure>` with a `<figcaption>` stating the
-claim. Depict the mechanism, not its name: the path, the boundary, the hop that
-changes — not a box per noun. For quick working sketches (sequence, state, ER), a
-```mermaid fence in a prose block renders themed to the page. Never build diagrams
-out of divs and CSS.
+**The page is live — stream it.** Write blocks as you go rather than composing the
+whole page before emitting the first one; an early skeleton that sharpens through
+`update` beats a long silence and a reveal. The reader is watching from block one.
+
+**Diagrams are optional, and for a working plan usually skippable** — prose and
+tables are faster to write and faster to read; don't let a diagram slow the plan
+down. When a quick picture of a flow or sequence genuinely helps, a ```mermaid
+fence in prose renders themed to the page. Reserve hand-authored inline SVG for
+pages whose *point* is visual presentation — a guide, an overview, a showcase —
+and then do it properly: native shapes and `<text>`, size with `viewBox`, strokes
+and text in `currentColor` with at most one literal accent on the element that
+carries the meaning, label the arrows (`writes`, `polls every 30s` — an unlabeled
+arrow is just "related somehow"), wrap in `<figure>` with a `<figcaption>` stating
+the claim, and depict the mechanism, not its name. Never build diagrams out of
+divs and CSS.
 
 Optionally, set page properties (no ids needed — it applies to your own page):
 

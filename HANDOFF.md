@@ -219,8 +219,22 @@ totals are indicative; the *shape* (streaming vs single reveal, styled-for-free 
 invent-your-own-CSS) is structural. Skill-tuning observation: the sideview agent wrote 6 of 7
 blocks as `markup` rather than `prose` — if prose-first is wanted, the skill has to say so.
 
-**The author's verdict on looks inverted the speed ranking: local HTML best, artifact middle,
-sideview worst.** Three causes traced, each actionable. (1) The HTML agent invoked the
+**Rounds 2 and 3 (same day) turned the experiment into a tuning loop, and the loop has a cost
+curve.** Each round's visual gaps were named, fixed (Plex + print duotone, deeper paper, bigger
+display, SVG-first diagram guidance, themed mermaid), and re-tested. Result: sideview's looks
+converged toward the leaders while its headline metric inverted — time-to-first-content went
+71s → 106s → 261s as the skill demanded more craft, and in round 3 the artifact beat sideview
+on *total* time (5:08 vs 5:53) for the first time. The quality guidance taught agents to
+compose before emitting, which is exactly what streaming exists to avoid. Resolved after the
+round-3 verdict (sideview's SVG diagram judged best of the three; overall still behind local
+HTML's flourishes, near-parity with the artifact): the skill now matches effort to the page's
+job — working plans stream prose-first with diagrams explicitly optional (mermaid sketch when a
+picture genuinely helps), and hand-authored SVG is reserved for pages whose point is visual
+presentation — plus an explicit stream-it instruction: emit early, sharpen with `update`.
+Comparison pages: sessions `round2`, `round3` (tabs mode, rivals iframed via `/s/` and `/f/`).
+
+**The round-1 author's verdict on looks inverted the speed ranking: local HTML best, artifact
+middle, sideview worst.** Three causes traced, each actionable. (1) The HTML agent invoked the
 frontend-design skill (transcript-verified; the others didn't) and had free rein, where
 sideview's skill deliberately enforces the house style — speed and consistency bought at a
 polish ceiling. (2) Sideview's weakest elements were its hand-drawn diagrams, which makes
