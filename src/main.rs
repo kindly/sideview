@@ -95,7 +95,8 @@ enum SessionCmd {
         /// Name shown in the page's session strip
         #[arg(long)]
         label: Option<String>,
-        /// Outline sidebar: `auto` (show when the page has sections) or `off`
+        /// Contents rail: `scrollspy` (default — whole page, rail follows the
+        /// scroll), `tabs` (sections as separate panes), or `off`
         #[arg(long)]
         outline: Option<String>,
         #[command(flatten)]

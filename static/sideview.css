@@ -1,11 +1,56 @@
-/* sideview's layer over Bootstrap 5 (vendored, CSS only — no bootstrap.js).
-   Four parts, in order: chrome for the page shell, a prose layer so bare
-   markdown output looks styled without classes, a Bootstrap-4 compat shim
-   for the v4 spellings models still emit, and the sv- domain layer.
-   Everything themes through --bs-* variables, so data-bs-theme switching
-   covers light and dark for free. */
+/* sideview's layer over Bootstrap 5.
+   The page is an engineering memo that happens to be alive: warm paper,
+   serif display, monospace as the instrument voice, and one accent —
+   blueprint drafting ink — spent only on what is live or selected.
+   No webfonts: the binary is self-contained, so identity comes from
+   stacks, spacing and color. Everything themes through --bs-* variables
+   plus the --sv-* tokens below, so light and dark are one system. */
 
-/* --- page chrome ----------------------------------------------------------- */
+/* --- tokens ---------------------------------------------------------------- */
+
+:root {
+  --sv-ink: #3357d0;          /* blueprint drafting ink — the one accent */
+  --sv-ink-soft: rgba(51, 87, 208, 0.35);
+  --sv-paper: #fbfaf9;        /* faintly warm, deliberately not cream */
+  --sv-hairline: #e7e4df;
+  --sv-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sv-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --bs-body-bg: var(--sv-paper);
+  --bs-body-color: #23272d;
+  --bs-border-color: var(--sv-hairline);
+  --bs-border-radius: 0.25rem;
+  --bs-link-color: var(--sv-ink);
+  --bs-link-color-rgb: 51, 87, 208;
+  --bs-link-hover-color: #24409f;
+  --bs-link-hover-color-rgb: 36, 64, 159;
+  --bs-code-color: #8f3d60;   /* quieter than Bootstrap's pink */
+}
+
+[data-bs-theme="dark"] {
+  --sv-ink: #8fa7ff;
+  --sv-ink-soft: rgba(143, 167, 255, 0.35);
+  --sv-paper: #16181c;        /* charcoal, not black */
+  --sv-hairline: #2b2e34;
+
+  --bs-body-bg: var(--sv-paper);
+  --bs-body-color: #dcdad5;
+  --bs-border-color: var(--sv-hairline);
+  --bs-link-color: var(--sv-ink);
+  --bs-link-color-rgb: 143, 167, 255;
+  --bs-link-hover-color: #b3c3ff;
+  --bs-link-hover-color-rgb: 179, 195, 255;
+  --bs-code-color: #d089a9;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sv-ink);
+  outline-offset: 2px;
+}
+
+/* --- header: a thin instrument bar ----------------------------------------- */
+
+:root { --sv-header-h: 3rem; --sv-rail-w: 17rem; --sv-rail-collapsed-w: 2.4rem; }
 
 #sv-header {
   position: sticky;
@@ -13,108 +58,166 @@
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.4rem 1rem;
-  background: var(--bs-body-bg);
+  gap: 1.25rem;
+  height: var(--sv-header-h);
+  padding: 0 1.25rem;
+  background: color-mix(in srgb, var(--bs-body-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--bs-border-color);
+}
+
+#sv-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+}
+
+#sv-wordmark {
+  font-family: var(--sv-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: var(--bs-body-color);
+}
+
+/* The signature: connection state as a quiet instrument, not an alarm.
+   Steady ink when live; hollow and pulsing while reconnecting. */
+#sv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sv-ink);
+  box-shadow: 0 0 0 3px var(--sv-ink-soft);
+}
+
+.sv-disconnected #sv-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #c98a2b;
+  animation: sv-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sv-pulse {
+  50% { opacity: 0.35; }
+}
+
+#sv-status {
+  margin-left: auto;
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  color: #c98a2b;
 }
 
 #sv-sessions {
   display: flex;
   gap: 0.4rem;
   overflow-x: auto;
+  scrollbar-width: none;
 }
 
 #sv-sessions button {
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  padding: 0.1rem 0.6rem;
   margin: 0;
-  padding: 0.15rem 0.7rem;
-  font-size: 0.85rem;
   background: transparent;
   color: var(--bs-secondary-color);
   border: 1px solid var(--bs-border-color);
-  border-radius: 1rem;
+  border-radius: var(--bs-border-radius);
   white-space: nowrap;
+}
+
+#sv-sessions button:hover {
+  color: var(--bs-body-color);
+  border-color: var(--bs-secondary-color);
 }
 
 #sv-sessions button.active {
-  color: #fff;
-  background: var(--bs-primary);
-  border-color: var(--bs-primary);
+  color: var(--sv-ink);
+  border-color: var(--sv-ink);
+  background: color-mix(in srgb, var(--sv-ink) 8%, transparent);
 }
 
-#sv-outline-toggle {
-  margin: 0 0 0 auto;
-  padding: 0.15rem 0.7rem;
-  font-size: 0.85rem;
-  background: transparent;
-  color: var(--bs-secondary-color);
-  border: 1px solid var(--bs-border-color);
-  border-radius: 1rem;
-  white-space: nowrap;
-}
-
-#sv-outline-toggle.active {
-  color: #fff;
-  background: var(--bs-secondary);
-  border-color: var(--bs-secondary);
-}
-
-/* The toggle only matters where the outline can exist at all. */
-@media (max-width: 1249.98px) {
-  #sv-outline-toggle {
-    display: none;
-  }
-}
-
-#sv-banner {
-  margin-left: auto;
-  padding: 0.15rem 0.7rem;
-  font-size: 0.85rem;
-  border-radius: var(--bs-border-radius);
-  color: #fff;
-  background: var(--bs-danger);
-}
+/* --- the document ----------------------------------------------------------- */
 
 #sv-blocks {
   max-width: 46rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem;
+  padding: 2.5rem 1.25rem 6rem;
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+/* With the rail docked, centering in the leftover space reads as a void on
+   the right. Anchor the column beside the rail instead, keep the 46rem
+   reading measure for text, and let artifacts — tables, code, figures,
+   embedded documents, anything an agent marks w-100 — break out wider. */
+body.sv-rail #sv-blocks {
+  max-width: 68rem;
+  margin: 0;
+  padding-left: 3.5rem;
+  padding-right: 2.5rem;
+}
+
+body.sv-rail .sv-block > * {
+  max-width: 46rem;
+}
+
+body.sv-rail .sv-block > :is(table, pre, figure, .sv-html, .row, .table-responsive, .w-100) {
+  max-width: none;
+}
+
+body.sv-rail .sv-block > table {
+  width: auto;
+  min-width: min(100%, 46rem);
+}
+
+#sv-blocks:empty::after {
+  content: "Nothing here yet — blocks appear as your agent writes them.";
+  display: block;
+  padding-top: 4rem;
+  text-align: center;
+  font-family: var(--sv-mono);
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
 }
 
 .sv-block {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }
 
-/* Anchor jumps land below the sticky header, not under it. */
+/* Serif display for the document's own voice. Components (cards, alerts)
+   keep the sans so agent-authored UI still reads as UI. */
+#sv-blocks h1, #sv-blocks h2, #sv-blocks h3 {
+  font-family: var(--sv-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+#sv-blocks h1 { font-size: 2rem; }
+#sv-blocks h2 { font-size: 1.5rem; }
+#sv-blocks h3 { font-size: 1.2rem; }
+#sv-blocks .card h1, #sv-blocks .card h2, #sv-blocks .card h3,
+#sv-blocks .alert h1, #sv-blocks .alert h2, #sv-blocks .alert h3 {
+  font-family: inherit;
+  letter-spacing: normal;
+}
+
+/* Anything the rail scrolls to must land below the sticky header, not
+   under it — the block itself for section jumps, headings for anchors. */
+.sv-block,
 .sv-block :is(h1, h2, h3, h4, h5, h6) {
-  scroll-margin-top: 64px;
+  scroll-margin-top: calc(var(--sv-header-h) + 1rem);
 }
 
-/* The outline sidebar, built from each block's declared headings. Lives in
-   the left gutter of the centred column; only exists when the viewport has
-   one and the page has more than one section. */
-#sv-outline {
-  display: none;
-  position: fixed;
-  top: 64px;
-  left: 12px;
-  width: 230px;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
-  border: 1px solid var(--bs-border-color);
-  border-radius: var(--bs-border-radius);
-  background: var(--bs-body-bg);
+/* A block arriving live draws a fading ink bar in the margin. */
+.sv-arrive {
+  animation: sv-arrive 1.6s ease-out forwards;
 }
 
-@media (min-width: 1250px) {
-  #sv-outline.sv-has-sections {
-    display: block;
-  }
-}
-
-#sv-outline .sv-outline-child {
-  padding-left: 1.75rem;
-  color: var(--bs-secondary-color);
+@keyframes sv-arrive {
+  from { box-shadow: inset 3px 0 0 var(--sv-ink); }
+  to   { box-shadow: inset 3px 0 0 transparent; }
 }
 
 /* A block that degrades beats one that breaks — and says so visibly. */
@@ -124,84 +227,94 @@
 }
 
 .sv-degraded-note {
-  font-size: 0.8rem;
+  font-family: var(--sv-mono);
+  font-size: 0.75rem;
   color: var(--bs-secondary-color);
-  font-style: italic;
   margin-bottom: 0.25rem;
 }
 
-/* --- the prose layer -------------------------------------------------------
-   comrak emits bare elements with no classes, and Bootstrap's reboot leaves
-   those nearly unstyled (a table needs .table to look like anything). These
-   selectors give class-less markdown output the same treatment Bootstrap's
-   own classes would — which also means hand-written markup blocks get it on
-   their bare elements, keeping the two paths styled identically. */
+/* --- the prose layer --------------------------------------------------------
+   comrak emits bare elements; Bootstrap's reboot leaves them nearly unstyled.
+   These selectors give class-less markdown the treatment Bootstrap's own
+   classes would, so prose and markup share one look. */
 
 .sv-block table {
   width: 100%;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   border-collapse: collapse;
-  vertical-align: top;
+  font-size: 0.95em;
 }
 
 .sv-block th,
 .sv-block td {
-  padding: 0.5rem;
+  padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--bs-border-color);
   text-align: start;
+  vertical-align: top;
 }
 
 .sv-block thead th {
-  border-bottom-width: 2px;
-  color: var(--bs-emphasis-color);
-}
-
-.sv-block blockquote {
-  margin: 0 0 1rem;
-  padding: 0.25rem 0 0.25rem 1rem;
-  border-left: 4px solid var(--bs-border-color);
+  border-bottom: 2px solid var(--bs-secondary-color);
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   color: var(--bs-secondary-color);
 }
 
+.sv-block blockquote {
+  margin: 0 0 1.25rem;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 2px solid var(--sv-ink-soft);
+  color: var(--bs-secondary-color);
+  font-style: italic;
+}
+
 .sv-block pre {
-  padding: 1rem;
-  background: var(--bs-tertiary-bg);
+  padding: 1rem 1.15rem;
+  background: color-mix(in srgb, var(--bs-body-color) 4%, var(--bs-body-bg));
+  border: 1px solid var(--bs-border-color);
   border-radius: var(--bs-border-radius);
   overflow-x: auto;
+  font-size: 0.86em;
+  line-height: 1.55;
 }
 
 .sv-block pre code {
   color: var(--bs-body-color);
+  font-family: var(--sv-mono);
+}
+
+.sv-block code {
+  font-family: var(--sv-mono);
 }
 
 .sv-block img {
   max-width: 100%;
   height: auto;
+  border-radius: var(--bs-border-radius);
 }
 
-.sv-block figure {
-  margin: 0 0 1rem;
-}
+.sv-block figure { margin: 0 0 1.25rem; }
 
 .sv-block figcaption {
-  font-size: 0.875rem;
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
   color: var(--bs-secondary-color);
+  margin-top: 0.4rem;
 }
 
 .sv-block hr {
-  margin: 1.5rem 0;
+  margin: 2rem auto;
+  width: 5rem;
+  border-top: 2px solid var(--bs-border-color);
+  opacity: 1;
 }
 
-/* GFM task lists: comrak emits disabled checkboxes inside list items. */
-.sv-block li > input[type="checkbox"] {
-  margin-right: 0.4rem;
-}
+.sv-block li > input[type="checkbox"] { margin-right: 0.4rem; }
 
 /* --- Bootstrap 4 compat shim ------------------------------------------------
-   Models mix v4 and v5 idioms; the union of both dialects should render.
-   Only the spellings that actually turn up: contextual badges, directional
-   spacing, text alignment, font-weight utilities. All !important, matching
-   how Bootstrap's own utilities win specificity fights. */
+   Models mix v4 and v5 idioms; the union of both dialects should render. */
 
 .badge-primary   { background-color: var(--bs-primary) !important;   color: #fff !important; }
 .badge-secondary { background-color: var(--bs-secondary) !important; color: #fff !important; }
@@ -235,17 +348,19 @@
 .font-weight-light  { font-weight: 300 !important; }
 .font-italic        { font-style: italic !important; }
 
-/* --- the sv- domain layer ---------------------------------------------------
-   Only what has no Bootstrap precedent. Still being derived from real plans. */
+/* --- the sv- domain layer ---------------------------------------------------- */
 
 .sv-metric {
-  font-size: 1.6rem;
+  font-family: var(--sv-mono);
+  font-size: 1.5rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .sv-delta {
-  font-size: 1.1rem;
+  font-family: var(--sv-mono);
+  font-size: 1rem;
   color: var(--bs-secondary-color);
   font-variant-numeric: tabular-nums;
 }
@@ -254,4 +369,194 @@
   display: block;
   width: 100%;
   border: 0;
+}
+
+/* --- the contents rail --------------------------------------------------------
+   A docked drawer on the left edge: full height under the header, titles
+   wrap rather than truncate, and the arrow near the top folds it to a thin
+   strip. The content column shifts over via body padding. Only exists when
+   the page has sections; below ~992px it bows out entirely (mobile deferred). */
+
+body.sv-rail {
+  padding-left: var(--sv-rail-w);
+  transition: padding-left 0.18s ease;
+}
+
+body.sv-rail.sv-rail-collapsed {
+  padding-left: var(--sv-rail-collapsed-w);
+}
+
+#sv-outline {
+  display: none;
+  position: fixed;
+  top: var(--sv-header-h);
+  bottom: 0;
+  left: 0;
+  width: var(--sv-rail-w);
+  padding: 0.9rem 0.9rem 1.5rem;
+  background: var(--bs-body-bg);
+  border-right: 1px solid var(--bs-border-color);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  transition: width 0.18s ease, padding 0.18s ease;
+}
+
+body.sv-rail #sv-outline { display: block; }
+
+#sv-outline.collapsed {
+  width: var(--sv-rail-collapsed-w);
+  padding: 0.9rem 0;
+  overflow-y: hidden;
+}
+
+@media (max-width: 991.98px) {
+  body.sv-rail { padding-left: 0; }
+  body.sv-rail #sv-outline { display: none; }
+}
+
+#sv-outline-top {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+#sv-outline.collapsed #sv-outline-top {
+  justify-content: center;
+}
+
+#sv-outline-title {
+  flex: 1;
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  padding-left: 0.25rem;
+}
+
+#sv-outline.collapsed #sv-outline-title,
+#sv-outline.collapsed #sv-outline-list {
+  display: none;
+}
+
+#sv-rail-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--bs-border-radius);
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+}
+
+#sv-rail-toggle:hover {
+  color: var(--bs-body-color);
+  background: color-mix(in srgb, var(--bs-body-color) 7%, transparent);
+}
+
+#sv-rail-toggle::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-right: 5px solid currentColor;   /* ◂ points left: fold away */
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+#sv-outline.collapsed #sv-rail-toggle::before {
+  transform: rotate(180deg);              /* ▸ points right: bring it back */
+}
+
+.sv-o-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.sv-o-link {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 0.24rem 0.25rem;
+  background: none;
+  border: 0;
+  text-align: start;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.sv-o-link:hover { color: var(--bs-body-color); }
+
+.sv-o-link.active {
+  color: var(--sv-ink);
+  border-left-color: var(--sv-ink);
+  padding-left: 0.55rem;
+}
+
+.sv-o-twist {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.6rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+}
+
+.sv-o-twist::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.sv-o-twist[aria-expanded="true"]::before { transform: rotate(90deg); }
+
+.sv-o-spacer { flex: none; width: 1.1rem; }
+
+.sv-o-kids {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s ease;
+}
+
+.sv-o-kids.open { grid-template-rows: 1fr; }
+
+.sv-o-kids > .sv-o-kids-inner {
+  overflow: hidden;
+  min-width: 0;
+  margin-left: 1.35rem;
+  border-left: 1px solid var(--bs-border-color);
+}
+
+.sv-o-kids .sv-o-link {
+  font-size: 0.8rem;
+  padding-left: 0.6rem;
+}
+
+.sv-o-kids .sv-o-link.active { padding-left: 0.9rem; }
+
+/* --- restraint ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #sv-dot, .sv-arrive, .sv-o-twist::before, #sv-rail-toggle::before,
+  #sv-outline, body.sv-rail, .sv-o-kids {
+    animation: none !important;
+    transition: none !important;
+  }
 }

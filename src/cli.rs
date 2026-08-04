@@ -236,8 +236,8 @@ pub fn session_set(
         bail!("nothing to set — pass --label and/or --outline");
     }
     if let Some(o) = outline {
-        if o != "auto" && o != "off" {
-            bail!("--outline takes `auto` or `off`, not {o:?}");
+        if !["auto", "scrollspy", "tabs", "off"].contains(&o) {
+            bail!("--outline takes `auto`, `scrollspy`, `tabs` or `off`, not {o:?}");
         }
     }
     let store = open_project_store()?;
@@ -247,8 +247,10 @@ pub fn session_set(
         store.set_session_prop(&session_id, "label", (!label.is_empty()).then_some(label))?;
     }
     if let Some(outline) = outline {
-        // auto is the default, so it stores as an absence.
-        store.set_session_prop(&session_id, "outline", (outline != "auto").then_some(outline))?;
+        // scrollspy is the default, so it (and `auto`) store as an absence;
+        // only departures — tabs, off — are written.
+        let departure = (outline != "auto" && outline != "scrollspy").then_some(outline);
+        store.set_session_prop(&session_id, "outline", departure)?;
     }
     Ok(())
 }

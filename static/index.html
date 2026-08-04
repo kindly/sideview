@@ -18,12 +18,20 @@
 </head>
 <body>
   <header id="sv-header">
+    <div id="sv-brand" title="connected">
+      <span id="sv-dot" aria-hidden="true"></span>
+      <span id="sv-wordmark">sideview</span>
+    </div>
     <nav id="sv-sessions" aria-label="sessions"></nav>
-    <button id="sv-outline-toggle" type="button" hidden aria-pressed="true">outline</button>
-    <div id="sv-banner" hidden>disconnected — reconnecting…</div>
+    <div id="sv-status" role="status" hidden>reconnecting…</div>
   </header>
-  <aside id="sv-outline" aria-label="document outline">
-    <div class="list-group list-group-flush small" id="sv-outline-list"></div>
+  <aside id="sv-outline" aria-label="contents">
+    <div id="sv-outline-top">
+      <span id="sv-outline-title">Contents</span>
+      <button id="sv-rail-toggle" type="button" aria-expanded="true"
+              aria-label="collapse contents"></button>
+    </div>
+    <nav id="sv-outline-list"></nav>
   </aside>
   <main id="sv-blocks"></main>
   <script src="/assets/app.js"></script>

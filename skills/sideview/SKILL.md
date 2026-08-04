@@ -45,12 +45,19 @@ Optionally, set page properties (no ids needed — it applies to your own page):
 
 ```bash
 sideview session set --label "Parser fix plan"   # names the page in the header strip
-sideview session set --outline off               # no section side-menu on this page
+sideview session set --outline tabs              # sections become separate panes
+sideview session set --outline off               # no contents rail on this page
 ```
 
-Long documents get an outline sidebar automatically, built from your blocks'
-headings. Set `--outline off` when the page isn't a document — a dashboard, a
-single answer, a screenshot gallery.
+Pages with sections get a contents rail automatically, built from your blocks'
+headings; by default the whole page scrolls and the rail follows (scrollspy).
+Set `--outline tabs` when sections are alternatives rather than a sequence —
+option A/B comparisons, multiple prototypes. Set `--outline off` when the page
+isn't a document at all — a dashboard, a single answer, a screenshot gallery.
+
+Text sits at a comfortable reading width; tables, code blocks and figures widen
+automatically. To give a markup block the full wide column (a dashboard row, an
+embedded document), put `class="w-100"` on its top-level element.
 
 ## The page is styled with Bootstrap 5 — write what you already know
 

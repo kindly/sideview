@@ -196,6 +196,21 @@ distribution model. Worth fixing independently.
 **Scroll behaviour when a block arrives.** Likely answer: scroll only when already at the bottom.
 Left unspecified because it wants a real page in front of you.
 
+**The frontend framework question** (raised 2026-08-04, deliberately not decided). app.js is
+~330 lines of hand-rolled DOM state sync and growing; the itch for a no-build framework
+(Alpine, petite-vue, Vue's ESM build) is legitimate. Deliberation so far: two different JS
+domains are conflating. The *page chrome* (rail, strip, spy, dot) is our code and small —
+vanilla holds until the feedback channel lands, whose forms and params are the first genuinely
+framework-shaped work; that's the natural adoption point, and Alpine or Vue-ESM (both no-build,
+vendorable as one file, deep LLM priors) are the candidates — petite-vue is unmaintained, htmx
+overlaps what SSE already does here. The *plugin architecture* (blocks getting scoped access to
+parts of the page) should not be answered with a framework at all: the web-native boundary is
+custom elements plus a small explicit `window.sideview` API, which keeps plugins
+framework-agnostic, gives them shadow-DOM isolation (DESIGN.md's rung-2 note returns here), and
+lets an agent emit `<sv-something>` as ordinary markup. Constraint to hold either way: whatever
+is adopted must vendor as a single static file into rust-embed — no toolchain, per V0.md's
+frontend section.
+
 **The `sv-` class list.** Six to ten classes for what Bootstrap doesn't cover — metric/delta,
 option cards, decision matrix. Needs designing against real plans, not in the abstract. (The
 companion question — *which* Bootstrap names to implement — dissolved on 2026-08-03 when the

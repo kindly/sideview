@@ -1,41 +1,33 @@
 // The whole client. The daemon sends rendered HTML plus each block's declared
-// headings, so the job here is only: hold an EventSource, place/replace/remove
-// elements by block id, build the outline sidebar from declarations, switch
-// sessions and sections, and show a banner when disconnected.
+// headings; the job here is: hold an EventSource, place/replace/remove elements
+// by block id, build the contents rail from declarations, and track where the
+// reader is. The rail has two coherent modes, chosen per session by the agent
+// (`session set --outline`): scrollspy (default — the page is always the whole
+// document, the rail follows the scroll) and tabs (sections are separate
+// panes — the mode for prototypes and app-like pages).
 'use strict';
 
 const state = {
-  sessions: [],          // [{id, label, last_active_at}] most recent first
+  sessions: [],          // [{id, last_active_at, props}] most recent first
   blocks: new Map(),     // session id -> Map(block id -> {ord, html, headings})
   selected: null,        // session id
   pinned: false,         // the user deliberately clicked a session
-  section: 'all',        // outline tab: 'all' or a section key
+  section: null,         // tabs mode: the selected section key
+  spyActive: null,       // scrollspy mode: the section currently in view
+  expand: new Map(),     // section key -> bool, manual twist overrides (per session)
+  connectedAt: 0,        // when the stream last opened; gates the arrival ink
 };
+
+let outline = { sections: [], blockSections: new Map() };
+let railRefs = new Map(); // section key -> {link, twist, kids}
 
 const $blocks = document.getElementById('sv-blocks');
 const $sessions = document.getElementById('sv-sessions');
-const $banner = document.getElementById('sv-banner');
+const $status = document.getElementById('sv-status');
+const $brand = document.getElementById('sv-brand');
 const $outline = document.getElementById('sv-outline');
+const $railToggle = document.getElementById('sv-rail-toggle');
 const $outlineList = document.getElementById('sv-outline-list');
-const $outlineToggle = document.getElementById('sv-outline-toggle');
-
-// Outline preference, in precedence order: the viewer's explicit toggle
-// (localStorage, per page), then the agent's declared session property
-// (`sideview session set --outline off`), then auto (on).
-function outlinePref() {
-  const stored = localStorage.getItem('sv-outline:' + state.selected);
-  if (stored === 'on' || stored === 'off') return stored;
-  const s = state.sessions.find((x) => x.id === state.selected);
-  return s && s.props && s.props.outline === 'off' ? 'off' : 'on';
-}
-
-$outlineToggle.addEventListener('click', () => {
-  localStorage.setItem(
-    'sv-outline:' + state.selected,
-    outlinePref() === 'off' ? 'on' : 'off'
-  );
-  refreshOutline();
-});
 
 // /s/<session> pins that session; / follows the most recently active one.
 const pathMatch = location.pathname.match(/^\/s\/(.+)$/);
@@ -44,18 +36,50 @@ if (pathMatch) {
   state.pinned = true;
 }
 
+function sessionProps() {
+  const s = state.sessions.find((x) => x.id === state.selected);
+  return (s && s.props) || {};
+}
+
+// The agent's declared mode: tabs, or scrollspy (the default). `off` means
+// scrollspy with the rail starting collapsed.
+function railMode() {
+  return sessionProps().outline === 'tabs' ? 'tabs' : 'scrollspy';
+}
+
+// Whether the rail is open: the viewer's own fold/unfold (remembered per
+// page) wins over the agent's `--outline off`.
+function railOpen() {
+  const stored = localStorage.getItem('sv-outline:' + state.selected);
+  if (stored === 'on' || stored === 'off') return stored === 'on';
+  return sessionProps().outline !== 'off';
+}
+
+$railToggle.addEventListener('click', () => {
+  localStorage.setItem('sv-outline:' + state.selected, railOpen() ? 'off' : 'on');
+  refreshOutline();
+});
+
 const es = new EventSource('/events');
-es.addEventListener('open', () => { $banner.hidden = true; });
-es.addEventListener('error', () => { $banner.hidden = false; }); // EventSource reconnects on its own
+es.addEventListener('open', () => {
+  state.connectedAt = Date.now();
+  document.body.classList.remove('sv-disconnected');
+  $status.hidden = true;
+  $brand.title = 'connected';
+});
+es.addEventListener('error', () => {
+  // EventSource reconnects on its own; the dot goes hollow while it does.
+  document.body.classList.add('sv-disconnected');
+  $status.hidden = false;
+  $brand.title = 'reconnecting';
+});
 
 es.addEventListener('sessions', (e) => {
   state.sessions = JSON.parse(e.data).sessions;
   if (!state.pinned && state.sessions.length) {
     const top = state.sessions[0].id;
     if (top !== state.selected) {
-      state.selected = top;
-      state.section = 'all';
-      renderAllBlocks();
+      switchSession(top);
     }
   }
   renderSessionStrip();
@@ -74,6 +98,14 @@ es.addEventListener('block', (e) => {
   }
 });
 
+function switchSession(id) {
+  state.selected = id;
+  state.section = null;
+  state.spyActive = null;
+  state.expand.clear();
+  renderAllBlocks();
+}
+
 function renderSessionStrip() {
   $sessions.textContent = '';
   for (const s of state.sessions) {
@@ -82,12 +114,10 @@ function renderSessionStrip() {
     btn.title = s.id;
     btn.classList.toggle('active', s.id === state.selected);
     btn.addEventListener('click', () => {
-      state.selected = s.id;
       state.pinned = true;
-      state.section = 'all';
       history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
+      switchSession(s.id);
       renderSessionStrip();
-      renderAllBlocks();
     });
     $sessions.appendChild(btn);
   }
@@ -97,10 +127,10 @@ function shortLabel(id) {
   return id.length > 12 ? id.slice(0, 8) + '…' : id;
 }
 
-// ---- the outline ------------------------------------------------------------
+// ---- the contents rail --------------------------------------------------------
 // Sections are blocks that declare an h1/h2; deeper headings nest under the
 // section in force, and a headingless block belongs to the section it follows.
-// Blocks before any section are front matter and stay visible on every tab.
+// Blocks before any section are front matter, visible on every tab.
 
 function computeOutline() {
   const sections = [];
@@ -128,62 +158,167 @@ function computeOutline() {
 }
 
 function refreshOutline() {
-  const outline = computeOutline();
-  const off = outlinePref() === 'off';
-  if (off || !outline.sections.some((s) => s.key === state.section)) {
-    state.section = 'all'; // no menu, no tabs
-  }
+  outline = computeOutline();
+  const mode = railMode();
+  const hasRail = outline.sections.length > 1;
 
-  $outlineList.textContent = '';
-  const item = (label, indentClass, onclick) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'list-group-item list-group-item-action py-1 text-truncate ' + indentClass;
-    btn.textContent = label;
-    btn.title = label;
-    btn.addEventListener('click', onclick);
-    $outlineList.appendChild(btn);
-    return btn;
-  };
-
-  item('— whole plan —', '', () => selectSection('all'))
-    .classList.toggle('active', state.section === 'all');
-  for (const s of outline.sections) {
-    item(s.title, '', () => selectSection(s.key))
-      .classList.toggle('active', state.section === s.key);
-    for (const c of s.children) {
-      item(c.text, 'sv-outline-child', () => {
-        selectSection(s.key);
-        const target = (c.id && document.getElementById(c.id))
-          || $blocks.querySelector(`[data-block="${CSS.escape(c.block)}"]`);
-        target?.scrollIntoView({ block: 'start' });
-      });
+  if (mode === 'tabs') {
+    if (!outline.sections.some((s) => s.key === state.section)) {
+      state.section = outline.sections[0]?.key ?? null;
     }
   }
 
-  const hasSections = outline.sections.length > 1;
-  $outline.classList.toggle('sv-has-sections', hasSections && !off);
-  $outlineToggle.hidden = !hasSections;
-  $outlineToggle.classList.toggle('active', !off);
-  $outlineToggle.setAttribute('aria-pressed', String(!off));
-  applyVisibility(outline);
+  $outlineList.textContent = '';
+  railRefs = new Map();
+
+  const link = (label, onclick) => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'sv-o-link';
+    el.textContent = label;
+    el.title = label;
+    el.addEventListener('click', onclick);
+    return el;
+  };
+
+  for (const s of outline.sections) {
+    const row = document.createElement('div');
+    row.className = 'sv-o-row';
+    const refs = { link: null, twist: null, kids: null };
+
+    if (s.children.length) {
+      const twist = document.createElement('button');
+      twist.type = 'button';
+      twist.className = 'sv-o-twist';
+      twist.setAttribute('aria-label', 'toggle subsections');
+      twist.addEventListener('click', () => {
+        state.expand.set(s.key, !isExpanded(s.key));
+        styleRail();
+      });
+      row.appendChild(twist);
+      refs.twist = twist;
+    } else {
+      row.appendChild(
+        Object.assign(document.createElement('span'), { className: 'sv-o-spacer' })
+      );
+    }
+
+    refs.link = link(s.title, () => goToSection(s));
+    row.appendChild(refs.link);
+    $outlineList.appendChild(row);
+
+    if (s.children.length) {
+      const kids = document.createElement('div');
+      kids.className = 'sv-o-kids';
+      const kidsInner = document.createElement('div');
+      kidsInner.className = 'sv-o-kids-inner';
+      for (const c of s.children) {
+        kidsInner.appendChild(link(c.text, () => goToChild(s, c)));
+      }
+      kids.appendChild(kidsInner);
+      $outlineList.appendChild(kids);
+      refs.kids = kids;
+    }
+
+    railRefs.set(s.key, refs);
+  }
+
+  document.body.classList.toggle('sv-rail', hasRail);
+  const open = railOpen();
+  document.body.classList.toggle('sv-rail-collapsed', hasRail && !open);
+  $outline.classList.toggle('collapsed', !open);
+  $railToggle.setAttribute('aria-expanded', String(open));
+  $railToggle.setAttribute('aria-label', open ? 'collapse contents' : 'expand contents');
+
+  applyVisibility();
+  if (mode === 'scrollspy') updateSpy(true);
+  else styleRail();
 }
 
-function selectSection(key) {
-  state.section = key;
-  refreshOutline(); // rebuilds the list, restyles active, re-applies visibility
-  scrollTo({ top: 0 });
+function activeKey() {
+  return railMode() === 'tabs' ? state.section : state.spyActive;
 }
 
-function applyVisibility(outline) {
+function isExpanded(key) {
+  return state.expand.has(key) ? state.expand.get(key) : key === activeKey();
+}
+
+// Restyle active/expanded without rebuilding — cheap enough for scroll events.
+function styleRail() {
+  const active = activeKey();
+  for (const [key, refs] of railRefs) {
+    refs.link.classList.toggle('active', key === active);
+    const expanded = isExpanded(key);
+    if (refs.twist) refs.twist.setAttribute('aria-expanded', String(expanded));
+    if (refs.kids) refs.kids.classList.toggle('open', expanded);
+  }
+}
+
+function goToSection(s) {
+  if (railMode() === 'tabs') {
+    state.section = s.key;
+    applyVisibility();
+    styleRail();
+    scrollTo({ top: 0 });
+  } else {
+    blockEl(s.block)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+}
+
+function goToChild(s, c) {
+  if (railMode() === 'tabs' && state.section !== s.key) {
+    state.section = s.key;
+    applyVisibility();
+    styleRail();
+  }
+  const target = (c.id && document.getElementById(c.id)) || blockEl(c.block);
+  target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function blockEl(id) {
+  return $blocks.querySelector(`[data-block="${CSS.escape(id)}"]`);
+}
+
+function applyVisibility() {
+  const tabs = railMode() === 'tabs' && outline.sections.length > 1;
   const selIdx = outline.sections.findIndex((s) => s.key === state.section);
   for (const el of $blocks.children) {
+    if (!tabs) {
+      el.style.display = '';
+      continue;
+    }
     const memberOf = outline.blockSections.get(el.dataset.block);
-    const visible =
-      state.section === 'all' || !memberOf || memberOf.size === 0 || memberOf.has(selIdx);
+    const visible = !memberOf || memberOf.size === 0 || memberOf.has(selIdx);
     el.style.display = visible ? '' : 'none';
   }
 }
+
+// The spy: the active section is the last one whose first block has scrolled
+// up to (or past) the reading line just below the header.
+function updateSpy(force) {
+  if (railMode() !== 'scrollspy' || outline.sections.length < 2) return;
+  const readingLine = 90;
+  let active = outline.sections[0].key;
+  for (const s of outline.sections) {
+    const el = blockEl(s.block);
+    if (el && el.getBoundingClientRect().top <= readingLine) active = s.key;
+    else break;
+  }
+  if (force || active !== state.spyActive) {
+    state.spyActive = active;
+    styleRail();
+  }
+}
+
+let spyScheduled = false;
+addEventListener('scroll', () => {
+  if (spyScheduled) return;
+  spyScheduled = true;
+  requestAnimationFrame(() => {
+    spyScheduled = false;
+    updateSpy(false);
+  });
+}, { passive: true });
 
 // ---- blocks -----------------------------------------------------------------
 
@@ -208,7 +343,7 @@ function activateScripts(el) {
 }
 
 function applyBlock(ev) {
-  const existing = $blocks.querySelector(`[data-block="${CSS.escape(ev.block)}"]`);
+  const existing = blockEl(ev.block);
   if (ev.action === 'remove') {
     if (existing) existing.remove();
     return;
@@ -225,10 +360,13 @@ function applyBlock(ev) {
   const atBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 48;
   if (next) $blocks.insertBefore(el, next);
   else $blocks.appendChild(el);
+  // The arrival ink marks genuinely-live blocks, not the replay burst that
+  // follows every (re)connect.
+  if (Date.now() - state.connectedAt > 1500) el.classList.add('sv-arrive');
   activateScripts(el);
   // Provisional: follow new content only when already at the bottom, never
   // yank away while reading above. V0.md leaves this to be decided by feel.
-  if (!next && atBottom && state.section === 'all') {
+  if (!next && atBottom && railMode() === 'scrollspy') {
     el.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }
 }
