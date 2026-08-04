@@ -1,7 +1,7 @@
 # sideview
 
-A visual side channel for CLI agents. Nothing is built yet — this repo is currently five design
-documents and a licence.
+A visual side channel for CLI agents. A working v0 skeleton exists (Rust crate, `cargo test`,
+smoke-tested); the design documents remain the authority on intent.
 
 **Read [V0.md](V0.md) first.** It is the scope actually being built. [README.md](README.md) is the
 premise, [DESIGN.md](DESIGN.md) is the long-term architecture and backlog,
@@ -21,9 +21,12 @@ drift:
   an agent must read the data in order to display it, the block is designed wrong.
 - **Nothing under `$HOME`.** All state lives in `.sideview/` in the project, because the agent
   sandbox permits writes to the working directory and not the home directory.
-- **Borrow the design vocabulary, don't invent one.** Pico.css for semantic HTML, Bootstrap-
-  compatible names (`alert alert-warning`, `card`, `badge`) where HTML has no element, and only a
-  handful of `sv-` classes for what has no precedent.
+- **Ship the framework the model already knows: real Bootstrap 5, CSS only.** Plus a prose layer
+  for bare markdown elements, a v4-compat shim, and a handful of `sv-` classes for what has no
+  precedent. This replaced "Pico + a borrowed subset of Bootstrap names" on 2026-08-03 — the
+  subset silently no-opped the layout/utility classes models actually emit. Reasoning and the
+  Tailwind/daisyUI rejection are in V0.md's design-system section; don't relitigate without
+  reading it.
 - **Rust, actix-web, rusqlite, SSE.** Not websockets — see the reasoning in V0.md before changing
   it.
 
@@ -36,6 +39,7 @@ liveness is a timestamp rather than a ping.
 
 ## Working here
 
-Docs are the deliverable for now. Keep them in the same register as they are: decisions with their
+Code and docs move together: when the code diverges from a documented decision, update the doc in
+the same change, in the same register. Keep docs as they are: decisions with their
 reasons attached, rejected alternatives recorded so they aren't re-proposed, and honest notes about
 what is uncertain.

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>sideview</title>
+  <link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/assets/sideview.css">
+  <script>
+    // Before first paint, and again on OS theme change. Bootstrap 5.3 themes
+    // entirely off this attribute; we ship none of its JS.
+    const svTheme = () => document.documentElement.setAttribute('data-bs-theme',
+      matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    svTheme();
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', svTheme);
+  </script>
+</head>
+<body>
+  <header id="sv-header">
+    <nav id="sv-sessions" aria-label="sessions"></nav>
+    <button id="sv-outline-toggle" type="button" hidden aria-pressed="true">outline</button>
+    <div id="sv-banner" hidden>disconnected — reconnecting…</div>
+  </header>
+  <aside id="sv-outline" aria-label="document outline">
+    <div class="list-group list-group-flush small" id="sv-outline-list"></div>
+  </aside>
+  <main id="sv-blocks"></main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

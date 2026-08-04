@@ -6,7 +6,60 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
-Nothing is built. Six documents, an MIT licence, no remote.
+**The skeleton exists (2026-08-03).** A compiling crate with the v0 shape end to end: spec
+types with envelope-first decoding, the store with `user_version` migration and the daemon
+row, session resolution, the netns reachability verdict, server-side rendering (comrak GFM),
+the actix daemon with SSE + `Last-Event-ID` replay, the file endpoint with root confinement,
+the flock auto-start, the plain-JS frontend, and the embedded skill with `skill install`.
+Eleven unit tests pass, and the following were verified live on this machine:
+
+- **Unsandboxed authoring auto-spawns**: `sideview prose` with nothing running wrote `b1`,
+  spawned a detached daemon under the flock, and the page + SSE replay served the rendered
+  block. Tailnet auto-bind picked up both the CGNAT v4 and the ULA v6 address.
+- **Sandboxed authoring refuses correctly**: block written, id printed alone on stdout, the
+  one-line instruction on stderr, exit 0, no spawn attempted.
+- **Supersession works as specified**: a second daemon claimed the row and the first evicted
+  itself within a heartbeat; SIGINT cleared the row and left no processes.
+- **One wrinkle found**: during a *live* takeover the new daemon cannot reuse the remembered
+  port — the old daemon still holds it at bind time, so the second falls back to an ephemeral
+  one. "The recorded port is reused" therefore holds across restart-after-exit (the case that
+  matters for SSE reconnection) but not across supersession. Acceptable; noting it so the
+  claim in V0.md's port section is read with that asterisk.
+
+Deliberate skeleton gaps, all marked `TODO(v0)` in source or visible in the code: unknown
+class/`style=` logging (unblocked once `scraper` landed on 2026-08-04, still unbuilt), iframe
+autosizing (fixed 24rem until ResizeObserver + postMessage), the spawn-lock release window
+between CLI exit and the child's claim (healed by supersession), and scroll behaviour is the
+provisional only-when-at-bottom guess in app.js. The `tailscale serve` SSE-buffering check below
+is still not done, and the "Done when" regression trap (a stale row from a namespaced daemon,
+claimed by bare `sideview`) has never been staged. (Session labels gained a writer on 2026-08-04
+— `session set` — and the two code-review bugs, the swallowed SSE `Lagged` error and unencoded
+session ids in printed URLs, were fixed with pinning tests before the first commit.)
+
+**Later the same day, the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
+only, with a prose layer for bare markdown elements and a v4-compat shim in `sideview.css`.
+Pico is gone. V0.md's design-system section records the reversal, why the borrowed-subset
+approach lost, and the Tailwind/daisyUI rejection.
+
+**2026-08-04: blocks declare their headings, and the page grew an outline sidebar.** The SSE
+event carries `headings` (see V0.md's frontend section for derivation rules per type). The
+outline is optional from both sides — a viewer toggle in the header, and agent-side
+`sideview session set --label … --outline auto|off`, which brought session properties in as one
+chunk and finally gave `label` a writer. Properties then became a single JSON `props` field
+(reasons in V0.md — chiefly that every `user_version` bump hard-stops older binaries, too high a
+price per cosmetic flag). The interim migration steps that got here were **squashed back to a
+single v1 the same day**, per V0.md's pre-release rule, and the one existing store was deleted by
+hand — but not before the machinery had been exercised for real on live data: `user_version`
+stepping, the pre-migration backup on a non-additive step, and a column-fold via `json_patch` all
+ran and worked. Two knock-on facts worth knowing: `scraper` is now a dependency, which unblocks
+the unknown-class/`style=` logging TODO in `render.rs` — the lenient HTML parser it was waiting
+for is in the tree; and dogfooding this found two more bugs, both fixed: the remembered port lived
+only on the daemon row so a *clean* restart forgot it (now durable in the `meta` table), and CLI
+output piped into `head` panicked on EPIPE (SIGPIPE now restored to default). Same session,
+earlier: `shutdown_timeout(1)`, because a page holding its SSE stream open otherwise made every
+daemon shutdown take the full 30s grace period.
+
+Otherwise: six documents, an MIT licence, no remote.
 
 The 2026-08-03 review changed V0.md in ways worth knowing about if you read it before then:
 
@@ -143,10 +196,12 @@ distribution model. Worth fixing independently.
 **Scroll behaviour when a block arrives.** Likely answer: scroll only when already at the bottom.
 Left unspecified because it wants a real page in front of you.
 
-**The `sv-` class list.** Six to ten classes for what Pico and Bootstrap naming don't cover —
-metric/delta, option cards, decision matrix. Needs designing against real plans, not in the
-abstract. The same now applies to *which* Bootstrap names to implement: the review moved that from
-"the common subset" to a thing to derive from three or four plans an agent actually wrote.
+**The `sv-` class list.** Six to ten classes for what Bootstrap doesn't cover — metric/delta,
+option cards, decision matrix. Needs designing against real plans, not in the abstract. (The
+companion question — *which* Bootstrap names to implement — dissolved on 2026-08-03 when the
+design switched from a borrowed subset to vendoring real Bootstrap 5; see V0.md. What remains
+derivable from real plans is the `sv-` layer and any v4-shim additions the unknown-class logs
+reveal.)
 
 **Which DESIGN.md sections are stale** — each now carries a marker in place, so this list is only a
 map: the schema sketch (predates the cut), "Identifying the session" (tty-based chain), "Lifecycle"
