@@ -162,7 +162,7 @@ body.sv-rail .sv-block > * {
   max-width: 46rem;
 }
 
-body.sv-rail .sv-block > :is(table, pre, figure, .sv-html, .row, .table-responsive, .w-100) {
+body.sv-rail .sv-block > :is(table, pre, figure, .sv-html, .row, .table-responsive, .w-100, .sv-mermaid) {
   max-width: none;
 }
 
@@ -369,6 +369,16 @@ body.sv-rail .sv-block > table {
   display: block;
   width: 100%;
   border: 0;
+}
+
+/* Rendered mermaid diagrams; the svg scales down, never overflows. */
+.sv-mermaid {
+  margin-bottom: 1.25rem;
+}
+
+.sv-mermaid svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* --- the contents rail --------------------------------------------------------

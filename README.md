@@ -46,10 +46,14 @@ The pivotal property:
 
 > **The model names the thing. The daemon fetches and renders it.**
 
-`sideview show readings.parquet` costs the agent about ten tokens and shows you forty
-thousand rows. The data never enters the conversation. Neither does the screenshot, the
-query result, or the log stream. The model stays in charge of *what* to show and out of the
+Naming `readings.parquet` costs the agent about ten tokens and shows you forty thousand
+rows. The data never enters the conversation. Neither does the screenshot, the query
+result, or the log stream. The model stays in charge of *what* to show and out of the
 business of *carrying* it.
+
+(In v0 this is a design rule rather than a shipped command — the `show` subcommand that
+first carried the idea was cut, reasons in V0.md, and the first block type to exercise the
+property will be `table`. Images already work today: `<img src>` in a markup block.)
 
 Because there's a daemon rather than a file, anything the machine can run can be rendered
 into the page: the real query against the real database, the real CLI, the real container.
@@ -60,8 +64,8 @@ thing.
 
 ## Two surfaces, one machinery
 
-**The scratch stream** is the visual scrollback for a session. `sideview show <thing>`
-appends a view and it's on screen immediately. No setup, no document, no ceremony — this is
+**The scratch stream** is the visual scrollback for a session: point the CLI at a thing, a
+view appends, and it's on screen immediately. No setup, no document, no ceremony — this is
 the visual equivalent of piping something to `less`, and it's what makes the tool worth
 having on day one.
 
@@ -109,7 +113,8 @@ testing the change.
 **A CLI's ergonomics.** A real terminal attached to a real build of the binary, three
 example invocations one click away, and the argument for the design written around it.
 
-**Or just: `sideview show screenshot.png`.** Not everything needs to be a plan.
+**Or just: a screenshot on the page** — `<img src="screenshot.png">` in one markup block.
+Not everything needs to be a plan.
 
 ## Aim: no ceremony
 

@@ -41,6 +41,13 @@ Ids are per-session: you can only ever name your own blocks, so use them freely.
 Prefer `update` over appending corrections — plans are revised constantly, and a
 corrected block reads better than a correction below a mistake.
 
+**Prefer `prose` over `markup`.** Markdown is cheaper to write, and the page styles
+it fully — headings, tables, task lists, code. Reach for `markup` only when you need
+components or layout markdown can't express (cards, grids, badges, metrics).
+
+**Diagrams: write a ```mermaid fence in a prose block** — flowchart, sequence,
+state, ER — and it renders on the page. Never draw diagrams out of divs and CSS.
+
 Optionally, set page properties (no ids needed — it applies to your own page):
 
 ```bash

@@ -60,6 +60,36 @@ $railToggle.addEventListener('click', () => {
   refreshOutline();
 });
 
+// Mermaid renders client-side (it only exists as browser JS), themed once at
+// load; startOnLoad off because blocks arrive over SSE, not with the page.
+if (window.mermaid) {
+  window.mermaid.initialize({
+    startOnLoad: false,
+    theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+  });
+}
+
+// comrak renders a ```mermaid fence as <pre><code class="language-mermaid">;
+// swap those for holders mermaid can render into, and also accept the direct
+// spellings (<pre class="mermaid">) an agent might write in a markup block.
+// A bad diagram shows mermaid's own error in place — visible beats silent.
+function renderMermaid(el) {
+  if (!window.mermaid) return;
+  const nodes = [];
+  for (const code of el.querySelectorAll('pre > code.language-mermaid')) {
+    const holder = document.createElement('div');
+    holder.className = 'sv-mermaid';
+    holder.textContent = code.textContent;
+    code.closest('pre').replaceWith(holder);
+    nodes.push(holder);
+  }
+  for (const direct of el.querySelectorAll('pre.mermaid, div.mermaid')) {
+    direct.classList.add('sv-mermaid');
+    nodes.push(direct);
+  }
+  if (nodes.length) window.mermaid.run({ nodes }).catch(() => {});
+}
+
 const es = new EventSource('/events');
 es.addEventListener('open', () => {
   state.connectedAt = Date.now();
@@ -353,6 +383,7 @@ function applyBlock(ev) {
   if (existing) {           // update: patch in place, nothing scrolls or reflows around it
     existing.replaceWith(el);
     activateScripts(el);
+    renderMermaid(el);
     return;
   }
   // Place by ord so the client never needs to know about neighbours.
@@ -364,6 +395,7 @@ function applyBlock(ev) {
   // follows every (re)connect.
   if (Date.now() - state.connectedAt > 1500) el.classList.add('sv-arrive');
   activateScripts(el);
+  renderMermaid(el);
   // Provisional: follow new content only when already at the bottom, never
   // yank away while reading above. V0.md leaves this to be decided by feel.
   if (!next && atBottom && railMode() === 'scrollspy') {
@@ -381,6 +413,7 @@ function renderAllBlocks() {
       if (el) {
         $blocks.appendChild(el);
         activateScripts(el);
+        renderMermaid(el);
       }
     }
   }

@@ -196,7 +196,33 @@ distribution model. Worth fixing independently.
 **Scroll behaviour when a block arrives.** Likely answer: scroll only when already at the bottom.
 Left unspecified because it wants a real page in front of you.
 
-**The frontend framework question** (raised 2026-08-04, deliberately not decided). app.js is
+**The file endpoint serves `.sideview/` itself** — noticed 2026-08-04 when `/f/` got its first
+real use (serving the dogfood experiment's HTML over the tailnet, which worked perfectly).
+`.sideview/` is inside the project root, so `/f/.sideview/sideview.db` is fetchable by any
+tailnet node. Within v0's accepted exposure model, but excluding the store's internals from an
+endpoint that exists for project content is a five-line fix worth making.
+
+**First controlled dogfood (2026-08-04):** three identical subagents summarized this project
+visually — one on sideview (given nothing but the installed skill), one as a local HTML file,
+one as a published Claude Artifact. Sideview: 3:04 total, **first content on screen at 71s**,
+then a block every ~15–20s; 73k tokens. Artifact: 4:20, nothing visible until done; 80k tokens.
+Local HTML: 6:48, nothing until done; 96k tokens (it hand-rolled an entire design system —
+exactly the cost V0.md's premise predicts). n=1, agents varied in self-QA thoroughness, so the
+totals are indicative; the *shape* (streaming vs single reveal, styled-for-free vs
+invent-your-own-CSS) is structural. Skill-tuning observation: the sideview agent wrote 6 of 7
+blocks as `markup` rather than `prose` — if prose-first is wanted, the skill has to say so.
+
+**The author's verdict on looks inverted the speed ranking: local HTML best, artifact middle,
+sideview worst.** Three causes traced, each actionable. (1) The HTML agent invoked the
+frontend-design skill (transcript-verified; the others didn't) and had free rein, where
+sideview's skill deliberately enforces the house style — speed and consistency bought at a
+polish ceiling. (2) Sideview's weakest elements were its hand-drawn diagrams, which makes
+**mermaid the deferral with the strongest evidence against it** — V0.md's Out list says "real
+demand, but not this version"; the demand is now measured, not predicted. (3) The agent
+confidently presented `sideview show readings.parquet` as the pivotal property because
+**README.md still said so** — the 2026-08-03 cut reached V0.md and HANDOFF but never the front
+door. Fixed same day. The doc-rot lesson generalises: a cut isn't done until the docs that
+*sell* the feature are updated, not just the ones that specify it. app.js is
 ~330 lines of hand-rolled DOM state sync and growing; the itch for a no-build framework
 (Alpine, petite-vue, Vue's ESM build) is legitimate. Deliberation so far: two different JS
 domains are conflating. The *page chrome* (rail, strip, spy, dot) is our code and small —
@@ -210,6 +236,20 @@ framework-agnostic, gives them shadow-DOM isolation (DESIGN.md's rung-2 note ret
 lets an agent emit `<sv-something>` as ordinary markup. Constraint to hold either way: whatever
 is adopted must vendor as a single static file into rust-embed — no toolchain, per V0.md's
 frontend section.
+
+**React-controlled blocks, a ladder not a decision** (2026-08-04, prompted by wanting a
+Glide-grid table like querier's). React never controls the page — per-block roots or iframes
+only. Rungs, cheap to expensive: (0) *already works*: a Vite `dist/` copied into the project and
+iframed via the file endpoint (`/f/…`, build with `base: './'`) — this is also the service-block
+spike arriving through the front door, since an iframe can equally point at a running app's own
+port; (1) the deferred `table` block ships as a sideview-precompiled custom element wrapping
+Glide, vendored like Bootstrap — node becomes a maintainer-time toolchain, the one-binary user
+promise survives, and `{sql}` finally exercises reference-never-embed; (2) pane takeover is just
+a session property in the props bag (no migration) — one block filling the viewport below the
+header; (3) artifacts parity — agents writing TSX against a pinned import map of vendored ESM —
+would use SWC embedded in the daemon (Rust, transpile at write time, browser runs native
+modules), not a browser-side Babel. Take rung 0 as an early experiment; take rung 3 only if 0–2
+prove insufficient.
 
 **The `sv-` class list.** Six to ten classes for what Bootstrap doesn't cover — metric/delta,
 option cards, decision matrix. Needs designing against real plans, not in the abstract. (The
