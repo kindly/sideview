@@ -45,8 +45,16 @@ corrected block reads better than a correction below a mistake.
 it fully — headings, tables, task lists, code. Reach for `markup` only when you need
 components or layout markdown can't express (cards, grids, badges, metrics).
 
-**Diagrams: write a ```mermaid fence in a prose block** — flowchart, sequence,
-state, ER — and it renders on the page. Never draw diagrams out of divs and CSS.
+**Diagrams the argument hinges on — architecture, data flow, a comparison — deserve
+hand-authored inline SVG in a markup block.** Native shapes and `<text>`; size with
+`viewBox` (the page scales it); strokes and text in `currentColor` so light and dark
+both work, with at most one literal accent on the element that carries the meaning;
+label the arrows (`writes`, `polls every 30s` — an unlabeled arrow is just "related
+somehow"); align to a grid; wrap in `<figure>` with a `<figcaption>` stating the
+claim. Depict the mechanism, not its name: the path, the boundary, the hop that
+changes — not a box per noun. For quick working sketches (sequence, state, ER), a
+```mermaid fence in a prose block renders themed to the page. Never build diagrams
+out of divs and CSS.
 
 Optionally, set page properties (no ids needed — it applies to your own page):
 

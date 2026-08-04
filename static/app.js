@@ -61,11 +61,34 @@ $railToggle.addEventListener('click', () => {
 });
 
 // Mermaid renders client-side (it only exists as browser JS), themed once at
-// load; startOnLoad off because blocks arrive over SSE, not with the page.
+// load into the house style — paper nodes, ink borders, Plex — because its
+// stock look reads dated (round-2 dogfood verdict). startOnLoad off because
+// blocks arrive over SSE, not with the page.
 if (window.mermaid) {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const v = dark
+    ? { bg: '#16181c', fg: '#dcdad5', soft: '#22252b', line: '#2b2e34' }
+    : { bg: '#fbfaf9', fg: '#23272d', soft: '#f0eeea', line: '#e7e4df' };
   window.mermaid.initialize({
     startOnLoad: false,
-    theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+    theme: 'base',
+    themeVariables: {
+      fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+      fontSize: '14px',
+      background: v.bg,
+      primaryColor: v.bg,
+      primaryTextColor: v.fg,
+      primaryBorderColor: v.fg,
+      lineColor: v.fg,
+      secondaryColor: v.soft,
+      tertiaryColor: v.soft,
+      edgeLabelBackground: v.bg,
+      clusterBkg: v.soft,
+      clusterBorder: v.line,
+      noteBkgColor: v.soft,
+      noteTextColor: v.fg,
+      noteBorderColor: v.line,
+    },
   });
 }
 
