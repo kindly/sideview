@@ -396,6 +396,10 @@ pre.syntax-highlighting .sv-constant {
   line-height: 1.5;
   border-collapse: collapse;
   table-layout: fixed;
+  /* Mobile browsers inflate text inside wide tables; that blows the number
+     column's em budget and wraps digits onto extra rows. Opt out. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .sv-diff-table td {
@@ -406,11 +410,16 @@ pre.syntax-highlighting .sv-constant {
 }
 
 .sv-diff-table td.sv-no {
-  width: 3.2em;
+  width: 3.1em;
+  padding: 0 0.35rem;
   text-align: right;
   color: var(--bs-tertiary-color);
   user-select: none;
   border-right: 1px solid var(--sv-hairline, var(--bs-border-color));
+  /* Digits never wrap, whatever the table inherits. */
+  white-space: nowrap;
+  word-break: normal;
+  overflow: hidden;
 }
 
 .sv-diff-table tr.sv-hunk td {
@@ -444,11 +453,14 @@ pre.syntax-highlighting .sv-constant {
 }
 
 /* Side-by-side needs width it doesn't have on a narrow screen: collapse to
-   unified and hide the toggle rather than wrap into confetti. */
+   unified and hide the toggle rather than wrap into confetti. Code reads
+   fine smaller than prose does — trade size for fewer wrapped lines. */
 @media (max-width: 60rem) {
   .sv-diff .sv-view-split { display: none !important; }
   .sv-diff .sv-view-unified { display: table !important; }
   .sv-diff-toggle { display: none; }
+  .sv-diff-table { font-size: 0.7rem; }
+  .sv-diff-table td.sv-no { width: 2.8em; }
 }
 
 /* --- the prose layer --------------------------------------------------------
