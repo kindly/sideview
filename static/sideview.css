@@ -459,8 +459,9 @@ pre.syntax-highlighting .sv-constant {
   .sv-diff .sv-view-split { display: none !important; }
   .sv-diff .sv-view-unified { display: table !important; }
   .sv-diff-toggle { display: none; }
-  .sv-diff-table { font-size: 0.7rem; }
-  .sv-diff-table td.sv-no { width: 2.8em; }
+  .sv-diff-table { font-size: 0.68rem; line-height: 1.45; }
+  .sv-diff-table td { padding: 0 0.3rem; }
+  .sv-diff-table td.sv-no { width: 2.6em; padding: 0 0.25rem; }
 }
 
 /* --- the prose layer --------------------------------------------------------
@@ -723,6 +724,17 @@ body.sv-rail #sv-outline { display: block; }
 @media (max-width: 991.98px) {
   body.sv-rail { padding-left: 0; }
   body.sv-rail #sv-outline { display: none; }
+  /* The rail bows out, so its column geometry must bow out with it — the
+     desktop side paddings (3.5rem + 2.5rem) are pure gutter on a phone. */
+  body.sv-rail #sv-blocks {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  #sv-blocks {
+    padding: 1.75rem 0.75rem 4rem;
+  }
 }
 
 #sv-outline-top {

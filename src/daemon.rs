@@ -494,6 +494,9 @@ async fn asset(path: web::Path<String>) -> impl Responder {
             .content_type(
                 mime_guess::from_path(&rel).first_or_octet_stream().to_string(),
             )
+            // Embedded assets change on every binary upgrade with unchanged
+            // URLs, and phones cache aggressively: force revalidation.
+            .insert_header(("Cache-Control", "no-cache"))
             .body(f.data.into_owned()),
         None => HttpResponse::NotFound().body(format!("no embedded asset {rel}")),
     }
