@@ -1,9 +1,10 @@
 # sideview
 
-A visual side channel for CLI agents. A working v0 skeleton exists (Rust crate, `cargo test`,
-smoke-tested); the design documents remain the authority on intent.
+A visual side channel for CLI agents. v0 is built and closed (Rust crate, `cargo test`,
+verified live); the design documents remain the authority on intent.
 
-**Read [V0.md](V0.md) first.** It is the scope actually being built. [README.md](README.md) is the
+**Read [V1.md](V1.md) first.** It is the scope actually being built; [V0.md](V0.md) specifies
+everything already shipped and is not re-opened. [README.md](README.md) is the
 premise, [DESIGN.md](DESIGN.md) is the long-term architecture and backlog,
 [SHARING.md](SHARING.md) and [PRIOR-ART.md](PRIOR-ART.md) are supporting research.
 [HANDOFF.md](HANDOFF.md) has current state and what to do next.
@@ -13,9 +14,13 @@ premise, [DESIGN.md](DESIGN.md) is the long-term architecture and backlog,
 These were each argued out at length. Changing them is fine, but do it deliberately, not by
 drift:
 
-- **Scope is v0 only** — prose, markup, html and image blocks. Service blocks, tables, diffs,
-  provenance and sharing are all explicitly deferred. The project has been re-scoped twice; do not
-  re-expand it casually.
+- **Scope is v1** — the centerpiece is *pages are files*: every page's canonical source is a
+  `.sv` block document in the project, with the db demoted to bookkeeping (V1.md's
+  pages-are-files section; author's decision 2026-08-04, after the plan-canonicality
+  discussion). Plus: session deletion (= deleting the file), harness independence
+  (codex/opencode/pi), code highlighting, diff blocks, and the 0.1.0 crates.io release.
+  Tables, app subprocesses, service blocks, provenance and sharing remain explicitly deferred.
+  The project has been re-scoped twice; do not re-expand it casually.
 - **Reference, never embed.** A block spec holds a path, a query or a command — never the content.
   The entire point is that data reaches the page without passing through the model's context. If
   an agent must read the data in order to display it, the block is designed wrong.
@@ -38,6 +43,10 @@ is why the daemon is started by hand, why every agent→daemon channel is the SQ
 liveness is a timestamp rather than a ping.
 
 ## Working here
+
+Dogfood first: nothing is implemented before its design has appeared on the live sideview page
+(author's rule, set at v1 scoping). Keep that page terse — features and goals; rationale
+belongs in the design docs.
 
 Code and docs move together: when the code diverges from a documented decision, update the doc in
 the same change, in the same register. Keep docs as they are: decisions with their

@@ -40,6 +40,20 @@ provisional scroll behaviour. (Historical: session labels gained a writer and th
 code-review bugs — swallowed SSE `Lagged`, unencoded session ids — were fixed with pinning
 tests before the first commit.)
 
+**v1 was scoped the same evening (2026-08-04), by the author, then re-founded within hours:
+[V1.md](V1.md).** The goal is 0.1.0 on crates.io. Dogfooding the plan immediately exposed the
+canonicality dichotomy (the plan existed as V1.md *and* as page blocks — which is correct?),
+and the discussion landed somewhere bigger than the original scope: **pages are files.** Every
+page's canonical source becomes a `.sv` block document — throwaway ones implicit in
+`.sideview/pages/`, document ones committed in the repo — with the db demoted to daemon
+bookkeeping, bindings and derived replay state ("delete the db and no content is lost"). The
+rest of v1 lands on top: session deletion (= deleting the file; three earlier designs and the
+whole rev-counter problem dissolved — see V1.md), harness independence proven live in
+codex/opencode/pi, code highlighting (syntect, class-based, duotone), and diff blocks
+(`git diff | sideview diff`, file paths as outline headings). Explicitly deferred: tables and
+app subprocesses. Also set at scoping, author's rule: **dogfood first** — nothing is
+implemented before its design has appeared on the live page.
+
 **Later the same day, the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
 only, with a prose layer for bare markdown elements and a v4-compat shim in `sideview.css`.
 Pico is gone. V0.md's design-system section records the reversal, why the borrowed-subset

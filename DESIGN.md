@@ -146,6 +146,14 @@ glancing at.
 
 ## Store vs. interface
 
+> **Superseded in part by [V1.md](V1.md)'s "Pages are files" (2026-08-04).** The four reasons
+> below were real, and each is answered rather than ignored by the sv-document: explicit `id=`
+> gives stable block identity; reparse-diff by id makes patches precise without guessing; a
+> whole-file write lands its blocks together, with partial writes named and tolerated; and the
+> db remains for what needs anchoring (outputs, history, feedback), now anchored to ids durable
+> in a committed file. The store stays — demoted to bookkeeping and derived state, no longer
+> the canonical home of content. The CLI-as-interface half of this section stands.
+
 These are separate questions and were tangled together earlier.
 
 **The store is SQLite.** Blocks are rows, not text in a document. That buys four things
