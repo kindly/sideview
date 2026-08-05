@@ -134,7 +134,17 @@ es.addEventListener('error', () => {
 
 es.addEventListener('sessions', (e) => {
   state.sessions = JSON.parse(e.data).sessions;
-  if (!state.pinned && state.sessions.length) {
+  // The snapshot is authoritative: a session it doesn't list is gone, blocks
+  // and all — this is how deletion reaches every open tab.
+  const ids = new Set(state.sessions.map((s) => s.id));
+  for (const held of [...state.blocks.keys()]) {
+    if (!ids.has(held)) state.blocks.delete(held);
+  }
+  if (state.selected && !ids.has(state.selected)) {
+    state.pinned = false;
+    history.replaceState(null, '', '/');
+    switchSession(state.sessions[0]?.id ?? null);
+  } else if (!state.pinned && state.sessions.length) {
     const top = state.sessions[0].id;
     if (top !== state.selected) {
       switchSession(top);
@@ -167,17 +177,44 @@ function switchSession(id) {
 function renderSessionStrip() {
   $sessions.textContent = '';
   for (const s of state.sessions) {
+    const chip = document.createElement('span');
+    chip.className = 'sv-chip' + (s.id === state.selected ? ' active' : '');
+
     const btn = document.createElement('button');
+    btn.className = 'sv-chip-label';
     btn.textContent = (s.props && s.props.label) || shortLabel(s.id);
     btn.title = s.id;
-    btn.classList.toggle('active', s.id === state.selected);
     btn.addEventListener('click', () => {
       state.pinned = true;
       history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
       switchSession(s.id);
       renderSessionStrip();
     });
-    $sessions.appendChild(btn);
+
+    // Deletion is the page's one write, and it's irrevocable (the file goes),
+    // so it's two-step: first click arms, second confirms, and it disarms
+    // itself. No dialog — dialogs train reflexive clicking.
+    const del = document.createElement('button');
+    del.className = 'sv-chip-del';
+    del.textContent = '×';
+    del.title = 'delete this page';
+    let disarm = 0;
+    del.addEventListener('click', () => {
+      if (!chip.classList.contains('sv-armed')) {
+        chip.classList.add('sv-armed');
+        del.title = 'click again to delete — removes the page file';
+        disarm = setTimeout(() => {
+          chip.classList.remove('sv-armed');
+          del.title = 'delete this page';
+        }, 3000);
+        return;
+      }
+      clearTimeout(disarm);
+      fetch('/api/sessions/' + encodeURIComponent(s.id), { method: 'DELETE' }).catch(() => {});
+    });
+
+    chip.append(btn, del);
+    $sessions.appendChild(chip);
   }
 }
 

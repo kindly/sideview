@@ -82,6 +82,10 @@ struct AppState {
     shared: Arc<Mutex<Shared>>,
     root: PathBuf,
     tx: broadcast::Sender<Outgoing>,
+    /// For the page's one write (session deletion) and the shutdown clear.
+    /// The poll loop has its own connection; handlers otherwise never touch
+    /// the store.
+    store: Mutex<Store>,
 }
 
 #[derive(rust_embed::Embed)]
@@ -186,7 +190,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     let root = store.root.clone();
-    let state = Data::new(AppState { shared, root, tx });
+    let state = Data::new(AppState { shared, root, tx, store: Mutex::new(store) });
 
     let server_state = state.clone();
     actix_web::rt::System::new().block_on(async move {
@@ -196,6 +200,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 .route("/", web::get().to(page))
                 .route("/s/{session}", web::get().to(page))
                 .route("/events", web::get().to(events))
+                .route("/api/sessions/{session}", web::delete().to(delete_session))
                 .route("/f/{path:.*}", web::get().to(project_file))
                 .route("/assets/{path:.*}", web::get().to(asset))
         })
@@ -212,9 +217,34 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     })?;
 
     // Ctrl-C lands here: clean shutdown clears the row (only as its holder).
-    store.clear_daemon(&instance_id)?;
+    state.store.lock().unwrap().clear_daemon(&instance_id)?;
     eprintln!("daemon stopped");
     Ok(())
+}
+
+/// The page's one write into the project: tidying power, not authoring power
+/// (V1.md) — anyone who can see the page can delete a session, and cannot
+/// create or alter content. Deleting a page is deleting its file; the poll
+/// loop notices the binding is gone on its next tick and the sessions
+/// snapshot converges every client.
+async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
+    let id = path.into_inner();
+    let store = state.store.lock().unwrap();
+    let Ok(Some(binding)) = store.binding(&id) else {
+        return HttpResponse::NotFound().body(format!("no session {id:?}"));
+    };
+    let file = state.root.join(&binding.path);
+    if let Err(e) = std::fs::remove_file(&file) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            return HttpResponse::InternalServerError()
+                .body(format!("removing {}: {e}", file.display()));
+        }
+    }
+    let _ = std::fs::remove_file(file.with_extension("sv.lock"));
+    match store.delete_binding(&id) {
+        Ok(_) => HttpResponse::NoContent().finish(),
+        Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
+    }
 }
 
 /// Change detection, liveness, supersession and the deleted-underneath-us
@@ -637,6 +667,7 @@ mod tests {
             shared: Arc::new(Mutex::new(Shared::default())),
             root: store.root.clone(),
             tx,
+            store: Mutex::new(store),
         });
         let app = actix_web::test::init_service(
             actix_web::App::new()
@@ -662,6 +693,41 @@ mod tests {
                 assert!(refused, "{path} must be forbidden, got {}", res.status());
             }
         }
+    }
+
+    #[actix_web::test]
+    async fn delete_session_removes_file_and_binding_and_404s_on_unknown() {
+        let dir = std::env::temp_dir().join(format!("sv-del-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        store.bind_session("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
+        let file = store.pages_dir().unwrap().join("s1.sv");
+        std::fs::write(&file, "<sv-prose id=\"b1\">\nx\n</sv-prose>\n").unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/api/sessions/{session}", web::delete().to(delete_session)),
+        )
+        .await;
+
+        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/nope").to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status(), actix_web::http::StatusCode::NOT_FOUND);
+
+        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/s1").to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status(), actix_web::http::StatusCode::NO_CONTENT);
+        assert!(!file.exists(), "the page file is deleted");
+        assert!(
+            state.store.lock().unwrap().binding("s1").unwrap().is_none(),
+            "the binding is deleted"
+        );
     }
 
     /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed

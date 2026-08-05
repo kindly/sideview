@@ -75,6 +75,7 @@ Optionally, set page properties (no ids needed — it applies to your own page):
 sideview session set --label "Parser fix plan"   # names the page in the header strip
 sideview session set --outline tabs              # sections become separate panes
 sideview session set --outline off               # no contents rail on this page
+sideview session rm                              # delete your page, file and all (rarely needed)
 ```
 
 Pages with sections get a contents rail automatically, built from your blocks'

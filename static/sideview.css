@@ -144,27 +144,62 @@
   scrollbar-width: none;
 }
 
-#sv-sessions button {
-  font-family: var(--sv-mono);
-  font-size: 0.78rem;
-  padding: 0.1rem 0.6rem;
-  margin: 0;
-  background: transparent;
-  color: var(--bs-secondary-color);
+/* A chip is a bordered pair: the label switches, the × deletes (two-step —
+   .sv-armed is the armed state, and it disarms itself). */
+.sv-chip {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--bs-border-color);
   border-radius: var(--bs-border-radius);
   white-space: nowrap;
 }
 
-#sv-sessions button:hover {
-  color: var(--bs-body-color);
+.sv-chip button {
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: var(--bs-secondary-color);
+}
+
+.sv-chip-label {
+  padding: 0.1rem 0.15rem 0.1rem 0.6rem;
+}
+
+.sv-chip-del {
+  padding: 0.1rem 0.45rem 0.1rem 0.15rem;
+  opacity: 0.35;
+}
+
+.sv-chip:hover {
   border-color: var(--bs-secondary-color);
 }
 
-#sv-sessions button.active {
-  color: var(--sv-ink);
+.sv-chip:hover button {
+  color: var(--bs-body-color);
+}
+
+.sv-chip:hover .sv-chip-del {
+  opacity: 0.8;
+}
+
+.sv-chip.active {
   border-color: var(--sv-ink);
   background: color-mix(in srgb, var(--sv-ink) 8%, transparent);
+}
+
+.sv-chip.active button {
+  color: var(--sv-ink);
+}
+
+.sv-chip.sv-armed {
+  border-color: var(--bs-danger);
+}
+
+.sv-chip.sv-armed .sv-chip-del {
+  color: var(--bs-danger);
+  opacity: 1;
 }
 
 /* --- the document ----------------------------------------------------------- */

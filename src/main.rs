@@ -102,6 +102,13 @@ enum SessionCmd {
         #[command(flatten)]
         author: AuthorArgs,
     },
+    /// Delete a page: its file and its binding. No id means this session's
+    Rm {
+        /// The session to delete (defaults to your own)
+        id: Option<String>,
+        #[command(flatten)]
+        author: AuthorArgs,
+    },
 }
 
 #[derive(Subcommand)]
@@ -149,6 +156,9 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Rm { id, author }) => cli::rm(&id, author.session.as_deref()),
         Some(Cmd::Session { action: SessionCmd::Set { label, outline, author } }) => {
             cli::session_set(author.session.as_deref(), label.as_deref(), outline.as_deref())
+        }
+        Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
+            cli::session_rm(author.session.as_deref(), id.as_deref())
         }
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),

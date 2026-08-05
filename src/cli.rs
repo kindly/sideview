@@ -425,6 +425,40 @@ pub fn session_set(
     Ok(())
 }
 
+/// `sideview session rm [id]` — delete a page: its file, its sidecar lock,
+/// its binding. No id means your own, matching `session set`. Deliberately
+/// never touches the daemon: deletion must not auto-spawn one, and a running
+/// one notices the binding vanish on its next tick.
+pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()> {
+    let store = open_project_store()?;
+    let target = match id {
+        Some(id) => id.to_string(),
+        None => {
+            let cwd = std::env::current_dir()?;
+            session::resolve(explicit_session, &cwd).id
+        }
+    };
+    // The binding's path wins; without one, the deterministic throwaway
+    // location — so `session rm` works even after a `reset` dropped the db.
+    let rel = store
+        .binding(&target)?
+        .map(|b| b.path)
+        .unwrap_or_else(|| session::page_rel_path(&target));
+    let file = store.root.join(&rel);
+    let had_binding = store.delete_binding(&target)?;
+    let had_file = match std::fs::remove_file(&file) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(e).with_context(|| format!("removing {}", file.display())),
+    };
+    let _ = std::fs::remove_file(file.with_extension("sv.lock"));
+    if !had_binding && !had_file {
+        bail!("no session {target}");
+    }
+    eprintln!("removed session {target} ({rel})");
+    Ok(())
+}
+
 pub fn sessions() -> Result<()> {
     let store = open_project_store()?;
     let port = store.daemon_alive()?.filter(|d| d.reachable).map(|d| d.port);

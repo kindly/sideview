@@ -68,6 +68,15 @@ the delete-the-db test passed for real. The skill gained its your-page-is-a-file
 (direct edits are equivalent to the CLI; never escape inside a block; tags count at column 0)
 and was re-installed current.
 
+**Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
+session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
+/api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and
+self-disarming, tidying power rather than authoring power. Both remove file + sidecar lock +
+binding; the poll loop notices the binding vanish, and every tab converges because the client
+now treats the sessions snapshot as authoritative (blocks of unlisted sessions are dropped —
+also what heals a tab that slept through a deletion). Verified live in both directions; the
+scratch sessions used for the test were themselves deleted through the feature. 28 tests.
+
 **Later the same day (2026-08-04), the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
 only, with a prose layer for bare markdown elements and a v4-compat shim in `sideview.css`.
 Pico is gone. V0.md's design-system section records the reversal, why the borrowed-subset

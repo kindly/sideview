@@ -220,6 +220,13 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Drop a binding. Returns whether one existed — deleting the file is the
+    /// caller's job (the binding is bookkeeping; the file is the content).
+    pub fn delete_binding(&self, id: &str) -> Result<bool> {
+        let n = self.conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+        Ok(n > 0)
+    }
+
     // ---- meta --------------------------------------------------------------
 
     pub fn meta(&self, key: &str) -> Result<Option<String>> {
