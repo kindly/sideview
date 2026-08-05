@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["agent", "cli", "markdown", "live", "daemon"]
 categories = ["command-line-utilities", "development-tools"]
-# repository = set when the project gets a public home
+repository = "https://github.com/kindly/sideview"
 
 [dependencies]
 actix-web = "4.14.0"
