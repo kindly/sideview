@@ -47,7 +47,28 @@ pub fn block(id: &str, b: &Block) -> String {
 fn markdown_opts(text: &str, header_id_prefix: Option<&str>) -> String {
     let mut options = comrak_options();
     options.extension.header_id_prefix = header_id_prefix.map(str::to_string);
-    comrak::markdown_to_html(text, &options)
+    let mut plugins = comrak::options::Plugins::default();
+    plugins.render.codefence_syntax_highlighter = Some(highlighter());
+    comrak::markdown_to_html_with_plugins(text, &options, &plugins)
+}
+
+/// Syntect, in the same pass that renders the markdown — highlighting is not
+/// a second system (V1.md). Class-based output, never inline styles: one
+/// rendered HTML string serves both themes, and the classes get a duotone
+/// treatment in sideview.css. Built once: loading the syntax set costs real
+/// milliseconds and the daemon renders on every poll tick.
+///
+/// A ```mermaid fence passes through unharmed — syntect wraps its text in
+/// spans, but the client reads `textContent` of `code.language-mermaid`, and
+/// comrak keeps that class on the code tag regardless of the highlighter.
+fn highlighter() -> &'static comrak::plugins::syntect::SyntectAdapter {
+    static ADAPTER: std::sync::OnceLock<comrak::plugins::syntect::SyntectAdapter> =
+        std::sync::OnceLock::new();
+    ADAPTER.get_or_init(|| {
+        comrak::plugins::syntect::SyntectAdapterBuilder::new()
+            .css_with_class_prefix("sv-")
+            .build()
+    })
 }
 
 fn comrak_options() -> comrak::Options<'static> {
@@ -174,6 +195,32 @@ mod tests {
         let page = format::parse(src);
         assert_eq!(page.blocks.len(), 1, "test fixture must be one block");
         page.blocks.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn code_fences_highlight_with_prefixed_classes_and_no_inline_styles() {
+        let b = parse_one(
+            "<sv-prose id=\"b1\">\n```rust\nfn main() { let x = \"hi\"; }\n```\n</sv-prose>",
+        );
+        let html = block("b1", &b);
+        assert!(html.contains("sv-keyword"), "keywords get classed: {html}");
+        assert!(html.contains("sv-string"), "strings get classed: {html}");
+        assert!(
+            !html.contains("style=\"background"),
+            "class mode, never a baked-in theme: {html}"
+        );
+    }
+
+    #[test]
+    fn mermaid_fences_keep_their_client_side_contract() {
+        let b = parse_one(
+            "<sv-prose id=\"b2\">\n```mermaid\ngraph LR\nA --> B\n```\n</sv-prose>",
+        );
+        let html = block("b2", &b);
+        assert!(
+            html.contains(r#"class="language-mermaid""#),
+            "the client's selector is `code.language-mermaid`: {html}"
+        );
     }
 
     #[test]

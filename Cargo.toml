@@ -8,7 +8,8 @@ actix-web = "4.14.0"
 actix-web-lab = "0.26.0"
 anyhow = "1.0.104"
 clap = { version = "4.6.5", features = ["derive", "env"] }
-comrak = { version = "0.54.0", default-features = false }
+# syntect-fancy: the pure-Rust regex backend, not the C oniguruma one (V1.md).
+comrak = { version = "0.54.0", default-features = false, features = ["syntect-fancy"] }
 futures-util = "0.3.33"
 if-addrs = "0.15.0"
 libc = "0.2.189"

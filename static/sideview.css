@@ -305,6 +305,40 @@ body.sv-rail .sv-block > table {
   margin-bottom: 0.5rem;
 }
 
+/* --- code highlighting ---------------------------------------------------
+   Syntect classes (sv- prefixed), rendered server-side in the same pass as
+   the markdown. Duotone like everything else on the page: ink for the
+   load-bearing tokens, grays for the incidental, nothing rainbow. One rule
+   set serves both themes because every color is a token that already swaps. */
+
+pre.syntax-highlighting .sv-keyword,
+pre.syntax-highlighting .sv-storage {
+  color: var(--sv-ink);
+}
+
+/* …but not operators: inking every `=` and `+` is noise, not emphasis. */
+pre.syntax-highlighting .sv-keyword.sv-operator {
+  color: inherit;
+}
+
+/* Names being defined or called: weight, not color. */
+pre.syntax-highlighting .sv-entity {
+  font-weight: 600;
+}
+
+pre.syntax-highlighting .sv-string {
+  color: var(--bs-secondary-color);
+}
+
+pre.syntax-highlighting .sv-comment {
+  color: var(--bs-tertiary-color);
+  font-style: italic;
+}
+
+pre.syntax-highlighting .sv-constant {
+  color: color-mix(in srgb, var(--sv-ink) 70%, var(--bs-body-color));
+}
+
 /* --- the prose layer --------------------------------------------------------
    comrak emits bare elements; Bootstrap's reboot leaves them nearly unstyled.
    These selectors give class-less markdown the treatment Bootstrap's own

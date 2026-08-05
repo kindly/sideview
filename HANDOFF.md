@@ -68,6 +68,16 @@ the delete-the-db test passed for real. The skill gained its your-page-is-a-file
 (direct edits are equivalent to the CLI; never escape inside a block; tags count at column 0)
 and was re-installed current.
 
+**Code highlighting landed 2026-08-05**: syntect through comrak's adapter (`syntect-fancy`,
+pure Rust), class-based with an `sv-` prefix, in the same render pass as the markdown. The
+duotone treatment lives in sideview.css — keywords/storage in ink, operators deliberately
+exempted (inking every `=` is noise), entities by weight not color, strings/comments in grays,
+one rule set for both themes since every color is a token that swaps. Mermaid fences keep
+their `code.language-mermaid` contract (the client reads `textContent`, so syntect's spans are
+harmless) — test-pinned. Cost: +1.1 MB on the binary (16.2 → 17.3 MB), the embedded default
+syntax set; fine against crates.io's 10 MB *package* cap since the syntax set ships inside
+syntect, not our crate.
+
 **Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
 session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
 /api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and
