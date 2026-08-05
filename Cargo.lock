@@ -408,6 +408,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f7dc094d718f2e1c1559ad110e27eeaae14a5465d3d56dd6dbd793079fbd530"
+dependencies = [
+ "memchr",
+ "serde_core",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -654,6 +664,15 @@ dependencies = [
  "rustc_version",
  "syn 2.0.119",
  "unicode-xid",
+]
+
+[[package]]
+name = "diffy"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10aec8f7f9393bd6a4f2762be0ceb012d3cbe2478987258cc9960de148561914"
+dependencies = [
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -1795,6 +1814,7 @@ dependencies = [
  "anyhow",
  "clap",
  "comrak",
+ "diffy",
  "futures-util",
  "if-addrs",
  "libc",
@@ -1805,6 +1825,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "similar",
  "tokio",
  "tokio-stream",
  "uuid",
@@ -1825,6 +1846,15 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "similar"
+version = "3.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ee016af5d736b69fc89e19254540fa4b5f5492853fb5503920f084011c78b6"
+dependencies = [
+ "bstr",
+]
 
 [[package]]
 name = "siphasher"

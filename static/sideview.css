@@ -339,6 +339,118 @@ pre.syntax-highlighting .sv-constant {
   color: color-mix(in srgb, var(--sv-ink) 70%, var(--bs-body-color));
 }
 
+/* --- diff blocks -----------------------------------------------------------
+   Both views live in the block's HTML; data-view on the figure decides which
+   shows, so the toggle is instant. Duotone tints: additions lean ink,
+   removals lean the warm warning tone — backgrounds, not text colors, so the
+   code stays readable in both themes. */
+
+.sv-diff {
+  margin: 0;
+}
+
+.sv-diff[data-view='unified'] .sv-view-split { display: none; }
+.sv-diff[data-view='split'] .sv-view-unified { display: none; }
+
+.sv-diff-bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sv-diff-toggle {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  padding: 0.05rem 0.5rem;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+}
+
+.sv-diff-toggle:hover {
+  color: var(--bs-body-color);
+  border-color: var(--bs-secondary-color);
+}
+
+.sv-diff-path {
+  font-family: var(--sv-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35rem 0;
+  margin-top: 0.75rem;
+  border-bottom: 1px solid var(--sv-hairline, var(--bs-border-color));
+  scroll-margin-top: calc(var(--sv-header-h) + 1rem);
+}
+
+.sv-diff-note {
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color);
+  padding: 0.4rem 0;
+}
+
+.sv-diff-table {
+  width: 100%;
+  font-family: var(--sv-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.sv-diff-table td {
+  padding: 0 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.sv-diff-table td.sv-no {
+  width: 3.2em;
+  text-align: right;
+  color: var(--bs-tertiary-color);
+  user-select: none;
+  border-right: 1px solid var(--sv-hairline, var(--bs-border-color));
+}
+
+.sv-diff-table tr.sv-hunk td {
+  color: var(--bs-tertiary-color);
+  font-size: 0.72rem;
+  padding-top: 0.45rem;
+  padding-bottom: 0.15rem;
+}
+
+/* Row tints (unified) and cell tints (split). */
+.sv-diff-table tr.sv-del td:not(.sv-no),
+.sv-diff-table td.sv-del {
+  background: color-mix(in srgb, #c98a2b 9%, transparent);
+}
+
+.sv-diff-table tr.sv-ins td:not(.sv-no),
+.sv-diff-table td.sv-ins {
+  background: color-mix(in srgb, var(--sv-ink) 8%, transparent);
+}
+
+/* Intraline emphasis: a deeper wash of the same tone, no strikethrough —
+   the row already says which side you're reading. */
+.sv-diff-table del {
+  text-decoration: none;
+  background: color-mix(in srgb, #c98a2b 26%, transparent);
+}
+
+.sv-diff-table ins {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--sv-ink) 22%, transparent);
+}
+
+/* Side-by-side needs width it doesn't have on a narrow screen: collapse to
+   unified and hide the toggle rather than wrap into confetti. */
+@media (max-width: 60rem) {
+  .sv-diff .sv-view-split { display: none !important; }
+  .sv-diff .sv-view-unified { display: table !important; }
+  .sv-diff-toggle { display: none; }
+}
+
 /* --- the prose layer --------------------------------------------------------
    comrak emits bare elements; Bootstrap's reboot leaves them nearly unstyled.
    These selectors give class-less markdown the treatment Bootstrap's own

@@ -78,6 +78,21 @@ harmless) — test-pinned. Cost: +1.1 MB on the binary (16.2 → 17.3 MB), the e
 syntax set; fine against crates.io's 10 MB *package* cap since the syntax set ships inside
 syntect, not our crate.
 
+**Diff blocks landed 2026-08-05**: `git diff | sideview diff`, the fourth block type. diffy's
+`PatchSet` parses (git extended format: renames, creates, binary entries — all titled
+honestly); the aligned model is ours (removed/added runs paired index-wise, unpaired lines
+against empty cells); `similar` marks word-level `<del>`/`<ins>` on paired lines, gated by
+*character*-level ratio ≥ 0.4 — word tokenization counts whitespace as matches and flatters
+unrelated lines, a bug the tests caught on day one. Both views render into one HTML string
+(inactive hidden by `data-view`); `view=` on the block is the agent's default, the client
+toggle is the viewer's override remembered per block, narrow screens collapse to unified.
+File paths are outline h2s with anchors — the rail navigates a multi-file diff (verified live
+on the session-deletion commit itself: 8 files, 8 rail sections). Garbage degrades to raw
+mono with an honest note; a mid-diff parse failure renders the files that parsed plus a
+visible "rest could not be parsed". Duotone tints: additions lean ink, removals lean the warm
+tone, intraline is a deeper wash of the same. Deferred within diff (V1.md): syntax
+highlighting inside lines, `src=` references; watched diffs are committed to v2 via gitoxide.
+
 **Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
 session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
 /api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and

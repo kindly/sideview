@@ -16,6 +16,10 @@ pub fn block(id: &str, b: &Block) -> String {
         // is code you own in a page only you can reach. See DESIGN.md.
         "sv-markup" => ("sv-block", b.body.clone()),
         "sv-html" => ("sv-block", iframe(&b.body)),
+        "sv-diff" => (
+            "sv-block",
+            crate::diff::render(id, &b.body, b.attr("view").unwrap_or("unified")),
+        ),
         // The parser's honest container for top-level content outside any
         // block — shown raw so the author can see exactly what to fix.
         "sv-stray" => ("sv-block sv-degraded", preformatted(&b.body)),
@@ -107,6 +111,8 @@ pub fn outline(id: &str, b: &Block) -> Vec<Heading> {
         "sv-markup" => fragment_outline(&b.body, true),
         // Real headings, but behind a sandboxed iframe: listed, not anchored.
         "sv-html" => fragment_outline(&b.body, false),
+        // File paths as sections — the rail navigates a multi-file diff.
+        "sv-diff" => crate::diff::outline(id, &b.body),
         _ => Vec::new(),
     }
 }
@@ -182,7 +188,7 @@ fn attr_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('"', "&quot;")
 }
 
-fn text_escape(s: &str) -> String {
+pub(crate) fn text_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 

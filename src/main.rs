@@ -1,5 +1,6 @@
 mod cli;
 mod daemon;
+mod diff;
 mod format;
 mod netcheck;
 mod render;
@@ -42,6 +43,8 @@ enum Cmd {
     Markup(AuthorArgs),
     /// Append a whole HTML document, isolated in an iframe (stdin); prints the block id
     Html(AuthorArgs),
+    /// Append a unified diff (stdin — e.g. `git diff | sideview diff`); prints the block id
+    Diff(AuthorArgs),
     /// Replace a block's content in place (new content on stdin)
     Update {
         /// The id an authoring command printed, e.g. b7
@@ -131,7 +134,8 @@ fn kind(name: &str) -> anyhow::Result<cli::Kind> {
         "prose" => Ok(cli::Kind::Prose),
         "markup" => Ok(cli::Kind::Markup),
         "html" => Ok(cli::Kind::Html),
-        other => anyhow::bail!("unknown block type {other:?} (prose, markup or html)"),
+        "diff" => Ok(cli::Kind::Diff),
+        other => anyhow::bail!("unknown block type {other:?} (prose, markup, html or diff)"),
     }
 }
 
@@ -150,6 +154,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref()),
         Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref()),
         Some(Cmd::Html(a)) => cli::author(cli::Kind::Html, a.session.as_deref()),
+        Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.session.as_deref()),
         Some(Cmd::Update { id, r#type, author }) => {
             cli::update(&id, kind(&r#type)?, author.session.as_deref())
         }

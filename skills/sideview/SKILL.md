@@ -30,6 +30,11 @@ EOF
 
 sideview html < page.html   # a whole HTML document, isolated in an iframe
 
+git diff | sideview diff    # a unified diff, rendered properly — file paths
+                            # become outline sections; the viewer can switch
+                            # unified ⇄ side-by-side. Pipe straight from git:
+                            # the diff never needs to enter your context.
+
 sideview update b1 <<'EOF'  # replace a block in place — the page patches, nothing reflows
 ## The plan (revised)
 EOF

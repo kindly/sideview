@@ -415,6 +415,32 @@ addEventListener('scroll', () => {
   });
 }, { passive: true });
 
+// ---- diff blocks --------------------------------------------------------------
+// The agent's view attribute is the default; the viewer's toggle wins and is
+// remembered per block — the same symmetry as the outline rail. Delegated,
+// because blocks are replaced wholesale on every SSE patch.
+
+function diffPrefKey(block) {
+  return 'sv-diffview:' + state.selected + ':' + block;
+}
+
+function applyDiffPref(el) {
+  const fig = el.querySelector('.sv-diff');
+  if (!fig) return;
+  const stored = localStorage.getItem(diffPrefKey(el.dataset.block));
+  if (stored === 'split' || stored === 'unified') fig.dataset.view = stored;
+}
+
+$blocks.addEventListener('click', (e) => {
+  const t = e.target.closest('.sv-diff-toggle');
+  if (!t) return;
+  const fig = t.closest('.sv-diff');
+  const next = fig.dataset.view === 'split' ? 'unified' : 'split';
+  fig.dataset.view = next;
+  const section = t.closest('[data-block]');
+  if (section) localStorage.setItem(diffPrefKey(section.dataset.block), next);
+});
+
 // ---- blocks -----------------------------------------------------------------
 
 function elementFor(blockId, html, ord) {
@@ -445,6 +471,7 @@ function applyBlock(ev) {
   }
   const el = elementFor(ev.block, ev.html, ev.ord);
   if (!el) return;
+  applyDiffPref(el);
   if (existing) {
     if ((existing.dataset.ord || '') === ev.ord) {
       // update: patch in place, nothing scrolls or reflows around it
@@ -481,6 +508,7 @@ function renderAllBlocks() {
     for (const [id, b] of sorted) {
       const el = elementFor(id, b.html, b.ord);
       if (el) {
+        applyDiffPref(el);
         $blocks.appendChild(el);
         activateScripts(el);
         renderMermaid(el);

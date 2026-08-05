@@ -28,6 +28,7 @@ pub enum Kind {
     Prose,
     Markup,
     Html,
+    Diff,
 }
 
 impl Kind {
@@ -36,6 +37,7 @@ impl Kind {
             Kind::Prose => "sv-prose",
             Kind::Markup => "sv-markup",
             Kind::Html => "sv-html",
+            Kind::Diff => "sv-diff",
         }
     }
 }
