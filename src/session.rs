@@ -28,6 +28,14 @@ pub fn resolve(explicit: Option<&str>, cwd: &Path) -> Resolved {
             return Resolved { id, detected_from: "claude-code" };
         }
     }
+    // codex exposes its thread id to shell executions; whether opencode and
+    // pi expose an equivalent is an open question the harness matrix answers
+    // empirically (V1.md) — until then they land on the tmux/cwd rungs.
+    if let Ok(id) = std::env::var("CODEX_THREAD_ID") {
+        if !id.is_empty() {
+            return Resolved { id, detected_from: "codex" };
+        }
+    }
     if let Ok(pane) = std::env::var("TMUX_PANE") {
         if !pane.is_empty() {
             return Resolved { id: format!("tmux{pane}"), detected_from: "tmux" };
@@ -42,7 +50,9 @@ pub fn resolve(explicit: Option<&str>, cwd: &Path) -> Resolved {
 /// Are we inside an agent at all? Cheap, and only used for deciding whether
 /// to attempt a browser launch versus just printing the URL.
 pub fn inside_agent() -> bool {
-    std::env::var_os("CLAUDECODE").is_some() || std::env::var_os("AI_AGENT").is_some()
+    std::env::var_os("CLAUDECODE").is_some()
+        || std::env::var_os("AI_AGENT").is_some()
+        || std::env::var_os("CODEX_THREAD_ID").is_some()
 }
 
 /// Session ids appear as URL path segments and as page file names, and the

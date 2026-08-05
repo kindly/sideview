@@ -116,16 +116,23 @@ enum SessionCmd {
 
 #[derive(Subcommand)]
 enum SkillCmd {
-    /// Write the embedded skill to ~/.claude/skills/sideview/
+    /// Write the embedded skill to every present harness's skills dir
+    /// (claude, codex, opencode, pi)
     Install {
         /// Write to ./.claude/skills/ instead, for committing to the repo
         #[arg(long)]
         project: bool,
+        /// Only this harness: claude, codex, opencode or pi
+        #[arg(long)]
+        agent: Option<String>,
     },
     /// Remove the installed skill
     Uninstall {
         #[arg(long)]
         project: bool,
+        /// Only this harness: claude, codex, opencode or pi
+        #[arg(long)]
+        agent: Option<String>,
     },
 }
 
@@ -169,8 +176,12 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Styles) => cli::styles(),
         Some(Cmd::Reset) => cli::reset(),
-        Some(Cmd::Skill { action: SkillCmd::Install { project } }) => skill::install(project),
-        Some(Cmd::Skill { action: SkillCmd::Uninstall { project } }) => skill::uninstall(project),
+        Some(Cmd::Skill { action: SkillCmd::Install { project, agent } }) => {
+            skill::install(project, agent.as_deref())
+        }
+        Some(Cmd::Skill { action: SkillCmd::Uninstall { project, agent } }) => {
+            skill::uninstall(project, agent.as_deref())
+        }
         Some(Cmd::InternalDaemon { open, bind }) => {
             let cwd = std::env::current_dir()?;
             let dir = store::find_store_dir(&cwd);
