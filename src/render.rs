@@ -1,56 +1,49 @@
-//! The daemon sends rendered HTML, not specs. comrak runs here, the design
+//! The daemon sends rendered HTML, not sources. comrak runs here, the design
 //! vocabulary lives here, and the SSE payload is the finished element — so the
 //! client never needs a markdown parser and cannot drift out of sync.
 
-use crate::spec::{self, Decoded, Spec};
+use crate::format::Block;
 
-/// Render a stored block into the element the page inserts. Never errors:
-/// an undecodable spec renders as a visibly marked degraded block.
-pub fn block(short_id: &str, spec_json: &str) -> String {
-    match spec::decode(spec_json) {
-        Ok(Decoded::Known(spec)) => known(short_id, &spec),
-        Ok(Decoded::Degraded(env)) => degraded(short_id, env.fallback.as_deref()),
-        Err(_) => degraded(short_id, None),
-    }
-}
-
-fn known(short_id: &str, spec: &Spec) -> String {
-    let type_name = spec.type_name();
-    let body = match spec {
-        // Headings get ids prefixed with the block's short id, so outline
-        // entries can jump to them and two blocks' "Overview" don't collide.
-        Spec::Prose { text } => markdown_opts(text, Some(&format!("{short_id}-"))),
+/// Render a parsed block into the element the page inserts. Never errors:
+/// unknown types and parse warnings render as visibly marked content —
+/// a newer file meeting an older binary degrades honestly, not silently.
+pub fn block(id: &str, b: &Block) -> String {
+    let (class, body) = match b.type_name.as_str() {
+        // Headings get ids prefixed with the block's id, so outline entries
+        // can jump to them and two blocks' "Overview" don't collide.
+        "sv-prose" => ("sv-block", markdown_opts(&b.body, Some(&format!("{id}-")))),
         // Not sanitized; scripts run. A decision, not an oversight — the block
         // is code you own in a page only you can reach. See DESIGN.md.
-        Spec::Markup { html } => html.clone(),
-        Spec::Html { document } => iframe(document),
+        "sv-markup" => ("sv-block", b.body.clone()),
+        "sv-html" => ("sv-block", iframe(&b.body)),
+        // The parser's honest container for top-level content outside any
+        // block — shown raw so the author can see exactly what to fix.
+        "sv-stray" => ("sv-block sv-degraded", preformatted(&b.body)),
+        // TODO(v1): pass markup through a lenient HTML parser here and log
+        // unknown sv-/Bootstrap classes and inline style= attributes.
+        other => (
+            "sv-block sv-degraded",
+            format!(
+                r#"<p class="sv-degraded-note">this sideview doesn't know `{}` — upgrade to show it properly</p>{}"#,
+                text_escape(other),
+                preformatted(&b.body)
+            ),
+        ),
     };
-    // TODO(v0): pass markup through a lenient HTML parser here and log unknown
-    // sv-/Bootstrap classes and inline style= attributes — silent no-ops become
-    // a measurement of where the vocabulary falls short. Server-side, because
-    // v0 has no browser→server channel and this must not force one.
+    let warnings: String = b
+        .warnings
+        .iter()
+        .map(|w| format!(r#"<div class="sv-parse-warning">{}</div>"#, text_escape(w)))
+        .collect();
     format!(
-        r#"<section class="sv-block" data-block="{short_id}" data-type="{type_name}">{body}</section>"#
-    )
-}
-
-fn degraded(short_id: &str, fallback: Option<&str>) -> String {
-    let body = match fallback {
-        Some(md) => markdown(md),
-        None => "<p>(no fallback provided)</p>".to_string(),
-    };
-    format!(
-        r#"<section class="sv-block sv-degraded" data-block="{short_id}" data-type="degraded"><p class="sv-degraded-note">this block needs a newer sideview</p>{body}</section>"#
+        r#"<section class="{class}" data-block="{id}" data-type="{}">{warnings}{body}</section>"#,
+        text_escape(&b.type_name)
     )
 }
 
 /// GFM via comrak — tables, task lists and strikethrough turn up constantly
 /// in plans. `unsafe` because prose is the author's own HTML-bearing
 /// markdown, same trust story as markup blocks.
-pub fn markdown(text: &str) -> String {
-    markdown_opts(text, None)
-}
-
 fn markdown_opts(text: &str, header_id_prefix: Option<&str>) -> String {
     let mut options = comrak_options();
     options.extension.header_id_prefix = header_id_prefix.map(str::to_string);
@@ -68,6 +61,10 @@ fn comrak_options() -> comrak::Options<'static> {
     options
 }
 
+fn preformatted(body: &str) -> String {
+    format!("<pre><code>{}</code></pre>", text_escape(body))
+}
+
 /// One heading a block contains, as reported to the page for its outline.
 /// `id` is an anchor reachable from the page: comrak-generated for prose,
 /// author-supplied (if any) for markup, never for iframe-isolated html.
@@ -81,17 +78,14 @@ pub struct Heading {
 
 /// The outline a block supplies: derived from its content at event time, the
 /// same way its HTML is — never stored, so improving extraction never needs a
-/// backfill. An explicit `headings` field in the envelope is the deferred
-/// escape hatch for types that defy autodetection; the envelope already
-/// ignores unknown fields, so adding it later is purely additive.
-pub fn outline(short_id: &str, spec_json: &str) -> Vec<Heading> {
-    match spec::decode(spec_json) {
-        Ok(Decoded::Known(Spec::Prose { text })) => {
-            prose_outline(&text, &format!("{short_id}-"))
-        }
-        Ok(Decoded::Known(Spec::Markup { html })) => fragment_outline(&html, true),
+/// backfill. A future explicit `headings` attribute is the escape hatch for
+/// types that defy autodetection.
+pub fn outline(id: &str, b: &Block) -> Vec<Heading> {
+    match b.type_name.as_str() {
+        "sv-prose" => prose_outline(&b.body, &format!("{id}-")),
+        "sv-markup" => fragment_outline(&b.body, true),
         // Real headings, but behind a sandboxed iframe: listed, not anchored.
-        Ok(Decoded::Known(Spec::Html { document })) => fragment_outline(&document, false),
+        "sv-html" => fragment_outline(&b.body, false),
         _ => Vec::new(),
     }
 }
@@ -156,7 +150,7 @@ fn iframe(document: &str) -> String {
         document
     );
     let srcdoc = attr_escape(&with_style);
-    // TODO(v0): size via ResizeObserver + postMessage from a small injected
+    // TODO(v1): size via ResizeObserver + postMessage from a small injected
     // script; the fixed starting height is a placeholder.
     format!(
         r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}" style="width:100%;height:24rem;border:0"></iframe>"#
@@ -167,39 +161,57 @@ fn attr_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('"', "&quot;")
 }
 
+fn text_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format;
+
+    fn parse_one(src: &str) -> Block {
+        let page = format::parse(src);
+        assert_eq!(page.blocks.len(), 1, "test fixture must be one block");
+        page.blocks.into_iter().next().unwrap()
+    }
 
     #[test]
     fn prose_renders_gfm_tables() {
-        let html = block("b1", r#"{"type":"prose","text":"| a |\n|---|\n| 1 |","version":1}"#);
+        let b = parse_one("<sv-prose id=\"b1\">\n| a |\n|---|\n| 1 |\n</sv-prose>");
+        let html = block("b1", &b);
         assert!(html.contains("<table>"), "{html}");
         assert!(html.contains(r#"data-block="b1""#));
     }
 
     #[test]
-    fn unknown_type_degrades_visibly() {
-        let html = block("b2", r#"{"type":"holo","version":9,"fallback":"plain *text*"}"#);
-        assert!(html.contains("needs a newer sideview"), "{html}");
-        assert!(html.contains("<em>text</em>"), "fallback goes through the prose path: {html}");
+    fn unknown_type_degrades_visibly_with_its_content() {
+        let b = parse_one("<sv-table id=\"b2\">\nselect 1\n</sv-table>");
+        let html = block("b2", &b);
+        assert!(html.contains("doesn't know"), "{html}");
+        assert!(html.contains("select 1"), "the raw body stays visible: {html}");
+    }
+
+    #[test]
+    fn parse_warnings_are_shown_in_the_block() {
+        let page = format::parse("<sv-prose id=\"b1\">\nfirst\n<sv-prose id=\"b2\">\nsecond\n</sv-prose>");
+        let html = block("b1", &page.blocks[0]);
+        assert!(html.contains("sv-parse-warning"), "{html}");
+        assert!(html.contains("never closed"), "{html}");
     }
 
     #[test]
     fn prose_outline_ids_match_rendered_anchors() {
-        let json = serde_json::json!({
-            "type": "prose",
-            "text": "## Alpha\n\ntext\n\n### Beta `code`\n\n## Alpha",
-            "version": 1,
-        })
-        .to_string();
-        let headings = outline("b3", &json);
+        let b = parse_one(
+            "<sv-prose id=\"b3\">\n## Alpha\n\ntext\n\n### Beta `code`\n\n## Alpha\n</sv-prose>",
+        );
+        let headings = outline("b3", &b);
         assert_eq!(
             headings.iter().map(|h| (h.level, h.text.as_str())).collect::<Vec<_>>(),
             vec![(2, "Alpha"), (3, "Beta code"), (2, "Alpha")]
         );
         // Every extracted id must exist in the rendered HTML, dedup included.
-        let html = block("b3", &json);
+        let html = block("b3", &b);
         for h in &headings {
             let anchor = format!(r#"id="{}""#, h.id.as_deref().unwrap());
             assert!(html.contains(&anchor), "missing {anchor} in {html}");
@@ -209,8 +221,10 @@ mod tests {
 
     #[test]
     fn markup_outline_honours_author_ids_and_survives_bad_html() {
-        let json = r#"{"type":"markup","html":"<h2 id=\"pick-me\">Chosen <b>title</b></h2><div><h3>Loose</h3>","version":1}"#;
-        let headings = outline("b4", json);
+        let b = parse_one(
+            "<sv-markup id=\"b4\">\n<h2 id=\"pick-me\">Chosen <b>title</b></h2><div><h3>Loose</h3>\n</sv-markup>",
+        );
+        let headings = outline("b4", &b);
         assert_eq!(headings.len(), 2);
         assert_eq!(headings[0].id.as_deref(), Some("pick-me"));
         assert_eq!(headings[0].text, "Chosen title");
@@ -218,20 +232,15 @@ mod tests {
     }
 
     #[test]
-    fn iframe_html_outline_is_listed_but_never_anchored() {
-        let json = r#"{"type":"html","document":"<h1 id=\"inside\">Doc</h1>","version":1}"#;
-        let headings = outline("b5", json);
+    fn html_block_is_iframed_escaped_and_outline_never_anchored() {
+        let b = parse_one(
+            "<sv-html id=\"b5\">\n<h1 id=\"inside\">Doc</h1><p class=\"x\">hi &amp; bye</p>\n</sv-html>",
+        );
+        let headings = outline("b5", &b);
         assert_eq!(headings.len(), 1);
         assert_eq!(headings[0].id, None, "iframe anchors are unreachable from the page");
-    }
-
-    #[test]
-    fn html_block_is_iframed_and_escaped() {
-        let html = block(
-            "b3",
-            r#"{"type":"html","document":"<p class=\"x\">hi &amp; bye</p>","version":1}"#,
-        );
+        let html = block("b5", &b);
         assert!(html.contains("sandbox=\"allow-scripts\""));
-        assert!(!html.contains(r#"srcdoc="<p class="x""#), "quotes must be escaped: {html}");
+        assert!(!html.contains(r#"srcdoc="<h1"#), "quotes must be escaped: {html}");
     }
 }

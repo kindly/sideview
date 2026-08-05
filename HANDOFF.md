@@ -54,7 +54,21 @@ codex/opencode/pi, code highlighting (syntect, class-based, duotone), and diff b
 app subprocesses. Also set at scoping, author's rule: **dogfood first** — nothing is
 implemented before its design has appeared on the live page.
 
-**Later the same day, the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
+**2026-08-05: the substrate landed — pages are files, live.** The format survived a full day
+of adversarial probing (V1.md's stress-test section) before a line was written; the author's
+sign-off included deleting the only store, so there was no migration — the v0 schema is simply
+gone. What shipped: `format.rs` (the fence scanner, with implicit-close healing and the
+column-0 rule, which the plan page itself needed on day one for its own format examples),
+authoring as locked atomic file splicing, the daemon rebuilt around in-memory state derived
+from files (stat-polling bindings, reparse-diff by id, full-state SSE connections — which
+dissolved `Last-Event-ID`, tombstones and the rev counter in one move), and `spec.rs` deleted.
+Verified live: CLI append/rm round-trip through the file; a raw `sed` on the page file patched
+exactly one block over SSE; the db was deleted and rebuilt with the page content intact —
+the delete-the-db test passed for real. The skill gained its your-page-is-a-file paragraph
+(direct edits are equivalent to the CLI; never escape inside a block; tags count at column 0)
+and was re-installed current.
+
+**Later the same day (2026-08-04), the design system switched to real Bootstrap 5** — vendored v5.3.8, CSS
 only, with a prose layer for bare markdown elements and a v4-compat shim in `sideview.css`.
 Pico is gone. V0.md's design-system section records the reversal, why the borrowed-subset
 approach lost, and the Tailwind/daisyUI rejection.

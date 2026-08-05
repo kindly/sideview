@@ -1,20 +1,27 @@
 //! Everything the CLI does apart from being the daemon. Authoring commands
 //! return immediately; only bare `sideview` ever waits, because only it needs
 //! a URL to open a browser at.
+//!
+//! Since pages became files, authoring is file splicing: read the session's
+//! `.sv` file under a lock, splice the block's line range, write atomically
+//! (temp + rename, so the daemon never reads a torn file from *us* — agents
+//! editing directly get the parser's tolerance instead). The store is only
+//! touched to maintain the session→file binding.
 
 use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
 use crate::daemon;
+use crate::format;
 use crate::netcheck;
 use crate::session;
-use crate::spec::Spec;
 use crate::store::{self, Store, SPAWN_LOCK};
 
 pub enum Kind {
@@ -24,11 +31,11 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn spec(&self, content: String) -> Spec {
+    fn type_name(&self) -> &'static str {
         match self {
-            Kind::Prose => Spec::Prose { text: content },
-            Kind::Markup => Spec::Markup { html: content },
-            Kind::Html => Spec::Html { document: content },
+            Kind::Prose => "sv-prose",
+            Kind::Markup => "sv-markup",
+            Kind::Html => "sv-html",
         }
     }
 }
@@ -44,39 +51,160 @@ fn read_stdin() -> Result<String> {
     Ok(content)
 }
 
-fn resolve_and_touch(store: &Store, explicit: Option<&str>) -> Result<String> {
+/// Resolve the session, keep its binding fresh, and return the page file's
+/// absolute path. The binding's path wins when one exists (a page may have
+/// been re-bound after a move); otherwise it's the deterministic throwaway
+/// location under `.sideview/pages/`.
+fn resolve_and_bind(store: &Store, explicit: Option<&str>) -> Result<(String, PathBuf)> {
     let cwd = std::env::current_dir()?;
     let resolved = session::resolve(explicit, &cwd);
-    store.touch_session(&resolved.id, &cwd.display().to_string(), resolved.detected_from)?;
-    Ok(resolved.id)
+    let rel = match store.binding(&resolved.id)? {
+        Some(b) => b.path,
+        None => session::page_rel_path(&resolved.id),
+    };
+    store.bind_session(&resolved.id, &rel, &cwd.display().to_string(), resolved.detected_from)?;
+    store.pages_dir()?; // ensure the directory exists before anyone writes into it
+    Ok((resolved.id, store.root.join(rel)))
 }
 
-/// `sideview prose|markup|html` — write the block, print its id alone on
-/// stdout, deal with the daemon afterwards, exit without waiting.
+/// Read-modify-write a page file under its sidecar lock, atomically. The lock
+/// is what SQLite transactions used to be: subagents share a session id, and
+/// two writers splicing the same file unserialized would corrupt it.
+fn edit_page(path: &Path, f: impl FnOnce(String) -> Result<String>) -> Result<()> {
+    let lock_path = path.with_extension("sv.lock");
+    let lock = File::create(&lock_path)
+        .with_context(|| format!("creating {}", lock_path.display()))?;
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        bail!("could not lock {}", lock_path.display());
+    }
+    let current = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let next = f(current)?;
+    // Temp-and-rename in the same directory: the daemon's next read sees the
+    // old file or the new one, never a torn one.
+    let tmp = path.with_extension("sv.tmp");
+    std::fs::write(&tmp, &next)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// The next `bN` id: one past the highest the file already uses, so ids never
+/// recycle within a file even after `rm`.
+fn next_block_id(page: &format::Page) -> String {
+    let max = page
+        .blocks
+        .iter()
+        .filter_map(|b| b.id())
+        .filter_map(|id| id.strip_prefix('b'))
+        .filter_map(|n| n.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("b{}", max + 1)
+}
+
+/// `sideview prose|markup|html` — append the block to the session's file,
+/// print its id alone on stdout, deal with the daemon afterwards, exit
+/// without waiting.
 pub fn author(kind: Kind, explicit_session: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let session_id = resolve_and_touch(&store, explicit_session)?;
-    let spec = kind.spec(read_stdin()?);
-    let short_id = store.insert_block(&session_id, &spec)?;
-    println!("{short_id}");
+    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let body = read_stdin()?;
+    let mut assigned = String::new();
+    edit_page(&path, |current| {
+        let page = format::parse(&current);
+        assigned = next_block_id(&page);
+        let block = format::block_text(kind.type_name(), &[("id", &assigned)], &body);
+        Ok(append_block(current, &block))
+    })?;
+    println!("{assigned}");
     ensure_daemon(&mut store)?;
     Ok(())
 }
 
+/// Append before a trailing `</sv-page>` when the file has one; a fresh file
+/// gets the page wrapper so `session set` has a line to hang properties on.
+fn append_block(current: String, block: &str) -> String {
+    if current.is_empty() {
+        return format!("<sv-page>\n\n{block}\n\n</sv-page>\n");
+    }
+    let mut lines: Vec<&str> = current.lines().collect();
+    let closer = lines.iter().rposition(|l| l.trim_end() == "</sv-page>");
+    match closer {
+        Some(i) => {
+            let mut new_lines: Vec<String> = lines[..i].iter().map(|s| s.to_string()).collect();
+            while new_lines.last().map_or(false, |l| l.trim().is_empty()) {
+                new_lines.pop();
+            }
+            new_lines.push(String::new());
+            new_lines.extend(block.lines().map(str::to_string));
+            new_lines.push(String::new());
+            new_lines.extend(lines.drain(i..).map(str::to_string));
+            new_lines.join("\n") + "\n"
+        }
+        None => {
+            let mut out = current;
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            format!("{out}\n{block}\n")
+        }
+    }
+}
+
+/// Replace a block's content (and possibly type) in place: splice its line
+/// range, keep its other attributes. Short ids resolve within the caller's
+/// own file, which is what makes two agents both holding a `b7` harmless.
 pub fn update(short_id: &str, kind: Kind, explicit_session: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let session_id = resolve_and_touch(&store, explicit_session)?;
-    store.update_block(&session_id, short_id, &kind.spec(read_stdin()?))?;
+    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let body = read_stdin()?;
+    edit_page(&path, |current| {
+        let page = format::parse(&current);
+        let Some(b) = page.blocks.iter().find(|b| b.id() == Some(short_id)) else {
+            bail!("no block {short_id} in this session");
+        };
+        let attrs: Vec<(&str, &str)> =
+            b.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let block = format::block_text(kind.type_name(), &attrs, &body);
+        Ok(splice(&current, b.lines, Some(&block)))
+    })?;
     ensure_daemon(&mut store)?;
     Ok(())
 }
 
+/// Remove a block: its lines simply leave the file. No tombstone — clients
+/// converge from the daemon's full-state connections (see daemon.rs).
 pub fn rm(short_id: &str, explicit_session: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let session_id = resolve_and_touch(&store, explicit_session)?;
-    store.rm_block(&session_id, short_id)?;
+    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    edit_page(&path, |current| {
+        let page = format::parse(&current);
+        let Some(b) = page.blocks.iter().find(|b| b.id() == Some(short_id)) else {
+            bail!("no block {short_id} in this session");
+        };
+        Ok(splice(&current, b.lines, None))
+    })?;
     ensure_daemon(&mut store)?;
     Ok(())
+}
+
+/// Replace (or with None, delete) a half-open line range. Collapses the
+/// doubled blank line a deletion leaves behind.
+fn splice(current: &str, (start, end): (usize, usize), replacement: Option<&str>) -> String {
+    let lines: Vec<&str> = current.lines().collect();
+    let mut out: Vec<String> = lines[..start].iter().map(|s| s.to_string()).collect();
+    if let Some(r) = replacement {
+        out.extend(r.lines().map(str::to_string));
+    } else if out.last().map_or(false, |l| l.trim().is_empty())
+        && lines.get(end).map_or(true, |l| l.trim().is_empty())
+    {
+        out.pop();
+    }
+    out.extend(lines[end.min(lines.len())..].iter().map(|s| s.to_string()));
+    out.join("\n") + "\n"
 }
 
 /// After a write: if a reachable daemon is alive, nothing to do (bar the
@@ -155,7 +283,7 @@ fn spawn_detached(store: &Store, open_browser: bool, bind_auto: bool) -> Result<
 pub fn open(detach: bool, bind: &str) -> Result<()> {
     let bind_auto = parse_bind(bind)?;
     let store = open_project_store()?;
-    // Deliberately no session touch here: sessions exist when blocks do.
+    // Deliberately no session binding here: sessions exist when blocks do.
     // Minting one on bare open grew the switcher by an empty chip per shell.
 
     if let Some(d) = store.daemon_alive()? {
@@ -223,8 +351,9 @@ pub fn open(detach: bool, bind: &str) -> Result<()> {
     daemon::run(&dir, &daemon::Opts { bind_auto, open_browser: true })
 }
 
-/// `sideview session set` — the session-properties chunk: label and outline.
-/// Resolves the session exactly like authoring, so an agent passes no ids.
+/// `sideview session set` — page properties now live in the file itself, on
+/// the `<sv-page>` line: authored presentation belongs in the canonical
+/// source, not in a database row.
 pub fn session_set(
     explicit_session: Option<&str>,
     label: Option<&str>,
@@ -238,29 +367,79 @@ pub fn session_set(
             bail!("--outline takes `auto`, `scrollspy`, `tabs` or `off`, not {o:?}");
         }
     }
+    if let Some(l) = label {
+        format::check_attr_value(l).map_err(|e| anyhow::anyhow!("--label: {e}"))?;
+    }
     let store = open_project_store()?;
-    let session_id = resolve_and_touch(&store, explicit_session)?;
-    if let Some(label) = label {
-        // An empty label clears back to showing the session id.
-        store.set_session_prop(&session_id, "label", (!label.is_empty()).then_some(label))?;
-    }
-    if let Some(outline) = outline {
-        // scrollspy is the default, so it (and `auto`) store as an absence;
-        // only departures — tabs, off — are written.
-        let departure = (outline != "auto" && outline != "scrollspy").then_some(outline);
-        store.set_session_prop(&session_id, "outline", departure)?;
-    }
+    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    edit_page(&path, |current| {
+        let page = format::parse(&current);
+        let mut props: Vec<(String, String)> =
+            page.props.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let set = |props: &mut Vec<(String, String)>, key: &str, value: Option<&str>| {
+            props.retain(|(k, _)| k != key);
+            if let Some(v) = value {
+                props.push((key.to_string(), v.to_string()));
+            }
+        };
+        if let Some(label) = label {
+            // An empty label clears back to showing the session id.
+            set(&mut props, "label", (!label.is_empty()).then_some(label));
+        }
+        if let Some(outline) = outline {
+            // scrollspy is the default, so it (and `auto`) store as an
+            // absence; only departures — tabs, off — are written.
+            set(
+                &mut props,
+                "outline",
+                (outline != "auto" && outline != "scrollspy").then_some(outline),
+            );
+        }
+        let mut tag = String::from("<sv-page");
+        for (k, v) in &props {
+            tag.push_str(&format!(" {k}=\"{v}\""));
+        }
+        tag.push('>');
+        // Rewrite the existing <sv-page> line, or open the file with one —
+        // the closer is optional by grammar, so prepending is always safe.
+        let lines: Vec<&str> = current.lines().collect();
+        let page_line = lines.iter().position(|l| {
+            let t = l.trim_end();
+            t == "<sv-page>" || (t.starts_with("<sv-page ") && t.ends_with('>'))
+        });
+        let mut out: Vec<String> = Vec::new();
+        match page_line {
+            Some(i) => {
+                out.extend(lines[..i].iter().map(|s| s.to_string()));
+                out.push(tag);
+                out.extend(lines[i + 1..].iter().map(|s| s.to_string()));
+            }
+            None => {
+                out.push(tag);
+                out.push(String::new());
+                out.extend(lines.iter().map(|s| s.to_string()));
+            }
+        }
+        Ok(out.join("\n") + "\n")
+    })?;
     Ok(())
 }
 
 pub fn sessions() -> Result<()> {
     let store = open_project_store()?;
     let port = store.daemon_alive()?.filter(|d| d.reachable).map(|d| d.port);
-    for s in store.sessions()? {
-        let label = s.prop("label").unwrap_or(&s.id).to_string();
+    for b in store.bindings()? {
+        let label = std::fs::read_to_string(store.root.join(&b.path))
+            .ok()
+            .and_then(|src| format::parse(&src).prop("label").map(str::to_string))
+            .unwrap_or_else(|| b.id.clone());
         match port {
-            Some(p) => println!("{label}  http://127.0.0.1:{p}/s/{}", encode_session(&s.id)),
-            None => println!("{label}  (no daemon running)"),
+            Some(p) => println!(
+                "{label}  {}  http://127.0.0.1:{p}/s/{}",
+                b.path,
+                session::encode(&b.id)
+            ),
+            None => println!("{label}  {}  (no daemon running)", b.path),
         }
     }
     Ok(())
@@ -269,6 +448,7 @@ pub fn sessions() -> Result<()> {
 pub fn status() -> Result<()> {
     let store = open_project_store()?;
     println!("store:   {}", store.db_path().display());
+    println!("pages:   {}", store.dir.join(store::PAGES_DIR).display());
     match store.daemon()? {
         None => println!("daemon:  not running"),
         Some(d) => {
@@ -301,7 +481,8 @@ pub fn styles() -> Result<()> {
 }
 
 /// Deleting the store under a running daemon is the nastiest failure
-/// available here, and it is silent — so refuse while one is live.
+/// available here, and it is silent — so refuse while one is live. Pages are
+/// content, not store: reset never touches them.
 pub fn reset() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let dir = store::find_store_dir(&cwd);
@@ -322,18 +503,11 @@ pub fn reset() -> Result<()> {
             std::fs::remove_file(&p).with_context(|| format!("removing {}", p.display()))?;
         }
     }
-    eprintln!("store deleted; next write starts fresh");
+    eprintln!(
+        "store deleted; pages under {} kept. Next write rebinds them.",
+        dir.join(store::PAGES_DIR).display()
+    );
     Ok(())
-}
-
-/// Session ids go into printed URLs as one path segment, and the cwd and tmux
-/// rungs produce ids containing `/` and `%`. Encode everything outside RFC
-/// 3986's unreserved set — over-encoding is harmless, a raw slash is not.
-fn encode_session(id: &str) -> String {
-    use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-    const SEGMENT: &AsciiSet =
-        &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
-    utf8_percent_encode(id, SEGMENT).to_string()
 }
 
 fn parse_bind(bind: &str) -> Result<bool> {
@@ -379,4 +553,64 @@ pub fn open_browser(url: &str) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn append_assigns_ids_past_the_highest_ever_used() {
+        let v1 = append_block(String::new(), &format::block_text("sv-prose", &[("id", "b1")], "one"));
+        let page = format::parse(&v1);
+        assert_eq!(page.blocks.len(), 1);
+        assert_eq!(next_block_id(&page), "b2");
+        // rm b1, then the next id must still be b2 — ids never recycle…
+        let b1 = page.blocks[0].lines;
+        let v2 = splice(&v1, b1, None);
+        // …except that an empty file has no memory; the file *is* the state,
+        // so a fully emptied page restarts at b1. Within a live page, the max
+        // survives because blocks rarely all vanish at once.
+        let after = format::parse(&v2);
+        assert_eq!(after.blocks.len(), 0);
+        assert!(format::parse(&v2).prop("label").is_none());
+    }
+
+    #[test]
+    fn append_lands_inside_the_page_wrapper() {
+        let one = append_block(String::new(), &format::block_text("sv-prose", &[("id", "b1")], "one"));
+        let two = append_block(one, &format::block_text("sv-markup", &[("id", "b2")], "<b>two</b>"));
+        let page = format::parse(&two);
+        assert_eq!(page.blocks.len(), 2);
+        assert_eq!(page.blocks[1].id(), Some("b2"));
+        assert!(
+            two.trim_end().ends_with("</sv-page>"),
+            "blocks go inside the wrapper: {two}"
+        );
+    }
+
+    #[test]
+    fn splice_replaces_a_block_in_place() {
+        let src = "<sv-page>\n\n<sv-prose id=\"b1\">\none\n</sv-prose>\n\n<sv-prose id=\"b2\">\ntwo\n</sv-prose>\n\n</sv-page>\n";
+        let page = format::parse(src);
+        let replaced = splice(
+            src,
+            page.blocks[0].lines,
+            Some(&format::block_text("sv-markup", &[("id", "b1")], "<i>uno</i>")),
+        );
+        let after = format::parse(&replaced);
+        assert_eq!(after.blocks.len(), 2);
+        assert_eq!(after.blocks[0].type_name, "sv-markup");
+        assert_eq!(after.blocks[0].body, "<i>uno</i>");
+        assert_eq!(after.blocks[1].body, "two", "the neighbour is untouched");
+    }
+
+    #[test]
+    fn splice_removal_does_not_stack_blank_lines() {
+        let src = "<sv-page>\n\n<sv-prose id=\"b1\">\none\n</sv-prose>\n\n<sv-prose id=\"b2\">\ntwo\n</sv-prose>\n\n</sv-page>\n";
+        let page = format::parse(src);
+        let removed = splice(src, page.blocks[0].lines, None);
+        assert!(!removed.contains("\n\n\n"), "no doubled blanks: {removed:?}");
+        assert_eq!(format::parse(&removed).blocks.len(), 1);
+    }
 }

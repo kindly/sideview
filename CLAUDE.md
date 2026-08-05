@@ -39,8 +39,9 @@ drift:
 
 Each sandboxed Bash invocation gets its own network namespace. `bind()` succeeds inside it but the
 port does not exist on the host, so **an agent cannot start a daemon the browser can reach**. This
-is why the daemon is started by hand, why every agent→daemon channel is the SQLite store, and why
-liveness is a timestamp rather than a ping.
+is why the daemon is started by hand, why the agent→daemon channels are writes the sandbox allows —
+page files in the project, plus the SQLite store for bindings and liveness — and why liveness is a
+timestamp rather than a ping.
 
 ## Working here
 

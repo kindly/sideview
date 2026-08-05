@@ -116,6 +116,11 @@ function renderMermaid(el) {
 const es = new EventSource('/events');
 es.addEventListener('open', () => {
   state.connectedAt = Date.now();
+  // Every connection replays the full current state (the daemon keeps no
+  // per-client cursor), so drop what we hold — blocks removed while we were
+  // away would otherwise linger as ghosts.
+  state.blocks.clear();
+  $blocks.textContent = '';
   document.body.classList.remove('sv-disconnected');
   $status.hidden = true;
   $brand.title = 'connected';
@@ -403,11 +408,16 @@ function applyBlock(ev) {
   }
   const el = elementFor(ev.block, ev.html, ev.ord);
   if (!el) return;
-  if (existing) {           // update: patch in place, nothing scrolls or reflows around it
-    existing.replaceWith(el);
-    activateScripts(el);
-    renderMermaid(el);
-    return;
+  if (existing) {
+    if ((existing.dataset.ord || '') === ev.ord) {
+      // update: patch in place, nothing scrolls or reflows around it
+      existing.replaceWith(el);
+      activateScripts(el);
+      renderMermaid(el);
+      return;
+    }
+    // The block moved (file order is the order): re-place it below.
+    existing.remove();
   }
   // Place by ord so the client never needs to know about neighbours.
   const next = [...$blocks.children].find((c) => (c.dataset.ord || '') > ev.ord);

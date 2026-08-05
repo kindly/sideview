@@ -259,6 +259,17 @@ body.sv-rail .sv-block > table {
   margin-bottom: 0.25rem;
 }
 
+/* The parser's complaint about a block (lost close tag, stray content):
+   visible beats silent, quiet beats alarming — it heals on the next save. */
+.sv-parse-warning {
+  font-family: var(--sv-mono);
+  font-size: 0.75rem;
+  color: #c98a2b;
+  border-left: 3px solid #c98a2b;
+  padding-left: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
 /* --- the prose layer --------------------------------------------------------
    comrak emits bare elements; Bootstrap's reboot leaves them nearly unstyled.
    These selectors give class-less markdown the treatment Bootstrap's own

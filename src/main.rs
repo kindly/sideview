@@ -1,10 +1,10 @@
 mod cli;
 mod daemon;
+mod format;
 mod netcheck;
 mod render;
 mod session;
 mod skill;
-mod spec;
 mod store;
 
 use clap::{Args, Parser, Subcommand};

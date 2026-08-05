@@ -1,26 +1,36 @@
-//! The daemon: serves the page, notices new blocks by polling
-//! `PRAGMA data_version`, patches the open page over SSE. Long-lived, no idle
-//! exit (auto-exit depends on auto-restart, which is precisely what a
-//! sandboxed agent cannot do).
+//! The daemon: serves the page, notices changed page files by polling their
+//! mtimes (bindings are the watch list — that's what they're *for*), reparses,
+//! and patches the open page over SSE with only the blocks that changed.
+//! Long-lived, no idle exit (auto-exit depends on auto-restart, which is
+//! precisely what a sandboxed agent cannot do).
+//!
+//! All render/replay state is in memory, derived from the files — the db
+//! holds no content. A new connection always receives the full current state
+//! (the client resets on connect), which dissolves `Last-Event-ID` replay,
+//! tombstones and the rev counter in one move: at page scale a full resend
+//! is cheaper than being clever, and a daemon restart can't strand a client
+//! on a rev sequence that no longer exists.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 use actix_web::web::{self, Data};
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{App, HttpResponse, HttpServer, Responder};
 use actix_web_lab::sse;
 use anyhow::{Context, Result};
 use futures_util::StreamExt as _;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
+use crate::format;
 use crate::netcheck;
 use crate::render;
-use crate::store::{now_ms, BlockRow, DaemonRow, Store};
+use crate::store::{now_ms, DaemonRow, Store};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const HEARTBEAT_EVERY: u32 = 12; // × POLL_INTERVAL ≈ 3s
@@ -38,12 +48,38 @@ pub struct Opts {
 #[derive(Debug, Clone)]
 struct Outgoing {
     kind: &'static str, // "block" | "sessions"
-    id: Option<i64>,    // the rev, for block events
     data: String,
 }
 
+/// One rendered block as the page sees it. Comparing these decides whether an
+/// upsert goes out — html, position and headings are all part of "changed".
+#[derive(Debug, Clone, PartialEq)]
+struct Rendered {
+    id: String,
+    ord: String,
+    html: String,
+    headings_json: serde_json::Value,
+}
+
+/// Everything the daemon knows about one session's page, derived from its
+/// file. Rebuilt from scratch whenever the file changes; never persisted.
+#[derive(Debug, Clone, Default)]
+struct PageState {
+    props: serde_json::Map<String, serde_json::Value>,
+    blocks: Vec<Rendered>,
+    /// (mtime, len) of the file this state was derived from.
+    stamp: Option<(SystemTime, u64)>,
+}
+
+#[derive(Default)]
+struct Shared {
+    /// Binding order (most recently active first), as of the last poll.
+    sessions: Vec<(String, i64)>,
+    pages: HashMap<String, PageState>,
+}
+
 struct AppState {
-    store: Mutex<Store>,
+    shared: Arc<Mutex<Shared>>,
     root: PathBuf,
     tx: broadcast::Sender<Outgoing>,
 }
@@ -132,15 +168,17 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     let (tx, _) = broadcast::channel::<Outgoing>(1024);
+    let shared = Arc::new(Mutex::new(Shared::default()));
 
-    // The poll loop gets its own connection on its own thread; handlers share
-    // the claiming connection behind a mutex.
+    // The poll loop gets its own db connection on its own thread; the actix
+    // handlers only ever touch the in-memory state.
     {
         let dir = store_dir.to_path_buf();
         let tx = tx.clone();
         let instance_id = instance_id.clone();
+        let shared = shared.clone();
         std::thread::spawn(move || {
-            if let Err(e) = poll_loop(&dir, &instance_id, &tx) {
+            if let Err(e) = poll_loop(&dir, &instance_id, &tx, &shared) {
                 eprintln!("poll loop died: {e:#}");
                 std::process::exit(1);
             }
@@ -148,7 +186,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     let root = store.root.clone();
-    let state = Data::new(AppState { store: Mutex::new(store), root, tx });
+    let state = Data::new(AppState { shared, root, tx });
 
     let server_state = state.clone();
     actix_web::rt::System::new().block_on(async move {
@@ -174,26 +212,27 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     })?;
 
     // Ctrl-C lands here: clean shutdown clears the row (only as its holder).
-    state.store.lock().unwrap().clear_daemon(&instance_id)?;
+    store.clear_daemon(&instance_id)?;
     eprintln!("daemon stopped");
     Ok(())
 }
 
 /// Change detection, liveness, supersession and the deleted-underneath-us
-/// check, all in one loop that is already running.
-fn poll_loop(store_dir: &Path, instance_id: &str, tx: &broadcast::Sender<Outgoing>) -> Result<()> {
+/// check, all in one loop that is already running. Content change detection
+/// is file stat, not `data_version`: the db no longer holds content.
+fn poll_loop(
+    store_dir: &Path,
+    instance_id: &str,
+    tx: &broadcast::Sender<Outgoing>,
+    shared: &Arc<Mutex<Shared>>,
+) -> Result<()> {
     let store = Store::open(store_dir)?;
     let db_path = store.db_path();
     let opened = std::fs::metadata(&db_path)?;
     let (dev, ino) = (opened.dev(), opened.ino());
-
-    let mut last_rev = store.max_rev()?;
-    let mut data_version: i64 =
-        store.conn.pragma_query_value(None, "data_version", |r| r.get(0))?;
     let mut ticks: u32 = 0;
 
     loop {
-        std::thread::sleep(POLL_INTERVAL);
         ticks = ticks.wrapping_add(1);
 
         // `rm -rf .sideview/` under a live daemon: the open handle keeps the
@@ -230,72 +269,183 @@ fn poll_loop(store_dir: &Path, instance_id: &str, tx: &broadcast::Sender<Outgoin
             }
         }
 
-        // data_version only moves on other connections' commits, which is
-        // exactly the signal wanted.
-        let dv: i64 = store.conn.pragma_query_value(None, "data_version", |r| r.get(0))?;
-        if dv == data_version {
-            continue;
-        }
-        data_version = dv;
+        let mut changed_sessions = false;
+        let mut events: Vec<Outgoing> = Vec::new();
+        let bindings = store.bindings()?;
+        {
+            let mut shared = shared.lock().unwrap();
 
-        for b in store.blocks_since(last_rev)? {
-            last_rev = b.rev.max(last_rev);
-            let _ = tx.send(block_event(&b));
+            let order: Vec<(String, i64)> =
+                bindings.iter().map(|b| (b.id.clone(), b.last_active_at)).collect();
+            if order != shared.sessions {
+                shared.sessions = order;
+                changed_sessions = true;
+            }
+
+            for b in &bindings {
+                let file = store.root.join(&b.path);
+                let stamp = std::fs::metadata(&file)
+                    .ok()
+                    .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+                let known = shared.pages.get(&b.id).map(|p| p.stamp);
+                if known == Some(stamp) {
+                    continue;
+                }
+                let fresh = load_page(&file, &b.path, stamp);
+                let old = shared.pages.insert(b.id.clone(), fresh);
+                let fresh = &shared.pages[&b.id];
+                if old.as_ref().map(|o| &o.props) != Some(&fresh.props) {
+                    changed_sessions = true;
+                }
+                events.extend(diff_events(&b.id, old.as_ref(), fresh));
+            }
+            // A binding that vanished takes its page state with it. (Nothing
+            // deletes bindings in this slice, but be tolerant of a reset.)
+            let live: std::collections::HashSet<&String> =
+                bindings.iter().map(|b| &b.id).collect();
+            shared.pages.retain(|id, _| live.contains(id));
+
+            if changed_sessions {
+                events.insert(0, sessions_event(&shared));
+            }
         }
-        let _ = tx.send(sessions_event(&store)?);
+        for e in events {
+            let _ = tx.send(e);
+        }
+
+        std::thread::sleep(POLL_INTERVAL);
     }
 }
 
-fn block_event(b: &BlockRow) -> Outgoing {
-    let (action, html, headings) = if b.deleted {
-        ("remove", String::new(), Vec::new())
-    } else {
-        (
-            "upsert",
-            render::block(&b.short_id, &b.spec_json),
-            render::outline(&b.short_id, &b.spec_json),
-        )
+/// Read and render a page file into daemon state. A missing or unreadable
+/// file renders as one honest block rather than an empty page — a binding
+/// pointing at nothing is a fact worth showing.
+fn load_page(file: &Path, rel: &str, stamp: Option<(SystemTime, u64)>) -> PageState {
+    let source = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(_) => {
+            let msg = format!("page file moved or deleted — was {rel}");
+            return PageState {
+                props: serde_json::Map::new(),
+                blocks: vec![Rendered {
+                    id: "sv-missing".into(),
+                    ord: "a000000000000".into(),
+                    html: format!(
+                        r#"<section class="sv-block sv-degraded" data-block="sv-missing" data-type="sv-missing"><p class="sv-degraded-note">{}</p></section>"#,
+                        msg.replace('<', "&lt;")
+                    ),
+                    headings_json: serde_json::json!([]),
+                }],
+                stamp,
+            }
+        }
     };
+    let page = format::parse(&source);
+    let mut props = serde_json::Map::new();
+    for (k, v) in &page.props {
+        props.insert(k.clone(), serde_json::Value::String(v.clone()));
+    }
+
+    // Effective ids: the id attribute, or a content hash for blocks without
+    // one (stable across reorders; an edit reads as remove-and-add, which is
+    // the accepted cost of not naming a block). Duplicate hashes — two
+    // identical anonymous blocks — get an occurrence suffix.
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    let mut blocks = Vec::new();
+    for (i, b) in page.blocks.iter().enumerate() {
+        let base = match b.id() {
+            Some(id) => id.to_string(),
+            None => {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (&b.type_name, &b.body).hash(&mut h);
+                format!("h{:012x}", h.finish() & 0xffff_ffff_ffff)
+            }
+        };
+        let n = seen.entry(base.clone()).or_insert(0);
+        *n += 1;
+        let id = if *n == 1 { base } else { format!("{base}-{n}") };
+        blocks.push(Rendered {
+            ord: format!("a{i:012}"),
+            html: render::block(&id, b),
+            headings_json: serde_json::to_value(render::outline(&id, b))
+                .unwrap_or_else(|_| serde_json::json!([])),
+            id,
+        });
+    }
+    PageState { props, blocks, stamp }
+}
+
+/// The reparse diff: upserts for new or changed blocks, removes for gone ones.
+/// This is what keeps live patching surgical even though the source of truth
+/// is a whole file.
+fn diff_events(session: &str, old: Option<&PageState>, new: &PageState) -> Vec<Outgoing> {
+    let mut events = Vec::new();
+    let old_by_id: HashMap<&str, &Rendered> = old
+        .map(|o| o.blocks.iter().map(|b| (b.id.as_str(), b)).collect())
+        .unwrap_or_default();
+    for b in &new.blocks {
+        if old_by_id.get(b.id.as_str()) != Some(&&*b) {
+            events.push(block_event(session, b));
+        }
+    }
+    let new_ids: std::collections::HashSet<&str> =
+        new.blocks.iter().map(|b| b.id.as_str()).collect();
+    for b in old.map(|o| o.blocks.as_slice()).unwrap_or_default() {
+        if !new_ids.contains(b.id.as_str()) {
+            events.push(Outgoing {
+                kind: "block",
+                data: serde_json::json!({
+                    "session": session,
+                    "block": b.id,
+                    "action": "remove",
+                })
+                .to_string(),
+            });
+        }
+    }
+    events
+}
+
+fn block_event(session: &str, b: &Rendered) -> Outgoing {
     Outgoing {
         kind: "block",
-        id: Some(b.rev),
         data: serde_json::json!({
-            "session": b.session_id,
-            "block": b.short_id,
-            "action": action,
+            "session": session,
+            "block": b.id,
+            "action": "upsert",
             "ord": b.ord,
-            "html": html,
-            "headings": headings,
+            "html": b.html,
+            "headings": b.headings_json,
         })
         .to_string(),
     }
 }
 
-fn sessions_event(store: &Store) -> Result<Outgoing> {
-    let sessions: Vec<serde_json::Value> = store
-        .sessions()?
-        .into_iter()
-        // Props pass through whole, so a preference a newer CLI wrote reaches
-        // the page even through a daemon that has never heard of it.
-        .map(|s| {
-            serde_json::json!({
-                "id": s.id, "last_active_at": s.last_active_at, "props": s.props,
-            })
+fn sessions_event(shared: &Shared) -> Outgoing {
+    let sessions: Vec<serde_json::Value> = shared
+        .sessions
+        .iter()
+        .map(|(id, last_active_at)| {
+            // Props pass through whole from the file, so a key a newer CLI
+            // writes reaches the page even through a daemon that has never
+            // heard of it.
+            let props = shared
+                .pages
+                .get(id)
+                .map(|p| serde_json::Value::Object(p.props.clone()))
+                .unwrap_or_else(|| serde_json::json!({}));
+            serde_json::json!({ "id": id, "last_active_at": last_active_at, "props": props })
         })
         .collect();
-    Ok(Outgoing {
+    Outgoing {
         kind: "sessions",
-        id: None,
         data: serde_json::json!({ "sessions": sessions }).to_string(),
-    })
+    }
 }
 
 fn to_sse(o: Outgoing) -> sse::Event {
-    let mut data = sse::Data::new(o.data).event(o.kind);
-    if let Some(id) = o.id {
-        data = data.id(id.to_string());
-    }
-    sse::Event::Data(data)
+    sse::Event::Data(sse::Data::new(o.data).event(o.kind))
 }
 
 async fn page() -> impl Responder {
@@ -319,31 +469,24 @@ async fn asset(path: web::Path<String>) -> impl Responder {
     }
 }
 
-/// One long-lived stream per page. Reconnection is `Last-Event-ID` replay —
-/// `where rev > N` — so a laptop that slept for an hour reattaches and gets
-/// what it missed, tombstones included.
-async fn events(req: HttpRequest, state: Data<AppState>) -> actix_web::Result<impl Responder> {
-    let last: i64 = req
-        .headers()
-        .get("last-event-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-
-    // Subscribe before querying: an event landing in between is delivered
+/// One long-lived stream per page. Every connection starts with the full
+/// current state — the client resets on connect — so reconnection after any
+/// gap (sleep, daemon restart, lagged stream) converges by construction.
+async fn events(state: Data<AppState>) -> actix_web::Result<impl Responder> {
+    // Subscribe before snapshotting: an event landing in between is delivered
     // twice, and upserts are idempotent; the other order loses it.
     let rx = state.tx.subscribe();
 
     let mut replay: Vec<sse::Event> = Vec::new();
     {
-        let store = state.store.lock().unwrap();
-        replay.push(to_sse(sessions_event(&store).map_err(err500)?));
-        for b in store.blocks_since(last).map_err(err500)? {
-            // A fresh page doesn't need tombstones of blocks it never saw.
-            if last == 0 && b.deleted {
-                continue;
+        let shared = state.shared.lock().unwrap();
+        replay.push(to_sse(sessions_event(&shared)));
+        for (id, _) in &shared.sessions {
+            if let Some(page) = shared.pages.get(id) {
+                for b in &page.blocks {
+                    replay.push(to_sse(block_event(id, b)));
+                }
             }
-            replay.push(to_sse(block_event(&b)));
         }
     }
 
@@ -383,10 +526,10 @@ async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Re
             full.display()
         ));
     }
-    // The store's internals are not project content — the db holds every
-    // session's blocks and is otherwise readable by any tailnet node. Only
-    // the named internals are refused: other files under .sideview/ still
-    // serve (the dogfood comparison pages iframe from there).
+    // The store's internals are not project content — bindings and the daemon
+    // row are nobody's business over the tailnet. Only the named internals
+    // are refused: other files under .sideview/ still serve (pages, and the
+    // dogfood comparison pages iframe from there).
     if let Ok(store_dir) = root.join(crate::store::DIR_NAME).canonicalize() {
         if full.starts_with(&store_dir) {
             let name = full.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -407,14 +550,10 @@ async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Re
     }
 }
 
-fn err500(e: anyhow::Error) -> actix_web::Error {
-    actix_web::error::ErrorInternalServerError(format!("{e:#}"))
-}
-
 /// The live half of an SSE stream. A subscriber that falls behind the
 /// broadcast buffer gets `Err(Lagged)` — it has *lost events*, so the stream
 /// must end rather than resume: a dropped stream makes `EventSource`
-/// reconnect with `Last-Event-ID`, and the replay heals the gap. Skipping the
+/// reconnect, and the full-state connection heals the gap. Skipping the
 /// error and carrying on would silently desynchronize the page.
 fn live_events(
     rx: broadcast::Receiver<Outgoing>,
@@ -427,24 +566,62 @@ fn live_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::StreamExt as _;
 
     #[test]
     fn lagged_subscriber_stream_ends_instead_of_resuming() {
         actix_web::rt::System::new().block_on(async {
             let (tx, rx) = broadcast::channel::<Outgoing>(1);
             // Three sends into a one-slot buffer: the receiver has lost events.
-            for i in 0..3 {
-                tx.send(Outgoing { kind: "block", id: Some(i), data: String::new() }).unwrap();
+            for _ in 0..3 {
+                tx.send(Outgoing { kind: "block", data: String::new() }).unwrap();
             }
             drop(tx);
             let got: Vec<_> = live_events(rx).collect().await;
             assert_eq!(
                 got.len(),
                 0,
-                "a lagged stream must terminate (forcing replay), not skip ahead"
+                "a lagged stream must terminate (forcing a fresh full-state connection), not skip ahead"
             );
         });
+    }
+
+    fn page_from(src: &str) -> PageState {
+        let dir = std::env::temp_dir().join(format!("sv-pg-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("p.sv");
+        std::fs::write(&file, src).unwrap();
+        load_page(&file, "p.sv", None)
+    }
+
+    #[test]
+    fn reparse_diff_is_surgical() {
+        let old = page_from("<sv-prose id=\"b1\">\none\n</sv-prose>\n<sv-prose id=\"b2\">\ntwo\n</sv-prose>\n");
+        let new = page_from("<sv-prose id=\"b1\">\none\n</sv-prose>\n<sv-prose id=\"b2\">\ntwo, revised\n</sv-prose>\n");
+        let events = diff_events("s", Some(&old), &new);
+        assert_eq!(events.len(), 1, "only the changed block goes out: {events:?}");
+        assert!(events[0].data.contains("b2"));
+        assert!(events[0].data.contains("revised"));
+    }
+
+    #[test]
+    fn removed_blocks_emit_removes_and_anonymous_blocks_get_stable_ids() {
+        let old = page_from("<sv-prose id=\"b1\">\none\n</sv-prose>\n<sv-markup>\n<b>anon</b>\n</sv-markup>\n");
+        let new = page_from("<sv-markup>\n<b>anon</b>\n</sv-markup>\n");
+        // b1 gone; the anonymous block keeps its hash id across the reorder,
+        // so the only event is the remove.
+        let events = diff_events("s", Some(&old), &new);
+        let removes: Vec<_> = events.iter().filter(|e| e.data.contains("remove")).collect();
+        assert_eq!(removes.len(), 1, "{events:?}");
+        assert!(removes[0].data.contains("b1"));
+        let upserts: Vec<_> = events.iter().filter(|e| e.data.contains("upsert")).collect();
+        assert_eq!(upserts.len(), 1, "the anon block moved position (ord changed): {events:?}");
+    }
+
+    #[test]
+    fn a_missing_file_renders_an_honest_block() {
+        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None);
+        assert_eq!(page.blocks.len(), 1);
+        assert!(page.blocks[0].html.contains("moved or deleted"), "{}", page.blocks[0].html);
     }
 
     #[actix_web::test]
@@ -456,7 +633,11 @@ mod tests {
         std::fs::write(store.dir.join("sideview.db-pre-v4"), "backup").unwrap();
         std::fs::write(store.dir.join(crate::store::SPAWN_LOCK), "").unwrap();
         let (tx, _) = broadcast::channel(8);
-        let state = Data::new(AppState { root: store.root.clone(), store: Mutex::new(store), tx });
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+        });
         let app = actix_web::test::init_service(
             actix_web::App::new()
                 .app_data(state)
@@ -466,7 +647,7 @@ mod tests {
         for (path, expect_ok) in [
             ("/f/ok.html", true),
             ("/f/.sideview/lab.html", true),                // labs iframe from here
-            ("/f/.sideview/sideview.db", false),            // every session's blocks
+            ("/f/.sideview/sideview.db", false),            // bindings + daemon row
             ("/f/.sideview/sideview.db-pre-v4", false),     // backups too
             ("/f/.sideview/spawn.lock", false),
         ] {

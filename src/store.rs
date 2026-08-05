@@ -1,4 +1,8 @@
-//! The SQLite store: the only mandatory channel between agent and daemon.
+//! The SQLite store, demoted by v1's pages-are-files to what only it can do:
+//! the daemon row (liveness, supersession, the remembered port), durable meta,
+//! and session→file **bindings** — the daemon's watch list. Content lives in
+//! `.sv` files; the test that keeps this honest is that deleting the database
+//! loses no content (V1.md).
 //!
 //! One `Store::open()` used by both the CLI and the daemon, since they are the
 //! same binary. Migration is `PRAGMA user_version` stepping applied in-process
@@ -11,47 +15,32 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-use crate::spec::{self, Spec};
-
 pub const DIR_NAME: &str = ".sideview";
 pub const DB_FILE: &str = "sideview.db";
 pub const SPAWN_LOCK: &str = "spawn.lock";
+/// Where throwaway session pages live, under `.sideview/`. Deliberately
+/// gitignored by the store's own `.gitignore`; promotion is `mv` into the repo.
+pub const PAGES_DIR: &str = "pages";
 
 /// A daemon whose `last_seen` is older than this is doubted, and the doubt
 /// path (ping/pong) decides.
 pub const STALE_AFTER_MS: i64 = 10_000;
 
-// Squashed to a single step 2026-08-04, before the first commit, per the
-// pre-release rule in V0.md — the interim steps (meta table, an `outline`
-// column immediately reshaped into `props`) had no store in existence worth
-// migrating. Real migration history starts at the first release.
+// The v0 schema (blocks as rows, props bags, a store-wide rev) was replaced
+// wholesale on 2026-08-05 when pages became files — pre-release, no users, no
+// migration, the author's store deleted by hand with his own sign-off. Real
+// migration history starts at the first release.
 const MIGRATIONS: &[&str] = &[
-    // v1: the v0 schema, verbatim from V0.md.
+    // v1: bindings, the daemon row, durable meta. No content.
     r#"
     CREATE TABLE sessions(
         id             TEXT PRIMARY KEY,
+        path           TEXT NOT NULL,     -- the page file, relative to the project root
         cwd            TEXT,
         detected_from  TEXT,
-        props          TEXT NOT NULL DEFAULT '{}',  -- presentation bag: label, outline, …
-        next_block_seq INTEGER NOT NULL DEFAULT 1,
         started_at     INTEGER NOT NULL,
         last_active_at INTEGER NOT NULL
     );
-    CREATE TABLE blocks(
-        id         INTEGER PRIMARY KEY,
-        session_id TEXT NOT NULL REFERENCES sessions(id),
-        short_id   TEXT NOT NULL,
-        ord        TEXT NOT NULL,
-        type       TEXT NOT NULL,
-        version    INTEGER NOT NULL,
-        spec_json  TEXT NOT NULL,
-        rev        INTEGER NOT NULL,
-        deleted_at INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        UNIQUE(session_id, short_id)
-    );
-    CREATE INDEX blocks_by_rev ON blocks(rev);
     CREATE TABLE daemon(
         instance_id TEXT PRIMARY KEY,
         pid         INTEGER,
@@ -129,32 +118,15 @@ pub struct DaemonRow {
     pub reachable: bool,
 }
 
+/// A session→file binding. Losing one costs nothing durable (the file is the
+/// content); it exists so the daemon knows where to look without globbing the
+/// project four times a second.
 #[derive(Debug, Clone)]
-pub struct BlockRow {
-    pub session_id: String,
-    pub short_id: String,
-    pub ord: String,
-    #[allow(dead_code)] // mirrors the column; the renderer re-derives type from spec_json
-    pub type_name: String,
-    pub spec_json: String,
-    pub rev: i64,
-    pub deleted: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct SessionRow {
+pub struct Binding {
     pub id: String,
+    /// Relative to the project root.
+    pub path: String,
     pub last_active_at: i64,
-    /// The presentation-preference bag (`label`, `outline`, …). Always a JSON
-    /// object. Mutated only via json_set/json_remove in SQL — never a typed
-    /// Rust round-trip, which would drop keys a newer binary wrote.
-    pub props: serde_json::Value,
-}
-
-impl SessionRow {
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).and_then(|v| v.as_str())
-    }
 }
 
 pub struct Store {
@@ -197,173 +169,55 @@ impl Store {
         self.dir.join(DB_FILE)
     }
 
-    // ---- sessions ----------------------------------------------------------
+    /// The absolute path of the throwaway pages directory, created on demand.
+    pub fn pages_dir(&self) -> Result<PathBuf> {
+        let dir = self.dir.join(PAGES_DIR);
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
 
-    pub fn touch_session(&self, id: &str, cwd: &str, detected_from: &str) -> Result<()> {
+    // ---- bindings ----------------------------------------------------------
+
+    /// Bind (or re-touch) a session to its page file. The path never changes
+    /// through this — a moved page is re-bound explicitly, not by drift.
+    pub fn bind_session(
+        &self,
+        id: &str,
+        path: &str,
+        cwd: &str,
+        detected_from: &str,
+    ) -> Result<()> {
         let now = now_ms();
         self.conn.execute(
-            "INSERT INTO sessions(id, cwd, detected_from, next_block_seq, started_at, last_active_at)
-             VALUES (?1, ?2, ?3, 1, ?4, ?4)
-             ON CONFLICT(id) DO UPDATE SET last_active_at = ?4",
-            rusqlite::params![id, cwd, detected_from, now],
+            "INSERT INTO sessions(id, path, cwd, detected_from, started_at, last_active_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+             ON CONFLICT(id) DO UPDATE SET last_active_at = ?5",
+            rusqlite::params![id, path, cwd, detected_from, now],
         )?;
         Ok(())
     }
 
-    pub fn sessions(&self) -> Result<Vec<SessionRow>> {
+    pub fn bindings(&self) -> Result<Vec<Binding>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, last_active_at, props FROM sessions ORDER BY last_active_at DESC",
+            "SELECT id, path, last_active_at FROM sessions ORDER BY last_active_at DESC",
         )?;
         let rows = stmt
             .query_map([], |r| {
-                let props: String = r.get(2)?;
-                Ok(SessionRow {
-                    id: r.get(0)?,
-                    last_active_at: r.get(1)?,
-                    props: serde_json::from_str(&props)
-                        .unwrap_or_else(|_| serde_json::json!({})),
-                })
+                Ok(Binding { id: r.get(0)?, path: r.get(1)?, last_active_at: r.get(2)? })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Set (or with None, remove) one presentation preference. Mutation stays
-    /// inside SQLite so keys this binary doesn't know survive untouched; the
-    /// caller (the CLI, the bag's only writer) validates keys and values, and
-    /// only ever passes fixed key names — the '$.' path is not user input.
-    pub fn set_session_prop(&self, id: &str, key: &str, value: Option<&str>) -> Result<()> {
-        match value {
-            Some(v) => self.conn.execute(
-                "UPDATE sessions SET props = json_set(props, '$.' || ?2, ?3) WHERE id = ?1",
-                rusqlite::params![id, key, v],
-            )?,
-            None => self.conn.execute(
-                "UPDATE sessions SET props = json_remove(props, '$.' || ?2) WHERE id = ?1",
-                rusqlite::params![id, key],
-            )?,
-        };
-        Ok(())
-    }
-
-    // ---- blocks ------------------------------------------------------------
-
-    /// Insert a block and return its per-session short id (`b7`). The seq
-    /// counter, the store-wide `rev` bump and the insert happen in one
-    /// immediate transaction so concurrent writers serialise.
-    pub fn insert_block(&mut self, session_id: &str, spec: &Spec) -> Result<String> {
-        let spec_json = spec::encode(spec, None)?;
-        let now = now_ms();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let seq: i64 = tx.query_row(
-            "UPDATE sessions SET next_block_seq = next_block_seq + 1, last_active_at = ?2
-             WHERE id = ?1 RETURNING next_block_seq - 1",
-            rusqlite::params![session_id, now],
-            |r| r.get(0),
-        )?;
-        let short_id = format!("b{seq}");
-        // Lexicographic rank. v0 only appends, so a zero-padded counter is
-        // enough; fractional ranks arrive with insert-between, without
-        // renumbering anything that exists.
-        let ord = format!("a{seq:012}");
-        let rev = next_rev(&tx)?;
-        tx.execute(
-            "INSERT INTO blocks(session_id, short_id, ord, type, version, spec_json, rev, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-            rusqlite::params![
-                session_id,
-                short_id,
-                ord,
-                spec.type_name(),
-                spec::SPEC_VERSION,
-                spec_json,
-                rev,
-                now
-            ],
-        )?;
-        tx.commit()?;
-        Ok(short_id)
-    }
-
-    /// Replace a block's content in place. Short ids resolve within the
-    /// caller's own session, which is what makes two agents both holding a
-    /// `b7` harmless — an agent cannot name another session's block at all.
-    pub fn update_block(&mut self, session_id: &str, short_id: &str, spec: &Spec) -> Result<()> {
-        let spec_json = spec::encode(spec, None)?;
-        let now = now_ms();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let rev = next_rev(&tx)?;
-        let n = tx.execute(
-            "UPDATE blocks SET spec_json = ?1, type = ?2, version = ?3, rev = ?4, updated_at = ?5
-             WHERE session_id = ?6 AND short_id = ?7 AND deleted_at IS NULL",
-            rusqlite::params![
-                spec_json,
-                spec.type_name(),
-                spec::SPEC_VERSION,
-                rev,
-                now,
-                session_id,
-                short_id
-            ],
-        )?;
-        tx.commit()?;
-        if n == 0 {
-            bail!("no block {short_id} in this session");
-        }
-        Ok(())
-    }
-
-    /// A tombstone, not a DELETE — a client reconnecting with `Last-Event-ID`
-    /// has to learn the block went away.
-    pub fn rm_block(&mut self, session_id: &str, short_id: &str) -> Result<()> {
-        let now = now_ms();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let rev = next_rev(&tx)?;
-        let n = tx.execute(
-            "UPDATE blocks SET deleted_at = ?1, rev = ?2, updated_at = ?1
-             WHERE session_id = ?3 AND short_id = ?4 AND deleted_at IS NULL",
-            rusqlite::params![now, rev, session_id, short_id],
-        )?;
-        tx.commit()?;
-        if n == 0 {
-            bail!("no block {short_id} in this session");
-        }
-        Ok(())
-    }
-
-    /// Blocks changed since `rev`, in rev order — the `Last-Event-ID` replay
-    /// query, tombstones included.
-    pub fn blocks_since(&self, rev: i64) -> Result<Vec<BlockRow>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT session_id, short_id, ord, type, spec_json, rev, deleted_at IS NOT NULL
-             FROM blocks WHERE rev > ?1 ORDER BY rev",
-        )?;
-        let rows = stmt
-            .query_map([rev], |r| {
-                Ok(BlockRow {
-                    session_id: r.get(0)?,
-                    short_id: r.get(1)?,
-                    ord: r.get(2)?,
-                    type_name: r.get(3)?,
-                    spec_json: r.get(4)?,
-                    rev: r.get(5)?,
-                    deleted: r.get(6)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    }
-
-    pub fn max_rev(&self) -> Result<i64> {
-        Ok(self
-            .conn
-            .query_row("SELECT COALESCE(MAX(rev), 0) FROM blocks", [], |r| r.get(0))?)
+    pub fn binding(&self, id: &str) -> Result<Option<Binding>> {
+        self.conn
+            .query_row(
+                "SELECT id, path, last_active_at FROM sessions WHERE id = ?1",
+                [id],
+                |r| Ok(Binding { id: r.get(0)?, path: r.get(1)?, last_active_at: r.get(2)? }),
+            )
+            .optional()
+            .map_err(Into::into)
     }
 
     // ---- meta --------------------------------------------------------------
@@ -505,10 +359,6 @@ impl Store {
     }
 }
 
-fn next_rev(tx: &rusqlite::Transaction) -> Result<i64> {
-    Ok(tx.query_row("SELECT COALESCE(MAX(rev), 0) + 1 FROM blocks", [], |r| r.get(0))?)
-}
-
 fn migrate(conn: &mut Connection) -> Result<()> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     let latest = MIGRATIONS.len() as i64;
@@ -521,8 +371,8 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     if version == latest {
         return Ok(());
     }
-    // Copy the file before migrating an existing store — the difference
-    // between an annoyance and a lost plan when a step is non-additive.
+    // Copy the file before migrating an existing store — bindings and the
+    // remembered port are cheap, but the copy is cheaper.
     if version > 0 {
         if let Some(path) = conn.path().map(str::to_string) {
             // Fold the WAL into the main file first, or the copy misses
@@ -556,55 +406,17 @@ mod tests {
     }
 
     #[test]
-    fn short_ids_count_per_session_and_collide_harmlessly() {
-        let mut store = test_store();
-        store.touch_session("s1", "/tmp", "test").unwrap();
-        store.touch_session("s2", "/tmp", "test").unwrap();
-        let a = store
-            .insert_block("s1", &Spec::Prose { text: "one".into() })
-            .unwrap();
-        let b = store
-            .insert_block("s2", &Spec::Prose { text: "two".into() })
-            .unwrap();
-        assert_eq!(a, "b1");
-        assert_eq!(b, "b1"); // same short id, different sessions
-        store
-            .update_block("s1", "b1", &Spec::Prose { text: "one, revised".into() })
-            .unwrap();
-        // s2's b1 is untouched
-        let rows = store.blocks_since(0).unwrap();
-        let s2_block = rows.iter().find(|r| r.session_id == "s2").unwrap();
-        assert!(s2_block.spec_json.contains("two"));
-    }
-
-    #[test]
-    fn rm_is_a_tombstone_and_rev_is_monotonic() {
-        let mut store = test_store();
-        store.touch_session("s", "/tmp", "test").unwrap();
-        let id = store
-            .insert_block("s", &Spec::Prose { text: "x".into() })
-            .unwrap();
-        let rev_before = store.max_rev().unwrap();
-        store.rm_block("s", &id).unwrap();
-        let rows = store.blocks_since(rev_before).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].deleted);
-        assert!(rows[0].rev > rev_before);
-    }
-
-    #[test]
-    fn session_props_are_a_bag_that_preserves_unknown_keys() {
+    fn bindings_upsert_and_order_by_activity() {
         let store = test_store();
-        store.touch_session("s", "/tmp", "test").unwrap();
-        store.set_session_prop("s", "label", Some("My plan")).unwrap();
-        store.set_session_prop("s", "outline", Some("off")).unwrap();
-        // A key some future binary wrote must survive this binary's writes.
-        store.set_session_prop("s", "theme", Some("solarized")).unwrap();
-        store.set_session_prop("s", "outline", None).unwrap(); // back to auto = absent
-        let s = &store.sessions().unwrap()[0];
-        assert_eq!(s.prop("label"), Some("My plan"));
-        assert_eq!(s.prop("outline"), None);
-        assert_eq!(s.prop("theme"), Some("solarized"), "unknown keys survive");
+        store.bind_session("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        store.bind_session("s2", ".sideview/pages/s2.sv", "/tmp", "test").unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        store.bind_session("s1", "ignored-on-conflict.sv", "/tmp", "test").unwrap();
+        let b = store.bindings().unwrap();
+        assert_eq!(b.len(), 2);
+        assert_eq!(b[0].id, "s1", "most recently active first");
+        assert_eq!(b[0].path, ".sideview/pages/s1.sv", "re-touch never moves the file");
     }
 
     #[test]

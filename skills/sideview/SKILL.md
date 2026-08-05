@@ -41,6 +41,14 @@ Ids are per-session: you can only ever name your own blocks, so use them freely.
 Prefer `update` over appending corrections — plans are revised constantly, and a
 corrected block reads better than a correction below a mistake.
 
+**Your page is a file, and editing it directly is equivalent to the CLI.**
+Everything you write lands in `.sideview/pages/<session>.sv`: blocks fenced by
+`<sv-prose|markup|html id="bN">` tags whose bodies are raw bytes — never
+HTML-escape anything inside a block. String-edit a block's text and the page
+patches within a tick; small revisions are often easier this way than
+re-piping a whole block through `update`. Tags count only at column 0 (indent
+by one space to show a literal tag); keep the closing `</sv-...>` lines intact.
+
 **Prefer `prose` over `markup`.** Markdown is cheaper to write, and the page styles
 it fully — headings, tables, task lists, code. Reach for `markup` only when you need
 components or layout markdown can't express (cards, grids, badges, metrics).
