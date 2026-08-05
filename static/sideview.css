@@ -82,6 +82,16 @@
 
 :root { --sv-header-h: 3rem; --sv-rail-w: 17rem; --sv-rail-collapsed-w: 2.4rem; }
 
+/* Mobile browsers inflate text they judge too small (WebKit/Chrome text
+   autosizing), which silently undoes deliberate small type like diff
+   tables — measured live on Chrome iOS boosting one table's cells by two
+   different factors while *reporting* adjust as 100%. `none` is the harder
+   opt-out WebKit actually obeys; the sizes set here are the sizes meant. */
+html {
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
 #sv-header {
   position: sticky;
   top: 0;
@@ -396,17 +406,29 @@ pre.syntax-highlighting .sv-constant {
   line-height: 1.5;
   border-collapse: collapse;
   table-layout: fixed;
-  /* Mobile browsers inflate text inside wide tables; that blows the number
-     column's em budget and wraps digits onto extra rows. Opt out. */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
+  /* Belt to the html-level braces: tables are autosizing's favourite prey. */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 .sv-diff-table td {
-  padding: 0 0.5rem;
+  padding: 1px 0.5rem;
+  /* Explicit and rem-based on the cell itself, not inherited: WebKit's text
+     autosizing inflates the *table's* computed size and lets inheritance
+     carry the boost into the cells — but an element's own rem declaration
+     computes against the root and escapes. Measured on Chrome iOS: the one
+     cell with its own rule painted true while its parent table reported
+     1.425×. */
+  font-size: 0.8rem;
   white-space: pre-wrap;
   word-break: break-word;
   vertical-align: top;
+}
+
+/* A blank diff line is still a line: empty cells keep a full line box, so
+   blank context/removed/added lines don't render as squashed rows. */
+.sv-diff-table td:empty::before {
+  content: "\00a0";
 }
 
 .sv-diff-table td.sv-no {
@@ -459,9 +481,26 @@ pre.syntax-highlighting .sv-constant {
   .sv-diff .sv-view-split { display: none !important; }
   .sv-diff .sv-view-unified { display: table !important; }
   .sv-diff-toggle { display: none; }
-  .sv-diff-table { font-size: 0.68rem; line-height: 1.45; }
-  .sv-diff-table td { padding: 0 0.3rem; }
-  .sv-diff-table td.sv-no { width: 2.6em; padding: 0 0.25rem; }
+  /* One line per row, scrolled inside the figure — wrapped code lines are
+     what actually bloat a phone diff, more than any font size. The page
+     body never scrolls sideways; the diff does. */
+  .sv-diff { overflow-x: auto; }
+  .sv-diff-table {
+    font-size: 0.78rem;
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+  }
+  .sv-diff-table td {
+    padding: 1px 0.25rem;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    white-space: pre;
+    word-break: normal;
+  }
+  .sv-diff-table td.sv-no { width: 2.4em; padding: 0 0.2rem; }
+  .sv-diff-table tr.sv-hunk td { padding-top: 0.3rem; padding-bottom: 0.1rem; }
+  .sv-diff-path { margin-top: 0.5rem; padding: 0.25rem 0; }
 }
 
 /* --- the prose layer --------------------------------------------------------
@@ -469,15 +508,18 @@ pre.syntax-highlighting .sv-constant {
    These selectors give class-less markdown the treatment Bootstrap's own
    classes would, so prose and markup share one look. */
 
-.sv-block table {
+/* Diff tables are excluded: they carry their own dense treatment, and this
+   rule sits later in the cascade at equal specificity — it silently won over
+   every .sv-diff-table padding until measured live (the mobile saga). */
+.sv-block table:not(.sv-diff-table) {
   width: 100%;
   margin-bottom: 1.25rem;
   border-collapse: collapse;
   font-size: 0.95em;
 }
 
-.sv-block th,
-.sv-block td {
+.sv-block table:not(.sv-diff-table) th,
+.sv-block table:not(.sv-diff-table) td {
   padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--bs-border-color);
   text-align: start;

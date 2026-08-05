@@ -93,6 +93,24 @@ visible "rest could not be parsed". Duotone tints: additions lean ink, removals 
 tone, intraline is a deeper wash of the same. Deferred within diff (V1.md): syntax
 highlighting inside lines, `src=` references; watched diffs are committed to v2 via gitoxide.
 
+**The mobile diff saga (2026-08-05, evening) — six distinct causes, worth remembering.** The
+author's phone (Chrome on iOS) showed the diff oversized with wrapping numbers, and the fix
+took six real findings, pinned by a live probe block reporting computed styles from the
+device: (1) number cells inherited `pre-wrap`/`break-word` and wrapped digits; (2) below 992px
+the rail bows out but `body.sv-rail #sv-blocks` kept 6rem of desktop side padding — pure
+phantom gutter; (3) embedded assets change on upgrade behind unchanged URLs, so phones showed
+stale CSS — assets now send `Cache-Control: no-cache`; (4) **WebKit text autosizing inflates a
+*container's* computed font-size and lets inheritance carry the boost into children, even with
+`text-size-adjust: none` set and reported — but an element's own rem declaration computes
+against the root and escapes.** Any deliberately small type must be declared on the element
+holding the text, not inherited (this is why the diff font "never changed" through three
+attempts). (5) Empty cells have no line box, so blank diff lines rendered squashed —
+`td:empty::before { content: "\00a0" }`. (6) The prose layer's `.sv-block td` (equal
+specificity, later in the file) silently beat every `.sv-diff-table td` padding on *all*
+platforms — diff tables are now excluded from prose-table treatment via `:not()`. Landed
+sizes: 0.8rem desktop, 0.78rem mobile with one-line-per-row horizontal scroll inside the
+figure, 1px vertical cell padding so consecutive intraline washes don't fuse.
+
 **Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
 session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
 /api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and
