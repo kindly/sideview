@@ -2,6 +2,12 @@
 name = "sideview"
 version = "0.1.0"
 edition = "2024"
+description = "A visual side channel for CLI agents: pages are .sv files in your project, rendered live in the browser as agents (or you) write them"
+license = "MIT"
+readme = "README.md"
+keywords = ["agent", "cli", "markdown", "live", "daemon"]
+categories = ["command-line-utilities", "development-tools"]
+# repository = set when the project gets a public home
 
 [dependencies]
 actix-web = "4.14.0"
