@@ -27,6 +27,15 @@ pub fn verdict() -> Verdict {
     let netns = netns_inode();
     let mut reasons = Vec::new();
 
+    // The most decisive probe, and namespace-free sandboxes are why it must
+    // come first: codex's landlock+seccomp denies socket() outright while
+    // every namespace tell below reads clean — without this, the verdict
+    // says reachable, the spawned daemon dies at bind, and the error lands
+    // only in daemon.log. Measured live under `codex sandbox`, 2026-08-05.
+    if let Err(e) = std::net::TcpListener::bind(("127.0.0.1", 0)) {
+        reasons.push(format!("cannot create a listening socket ({e})"));
+    }
+
     match non_loopback_interfaces() {
         Some(0) => reasons.push("no non-loopback network interface".to_string()),
         _ => {}

@@ -111,6 +111,21 @@ platforms — diff tables are now excluded from prose-table treatment via `:not(
 sizes: 0.8rem desktop, 0.78rem mobile with one-line-per-row horizontal scroll inside the
 figure, 1px vertical cell padding so consecutive intraline washes don't fuse.
 
+**The harness matrix began 2026-08-05 (evening).** codex 0.146.1, opencode 1.18.13 and pi
+0.73.1 are installed via npm (auth pending — OAuth flows need the author at the machine);
+`sideview skill install` reaches all four harnesses and `status` reports per-harness drift.
+First hard finding, measured under `codex sandbox` before any auth existed: **codex's
+landlock+seccomp denies `socket()` outright** — no network namespace, so every one of
+netcheck's namespace tells reads clean, the old verdict said "reachable", and a spawned
+daemon would have died at bind with the error visible only in daemon.log. The verdict now
+leads with a decisive universal probe (bind a loopback listener; on error, refuse with the
+reason) — sideview under codex-default now prints the honest one-line instruction, same as
+under Claude. Still open for the authed runs: whether codex with `network_access=true`
+lets auto-spawn *work* (no namespace means a permitted socket is genuinely reachable),
+opencode and pi end-to-end (neither sandboxes by default, so auto-spawn should just work),
+and their session-identity env vars. `codex sandbox`'s default is read-only fs, so the
+store-write path also waits for the real `codex exec` run.
+
 **Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
 session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
 /api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and
