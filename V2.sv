@@ -60,9 +60,15 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 </sv-prose>
 
 <sv-prose id="goal">
-## Goal — proposed, awaiting the author
+## Goal — blessed by the author, 2026-08-07
 
-The loop closes: an agent presents a plan and `sideview watch`es; you comment on a paragraph from your phone; the block updates before you've scrolled away. Done-when bars get set when the scope is blessed.
+v2 is done when its own loop signs it off, on this very page:
+
+1. **Every section heading in this document carries a comment, written by the author from the browser: "yay complete."**
+2. **The agent picks each one up through `sideview watch` — without being prompted in chat.**
+3. **0.2.0 on crates.io.**
+
+The done-when is the feature: the plan's completion is announced through the machinery the plan describes, and the chat's silence is part of the test.
 </sv-prose>
 
 </sv-page>
