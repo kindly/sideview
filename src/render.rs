@@ -107,13 +107,16 @@ pub struct Heading {
 /// types that defy autodetection.
 pub fn outline(id: &str, b: &Block) -> Vec<Heading> {
     match b.type_name.as_str() {
+        // Prose headings ARE document structure, in the canonical file —
+        // deriving the rail from them is reading canon, not inference.
         "sv-prose" => prose_outline(&b.body, &format!("{id}-")),
-        "sv-markup" => fragment_outline(&b.body, true),
-        // Iframe-isolated documents contribute nothing: their anchors are
-        // unreachable from the page, and an outline entry that can't be
-        // jumped to (or a tab minted for it) is worse than none — author's
-        // verdict 2026-08-06, reversing v0's "listed, not anchored".
-        "sv-html" => Vec::new(),
+        // Markup headings are presentation (a label on a card is not a
+        // section): inferring structure from them broke the rail twice —
+        // multi-heading blocks, then a pi run putting h-tags in a card row —
+        // and the author pulled it on 2026-08-06. Markup and html blocks
+        // contribute nothing until the explicit agent-supplied outline
+        // (V1.md, v2) gives them a way to say what they mean.
+        "sv-markup" | "sv-html" => Vec::new(),
         // File paths as sections — the rail navigates a multi-file diff.
         "sv-diff" => crate::diff::outline(id, &b.body),
         _ => Vec::new(),
@@ -291,15 +294,14 @@ mod tests {
     }
 
     #[test]
-    fn markup_outline_honours_author_ids_and_survives_bad_html() {
+    fn markup_contributes_no_outline() {
+        // Markup headings are presentation, not structure: a pi run putting
+        // h-tags in a card row minted nonsense sections. Explicit outlines
+        // (v2) are markup's way back in.
         let b = parse_one(
-            "<sv-markup id=\"b4\">\n<h2 id=\"pick-me\">Chosen <b>title</b></h2><div><h3>Loose</h3>\n</sv-markup>",
+            "<sv-markup id=\"b4\">\n<div class=\"row\"><h5>Card A</h5><h5>Card B</h5></div>\n</sv-markup>",
         );
-        let headings = outline("b4", &b);
-        assert_eq!(headings.len(), 2);
-        assert_eq!(headings[0].id.as_deref(), Some("pick-me"));
-        assert_eq!(headings[0].text, "Chosen title");
-        assert_eq!(headings[1].id, None);
+        assert!(outline("b4", &b).is_empty());
     }
 
     #[test]
