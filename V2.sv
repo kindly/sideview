@@ -46,11 +46,12 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 </sv-prose>
 
 <sv-prose id="pages">
-## Document pages, properly
+## Document pages, properly — and the words get fixed
 
-- Nothing about storage changes: all pages are files already, and the db only holds the *binding* (session → path, the daemon's watch list). Committed pages work today — this very file is served through the ordinary machinery — but its binding had to be a hand-written SQL INSERT. The feature is the missing verb: `sideview open <file>` (name tbd) creates that one row.
-- Fresh-clone rediscovery: bindings die with the db, so a startup scan re-finds committed `.sv` files — a colleague cloning the repo sees this page without ceremony.
-- `session promote <dest>`: mv a throwaway page into the repo with the binding following.
+- **Terminology (author, 2026-08-07): page is the noun everywhere.** Chips are pages; the CLI grows `page set / page rm / open <file>`; the db's `sessions` table becomes `bindings`. *Session* survives only as the agent-side routing key (`--session`, the env chain) — how a CLI invocation finds its page, nothing more. A breaking rename, priced correctly at 0.2.
+- Nothing about storage changes: all pages are files already, and the db only holds the binding (the daemon's watch list). Committed pages work today — this very file is served through the ordinary machinery — but its binding had to be a hand-written SQL INSERT. The feature is the missing verb.
+- Fresh-clone rediscovery: a startup scan re-finds committed `.sv` files. **Chip order for rediscovered pages comes from canon, not scan time**: path order by default, the `order` attribute on `<sv-page>` when the author cares — for committed pages, ordering is plan-worthy, so it lives in the file. Throwaway pages keep creation order.
+- `page promote <dest>`: mv a throwaway page into the repo with the binding following.
 - iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim.
 </sv-prose>
 
