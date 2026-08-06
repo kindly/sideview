@@ -109,8 +109,11 @@ pub fn outline(id: &str, b: &Block) -> Vec<Heading> {
     match b.type_name.as_str() {
         "sv-prose" => prose_outline(&b.body, &format!("{id}-")),
         "sv-markup" => fragment_outline(&b.body, true),
-        // Real headings, but behind a sandboxed iframe: listed, not anchored.
-        "sv-html" => fragment_outline(&b.body, false),
+        // Iframe-isolated documents contribute nothing: their anchors are
+        // unreachable from the page, and an outline entry that can't be
+        // jumped to (or a tab minted for it) is worse than none — author's
+        // verdict 2026-08-06, reversing v0's "listed, not anchored".
+        "sv-html" => Vec::new(),
         // File paths as sections — the rail navigates a multi-file diff.
         "sv-diff" => crate::diff::outline(id, &b.body),
         _ => Vec::new(),
@@ -180,7 +183,7 @@ fn iframe(document: &str) -> String {
     // TODO(v1): size via ResizeObserver + postMessage from a small injected
     // script; the fixed starting height is a placeholder.
     format!(
-        r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}" style="width:100%;height:24rem;border:0"></iframe>"#
+        r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}" style="width:100%;height:85vh;border:0"></iframe>"#
     )
 }
 
@@ -285,13 +288,12 @@ mod tests {
     }
 
     #[test]
-    fn html_block_is_iframed_escaped_and_outline_never_anchored() {
+    fn html_block_is_iframed_escaped_and_contributes_no_outline() {
         let b = parse_one(
             "<sv-html id=\"b5\">\n<h1 id=\"inside\">Doc</h1><p class=\"x\">hi &amp; bye</p>\n</sv-html>",
         );
         let headings = outline("b5", &b);
-        assert_eq!(headings.len(), 1);
-        assert_eq!(headings[0].id, None, "iframe anchors are unreachable from the page");
+        assert!(headings.is_empty(), "unreachable anchors mint unusable rail entries and tabs");
         let html = block("b5", &b);
         assert!(html.contains("sandbox=\"allow-scripts\""));
         assert!(!html.contains(r#"srcdoc="<h1"#), "quotes must be escaped: {html}");
