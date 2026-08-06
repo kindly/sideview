@@ -66,11 +66,12 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 
 v2 is done when its own loop signs it off, on this very page:
 
-1. **Every section heading in this document carries a comment, written by the author from the browser: "yay complete."**
-2. **The agent picks each one up through `sideview watch` — without being prompted in chat.**
-3. **0.2.0 on crates.io.**
+1. **The resurrection test, run first**: delete the db, restart the daemon, and this page comes back unprompted — rediscovered from canon, chip in canon order, label from the file — with all comments gone, because conversation dies with the db and documents don't.
+2. **Then the sign-off**: every section heading in this document carries a comment, written by the author from the browser: "yay complete."
+3. **The agent picks each one up through `sideview watch` — without being prompted in chat.**
+4. **0.2.0 on crates.io.**
 
-The done-when is the feature: the plan's completion is announced through the machinery the plan describes, and the chat's silence is part of the test.
+The done-when is the feature: the plan's completion is announced through the machinery the plan describes, the chat's silence is part of the test — and the order matters, since the resurrection test destroys the sign-off's comments.
 </sv-prose>
 
 </sv-page>
