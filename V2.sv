@@ -48,7 +48,8 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="pages">
 ## Document pages, properly
 
-- Register a committed `.sv` as a page (`sideview open <file>`, name tbd) — the binding this very file needed by hand.
+- Nothing about storage changes: all pages are files already, and the db only holds the *binding* (session → path, the daemon's watch list). Committed pages work today — this very file is served through the ordinary machinery — but its binding had to be a hand-written SQL INSERT. The feature is the missing verb: `sideview open <file>` (name tbd) creates that one row.
+- Fresh-clone rediscovery: bindings die with the db, so a startup scan re-finds committed `.sv` files — a colleague cloning the repo sees this page without ceremony.
 - `session promote <dest>`: mv a throwaway page into the repo with the binding following.
 - iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim.
 </sv-prose>
