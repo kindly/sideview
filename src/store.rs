@@ -198,8 +198,13 @@ impl Store {
     }
 
     pub fn bindings(&self) -> Result<Vec<Binding>> {
+        // Creation order, oldest first: chips get stable positions and new
+        // pages append on the right, like browser tabs. Which session the
+        // page auto-shows is a separate question the client answers from
+        // last_active_at — ordering stopped doing double duty after the
+        // author watched chips reorder themselves mid-session.
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, last_active_at FROM sessions ORDER BY last_active_at DESC",
+            "SELECT id, path, last_active_at FROM sessions ORDER BY started_at ASC, id ASC",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -413,16 +418,19 @@ mod tests {
     }
 
     #[test]
-    fn bindings_upsert_and_order_by_activity() {
+    fn bindings_keep_stable_creation_order_despite_activity() {
         let store = test_store();
         store.bind_session("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
         std::thread::sleep(Duration::from_millis(2));
         store.bind_session("s2", ".sideview/pages/s2.sv", "/tmp", "test").unwrap();
         std::thread::sleep(Duration::from_millis(2));
+        // Re-touching s1 makes it the most active — its chip must not move.
         store.bind_session("s1", "ignored-on-conflict.sv", "/tmp", "test").unwrap();
         let b = store.bindings().unwrap();
         assert_eq!(b.len(), 2);
-        assert_eq!(b[0].id, "s1", "most recently active first");
+        assert_eq!(b[0].id, "s1", "creation order, oldest first — stable positions");
+        assert_eq!(b[1].id, "s2");
+        assert!(b[0].last_active_at > b[1].last_active_at, "activity is data, not order");
         assert_eq!(b[0].path, ".sideview/pages/s1.sv", "re-touch never moves the file");
     }
 

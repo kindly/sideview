@@ -168,15 +168,18 @@ es.addEventListener('sessions', (e) => {
   for (const held of [...state.blocks.keys()]) {
     if (!ids.has(held)) state.blocks.delete(held);
   }
+  // Chips sit in stable creation order; "which page should an unpinned tab
+  // show" is decided by activity instead.
+  const mostActive = state.sessions.reduce(
+    (a, s) => (!a || s.last_active_at > a.last_active_at ? s : a),
+    null
+  );
   if (state.selected && !ids.has(state.selected)) {
     state.pinned = false;
     history.replaceState(null, '', '/');
-    switchSession(state.sessions[0]?.id ?? null);
-  } else if (!state.pinned && state.sessions.length) {
-    const top = state.sessions[0].id;
-    if (top !== state.selected) {
-      switchSession(top);
-    }
+    switchSession(mostActive?.id ?? null);
+  } else if (!state.pinned && mostActive && mostActive.id !== state.selected) {
+    switchSession(mostActive.id);
   }
   renderSessionStrip();
   refreshOutline(); // a session's outline property may have changed
