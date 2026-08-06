@@ -107,10 +107,13 @@ fn next_block_id(page: &format::Page) -> String {
     format!("b{}", max + 1)
 }
 
-/// `sideview prose|markup|html` — append the block to the session's file,
-/// print its id alone on stdout, deal with the daemon afterwards, exit
-/// without waiting.
-pub fn author(kind: Kind, explicit_session: Option<&str>) -> Result<()> {
+/// `sideview prose|markup|html|diff` — append the block to the session's
+/// file, print its id alone on stdout, deal with the daemon afterwards, exit
+/// without waiting. `extra` carries per-type attributes (html's --height).
+pub fn author(kind: Kind, explicit_session: Option<&str>, extra: &[(&str, &str)]) -> Result<()> {
+    for (k, v) in extra {
+        format::check_attr_value(v).map_err(|e| anyhow::anyhow!("--{k}: {e}"))?;
+    }
     let mut store = open_project_store()?;
     let (_, path) = resolve_and_bind(&store, explicit_session)?;
     let body = read_stdin()?;
@@ -118,7 +121,9 @@ pub fn author(kind: Kind, explicit_session: Option<&str>) -> Result<()> {
     edit_page(&path, |current| {
         let page = format::parse(&current);
         assigned = next_block_id(&page);
-        let block = format::block_text(kind.type_name(), &[("id", &assigned)], &body);
+        let mut attrs: Vec<(&str, &str)> = vec![("id", &assigned)];
+        attrs.extend_from_slice(extra);
+        let block = format::block_text(kind.type_name(), &attrs, &body);
         Ok(append_block(current, &block))
     })?;
     println!("{assigned}");

@@ -42,7 +42,13 @@ enum Cmd {
     /// Append an HTML fragment, styled by the page (stdin); prints the block id
     Markup(AuthorArgs),
     /// Append a whole HTML document, isolated in an iframe (stdin); prints the block id
-    Html(AuthorArgs),
+    Html {
+        /// Iframe height as a CSS length (e.g. 40rem, 600px); viewers can still drag
+        #[arg(long)]
+        height: Option<String>,
+        #[command(flatten)]
+        author: AuthorArgs,
+    },
     /// Append a unified diff (stdin — e.g. `git diff | sideview diff`); prints the block id
     Diff(AuthorArgs),
     /// Replace a block's content in place (new content on stdin)
@@ -158,10 +164,14 @@ fn main() -> anyhow::Result<()> {
     match args.cmd {
         // A tool that does the useful thing beats one that lectures you.
         None => cli::open(args.detach, &args.bind),
-        Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref()),
-        Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref()),
-        Some(Cmd::Html(a)) => cli::author(cli::Kind::Html, a.session.as_deref()),
-        Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.session.as_deref()),
+        Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref(), &[]),
+        Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref(), &[]),
+        Some(Cmd::Html { height, author }) => {
+            let extra: Vec<(&str, &str)> =
+                height.as_deref().map(|h| ("height", h)).into_iter().collect();
+            cli::author(cli::Kind::Html, author.session.as_deref(), &extra)
+        }
+        Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.session.as_deref(), &[]),
         Some(Cmd::Update { id, r#type, author }) => {
             cli::update(&id, kind(&r#type)?, author.session.as_deref())
         }

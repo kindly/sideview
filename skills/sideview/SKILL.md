@@ -29,6 +29,7 @@ EOF
 # → b2
 
 sideview html < page.html   # a whole HTML document, isolated in an iframe
+                            # (--height 40rem sizes the frame; viewers can drag it)
 
 git diff | sideview diff    # a unified diff, rendered properly — file paths
                             # become outline sections; the viewer can switch

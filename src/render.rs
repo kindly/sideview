@@ -15,7 +15,7 @@ pub fn block(id: &str, b: &Block) -> String {
         // Not sanitized; scripts run. A decision, not an oversight — the block
         // is code you own in a page only you can reach. See DESIGN.md.
         "sv-markup" => ("sv-block", b.body.clone()),
-        "sv-html" => ("sv-block", iframe(&b.body)),
+        "sv-html" => ("sv-block", iframe(&b.body, b.attr("height"))),
         "sv-diff" => (
             "sv-block",
             crate::diff::render(id, &b.body, b.attr("view").unwrap_or("unified")),
@@ -168,7 +168,7 @@ fn fragment_outline(html: &str, keep_ids: bool) -> Vec<Heading> {
 /// Whole documents are isolated in a sandboxed iframe, with the same base
 /// stylesheets injected so isolated blocks look consistent for free — and the
 /// same data-bs-theme wiring, since Bootstrap themes entirely off it.
-fn iframe(document: &str) -> String {
+fn iframe(document: &str, height: Option<&str>) -> String {
     let with_style = format!(
         concat!(
             r#"<link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">"#,
@@ -180,10 +180,26 @@ fn iframe(document: &str) -> String {
         document
     );
     let srcdoc = attr_escape(&with_style);
-    // Sizing lives in sideview.css (viewport-relative, user-draggable) — the
-    // interim answer to tall documents clipping, keeping the author's 85vh.
-    // The proper fix stays v2: ResizeObserver + postMessage autosizing.
-    format!(r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}"></iframe>"#)
+    // Height: the css default (85vh, user-draggable) unless the block's
+    // `height` attribute names a CSS length — the agent's default, the
+    // viewer's drag the override, same symmetry as the outline and diff
+    // views. The proper fix stays v2: ResizeObserver + postMessage.
+    let style = match height.filter(|h| is_css_length(h)) {
+        Some(h) => format!(r#" style="height:{h}""#),
+        None => String::new(),
+    };
+    format!(r#"<iframe class="sv-html" sandbox="allow-scripts"{style} srcdoc="{srcdoc}"></iframe>"#)
+}
+
+/// A plausible CSS length (`40rem`, `600px`, `85vh`, `50%`) and nothing more —
+/// not because the author is distrusted (markup blocks are unsanitized by
+/// design), but because a typo'd unit should fall back to the default rather
+/// than emit a broken style attribute.
+fn is_css_length(h: &str) -> bool {
+    !h.is_empty()
+        && h.len() <= 16
+        && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '%')
+        && h.starts_with(|c: char| c.is_ascii_digit())
 }
 
 fn attr_escape(s: &str) -> String {
@@ -293,6 +309,16 @@ mod tests {
         );
         let headings = outline("b5", &b);
         assert!(headings.is_empty(), "unreachable anchors mint unusable rail entries and tabs");
+        // The agent's height attribute becomes the frame's inline style…
+        let sized = parse_one(
+            "<sv-html id=\"b6\" height=\"40rem\">\n<p>doc</p>\n</sv-html>",
+        );
+        assert!(block("b6", &sized).contains(r#" style="height:40rem""#));
+        // …and a typo'd unit falls back to the css default, never a broken attr.
+        let bad = parse_one(
+            "<sv-html id=\"b7\" height=\"tall;position:fixed\">\n<p>doc</p>\n</sv-html>",
+        );
+        assert!(!block("b7", &bad).contains("style=\"height"));
         let html = block("b5", &b);
         assert!(html.contains("sandbox=\"allow-scripts\""));
         assert!(!html.contains(r#"srcdoc="<h1"#), "quotes must be escaped: {html}");
