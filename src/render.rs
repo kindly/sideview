@@ -180,11 +180,10 @@ fn iframe(document: &str) -> String {
         document
     );
     let srcdoc = attr_escape(&with_style);
-    // TODO(v1): size via ResizeObserver + postMessage from a small injected
-    // script; the fixed starting height is a placeholder.
-    format!(
-        r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}" style="width:100%;height:85vh;border:0"></iframe>"#
-    )
+    // Sizing lives in sideview.css (viewport-relative, user-draggable) — the
+    // interim answer to tall documents clipping, keeping the author's 85vh.
+    // The proper fix stays v2: ResizeObserver + postMessage autosizing.
+    format!(r#"<iframe class="sv-html" sandbox="allow-scripts" srcdoc="{srcdoc}"></iframe>"#)
 }
 
 fn attr_escape(s: &str) -> String {
