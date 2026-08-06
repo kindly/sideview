@@ -9,9 +9,15 @@
   <link rel="stylesheet" href="/assets/sideview.css">
   <script>
     // Before first paint, and again on OS theme change. Bootstrap 5.3 themes
-    // entirely off this attribute; we ship none of its JS.
-    const svTheme = () => document.documentElement.setAttribute('data-bs-theme',
-      matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    // entirely off this attribute; we ship none of its JS. The viewer's
+    // override (the header button, remembered in localStorage) wins over the
+    // OS — the same viewer-beats-default pattern as the rail fold.
+    const svTheme = () => {
+      const pref = localStorage.getItem('sv-theme');
+      const mode = (pref === 'light' || pref === 'dark') ? pref
+        : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-bs-theme', mode);
+    };
     svTheme();
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', svTheme);
   </script>
@@ -24,6 +30,7 @@
     </div>
     <nav id="sv-sessions" aria-label="sessions"></nav>
     <div id="sv-status" role="status" hidden>reconnecting…</div>
+    <button id="sv-theme" type="button" aria-label="theme"></button>
   </header>
   <aside id="sv-outline" aria-label="contents">
     <div id="sv-outline-top">

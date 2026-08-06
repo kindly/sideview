@@ -60,15 +60,17 @@ $railToggle.addEventListener('click', () => {
   refreshOutline();
 });
 
-// Mermaid renders client-side (it only exists as browser JS), themed once at
-// load into the house style — paper nodes, ink borders, Plex — because its
-// stock look reads dated (round-2 dogfood verdict). startOnLoad off because
-// blocks arrive over SSE, not with the page.
-if (window.mermaid) {
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+// Mermaid renders client-side (it only exists as browser JS), themed into
+// the house style — paper nodes, ink borders, Plex — because its stock look
+// reads dated (round-2 dogfood verdict). startOnLoad off because blocks
+// arrive over SSE, not with the page. Re-initialized on theme toggle, since
+// rendered SVGs bake their colors in.
+function initMermaid() {
+  if (!window.mermaid) return;
+  const dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
   const v = dark
     ? { bg: '#16181c', fg: '#dcdad5', soft: '#22252b', line: '#2b2e34' }
-    : { bg: '#f6f4ef', fg: '#23272d', soft: '#ece8df', line: '#e4e0d7' };
+    : { bg: '#faf9f5', fg: '#23272d', soft: '#ece8df', line: '#e4e0d7' };
   window.mermaid.initialize({
     startOnLoad: false,
     theme: 'base',
@@ -91,6 +93,32 @@ if (window.mermaid) {
     },
   });
 }
+initMermaid();
+
+// The theme override: OS is the default, the viewer's choice wins and is
+// remembered — cycling auto → light → dark. svTheme() lives in index.html's
+// pre-paint script. One known gap: iframe-isolated html blocks theme off the
+// OS, not the override (a sandboxed srcdoc can't see our localStorage).
+const $theme = document.getElementById('sv-theme');
+function themeState() {
+  const pref = localStorage.getItem('sv-theme');
+  return pref === 'light' || pref === 'dark' ? pref : 'auto';
+}
+function renderThemeButton() {
+  const s = themeState();
+  $theme.textContent = s === 'auto' ? '◐' : s === 'light' ? '☀' : '☾';
+  $theme.title = 'theme: ' + (s === 'auto' ? 'following the system' : s) + ' — click to change';
+}
+$theme.addEventListener('click', () => {
+  const next = { auto: 'light', light: 'dark', dark: null }[themeState()];
+  if (next) localStorage.setItem('sv-theme', next);
+  else localStorage.removeItem('sv-theme');
+  svTheme();
+  renderThemeButton();
+  initMermaid();       // mermaid SVGs bake colors in — re-render the page
+  renderAllBlocks();
+});
+renderThemeButton();
 
 // comrak renders a ```mermaid fence as <pre><code class="language-mermaid">;
 // swap those for holders mermaid can render into, and also accept the direct

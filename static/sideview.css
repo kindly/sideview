@@ -40,9 +40,11 @@
 :root {
   --sv-ink: #3357d0;          /* blueprint drafting ink — the one accent */
   --sv-ink-soft: rgba(51, 87, 208, 0.35);
-  --sv-paper: #f6f4ef;        /* warm enough to read as paper, not white
+  --sv-paper: #faf9f5;        /* warm enough to read as paper, not white
                                  (round-2 verdict: #fbfaf9 was a claim, not a percept) */
   --sv-hairline: #e4e0d7;
+  --sv-diff-bg: #fdfcf9;      /* diffs get a lighter ground: the row tints
+                                 need more contrast than paper offers */
   --sv-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --sv-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 
@@ -62,6 +64,7 @@
   --sv-ink-soft: rgba(143, 167, 255, 0.35);
   --sv-paper: #16181c;        /* charcoal, not black */
   --sv-hairline: #2b2e34;
+  --sv-diff-bg: #1e2127;      /* lifted above the paper for tint contrast */
 
   --bs-body-bg: var(--sv-paper);
   --bs-body-color: #dcdad5;
@@ -145,6 +148,30 @@ html {
   font-family: var(--sv-mono);
   font-size: 0.78rem;
   color: #c98a2b;
+}
+
+/* The theme override: ◐ following the system, ☀/☾ pinned by the viewer. */
+#sv-theme {
+  font-family: var(--sv-mono);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  flex: none;
+}
+
+#sv-theme:hover {
+  color: var(--bs-body-color);
+  border-color: var(--bs-secondary-color);
+}
+
+/* #sv-status carries the margin-left:auto that pushes the right side of the
+   header over; when it's hidden (the usual state) the button inherits it. */
+#sv-status[hidden] + #sv-theme {
+  margin-left: auto;
 }
 
 #sv-sessions {
@@ -400,6 +427,7 @@ pre.syntax-highlighting .sv-constant {
 }
 
 .sv-diff-table {
+  background: var(--sv-diff-bg);
   width: 100%;
   font-family: var(--sv-mono);
   font-size: 0.8rem;
@@ -454,24 +482,24 @@ pre.syntax-highlighting .sv-constant {
 /* Row tints (unified) and cell tints (split). */
 .sv-diff-table tr.sv-del td:not(.sv-no),
 .sv-diff-table td.sv-del {
-  background: color-mix(in srgb, #c98a2b 9%, transparent);
+  background: color-mix(in srgb, #c98a2b 14%, transparent);
 }
 
 .sv-diff-table tr.sv-ins td:not(.sv-no),
 .sv-diff-table td.sv-ins {
-  background: color-mix(in srgb, var(--sv-ink) 8%, transparent);
+  background: color-mix(in srgb, var(--sv-ink) 12%, transparent);
 }
 
 /* Intraline emphasis: a deeper wash of the same tone, no strikethrough —
    the row already says which side you're reading. */
 .sv-diff-table del {
   text-decoration: none;
-  background: color-mix(in srgb, #c98a2b 26%, transparent);
+  background: color-mix(in srgb, #c98a2b 32%, transparent);
 }
 
 .sv-diff-table ins {
   text-decoration: none;
-  background: color-mix(in srgb, var(--sv-ink) 22%, transparent);
+  background: color-mix(in srgb, var(--sv-ink) 28%, transparent);
 }
 
 /* Side-by-side needs width it doesn't have on a narrow screen: collapse to
