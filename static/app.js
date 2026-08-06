@@ -266,7 +266,11 @@ function computeOutline() {
     const memberOf = new Set();
     for (const h of b.headings || []) {
       if (h.level <= 2) {
-        sections.push({ key: id + '/' + sections.length, block: id, title: h.text, children: [] });
+        // The heading's own anchor, when it has one: a block can declare
+        // many sections (a multi-file diff, a prose block with several ##s),
+        // and both the spy and the rail clicks must resolve to the heading,
+        // not the shared block top.
+        sections.push({ key: id + '/' + sections.length, block: id, title: h.text, id: h.id, children: [] });
         current = sections.length - 1;
         memberOf.add(current);
       } else if (current >= 0) {
@@ -377,6 +381,10 @@ function styleRail() {
   }
 }
 
+function sectionEl(s) {
+  return (s.id && document.getElementById(s.id)) || blockEl(s.block);
+}
+
 function goToSection(s) {
   if (railMode() === 'tabs') {
     state.section = s.key;
@@ -384,7 +392,7 @@ function goToSection(s) {
     styleRail();
     scrollTo({ top: 0 });
   } else {
-    blockEl(s.block)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    sectionEl(s)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 }
 
@@ -423,7 +431,7 @@ function updateSpy(force) {
   const readingLine = 90;
   let active = outline.sections[0].key;
   for (const s of outline.sections) {
-    const el = blockEl(s.block);
+    const el = sectionEl(s);
     if (el && el.getBoundingClientRect().top <= readingLine) active = s.key;
     else break;
   }
