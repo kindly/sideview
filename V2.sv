@@ -33,7 +33,8 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 
 - `src="git:HEAD"` on `sv-diff`: the daemon re-diffs on its poll tick — a live view of the working tree in the middle of a document.
 - Via gitoxide, never a `git` subprocess (the textconv escalation — reasons in V1.md), with a constrained `git:` revspec grammar.
-- Comments on a watched diff use content-fingerprint anchors re-resolved per re-diff; an anchor that leaves the diff renders as "possibly resolved" — on uncommitted work, disappearing usually means addressed.
+- Per-line comments (user- or agent-initiated, promotable to `sv-note`) anchor by **fingerprint, not position**: line text + two lines of context, quoted into the comment at creation so meaning survives any churn.
+- Re-resolution per re-diff is three-state: exact match follows silently; a fuzzy match (`similar` ratio over line and context, context dominating for low-entropy lines, proximity breaking ties) follows wearing an "edited since commented" marker; below confidence it orphans as possibly-resolved. **Never a silent wrong attach.**
 </sv-prose>
 
 <sv-prose id="annotations">
