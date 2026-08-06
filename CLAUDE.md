@@ -1,10 +1,13 @@
 # sideview
 
-A visual side channel for CLI agents. v0 is built and closed (Rust crate, `cargo test`,
-verified live); the design documents remain the authority on intent.
+A visual side channel for CLI agents. v1 shipped as **0.1.0 on crates.io** (2026-08-07,
+tag `v0.1.0`, github.com/kindly/sideview); the design documents remain the authority on
+intent.
 
-**Read [V1.md](V1.md) first.** It is the scope actually being built; [V0.md](V0.md) specifies
-everything already shipped and is not re-opened. [README.md](README.md) is the
+**Read [V2.sv](V2.sv) first** — the working plan, and itself the first committed sideview
+document page (bind it to a running daemon to view it live). The rationale behind every v2
+feature is in [V1.md](V1.md)'s committed-to-v2 entries; V1.md and [V0.md](V0.md) specify what
+already shipped and are not re-opened. [README.md](README.md) is the
 premise, [DESIGN.md](DESIGN.md) is the long-term architecture and backlog,
 [SHARING.md](SHARING.md) and [PRIOR-ART.md](PRIOR-ART.md) are supporting research.
 [HANDOFF.md](HANDOFF.md) has current state and what to do next.
@@ -14,13 +17,14 @@ premise, [DESIGN.md](DESIGN.md) is the long-term architecture and backlog,
 These were each argued out at length. Changing them is fine, but do it deliberately, not by
 drift:
 
-- **Scope is v1** — the centerpiece is *pages are files*: every page's canonical source is a
-  `.sv` block document in the project, with the db demoted to bookkeeping (V1.md's
-  pages-are-files section; author's decision 2026-08-04, after the plan-canonicality
-  discussion). Plus: session deletion (= deleting the file), harness independence
-  (codex/opencode/pi), code highlighting, diff blocks, and the 0.1.0 crates.io release.
-  Tables, app subprocesses, service blocks, provenance and sharing remain explicitly deferred.
-  The project has been re-scoped twice; do not re-expand it casually.
+- **Scope is v2 — closing the feedback loop** (V2.sv): comments from the page (db-stored,
+  Sphinx-style hover placement), `sideview watch` as the agent's blocking await, watched
+  diffs via gitoxide, explicit agent outlines, document-page registration. Two earned
+  placement principles govern everything: *sv files are version-control-worthy canon; the db
+  holds what should not be versioned* — and *the page file has one author; everything
+  multi-writer goes through SQLite*. Tables, app subprocesses, service blocks, provenance and
+  sharing remain explicitly deferred. The project has been re-scoped twice; do not re-expand
+  it casually.
 - **Reference, never embed.** A block spec holds a path, a query or a command — never the content.
   The entire point is that data reaches the page without passing through the model's context. If
   an agent must read the data in order to display it, the block is designed wrong.
