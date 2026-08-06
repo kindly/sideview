@@ -36,6 +36,15 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Comments on a watched diff use content-fingerprint anchors re-resolved per re-diff; an anchor that leaves the diff renders as "possibly resolved" — on uncommitted work, disappearing usually means addressed.
 </sv-prose>
 
+<sv-prose id="annotations">
+## Annotations: both homes, split by intent
+
+- One shape, two homes. `sv-note` blocks in the file are document content — written by the page's one author, versioned with the plan, always visible (margin-note styling). Context notes go to the db — the *same* comments table as user feedback, written via `sideview comment`, hover-revealed, gone when the db goes.
+- **Visibility communicates status: if you can see it without hovering, it's canon.**
+- Promotion bridges them, the system's recurring lifecycle: a context note that earns keeping is rewritten into the file as an `sv-note`.
+- For diffs: annotations on moving content (watched) are conversation; on frozen content (snapshots) they may be canon, versioned beside what they annotate.
+</sv-prose>
+
 <sv-prose id="outlines">
 ## Explicit outlines
 
@@ -48,7 +57,6 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 
 - Register a committed `.sv` as a page (`sideview open <file>`, name tbd) — the binding this very file needed by hand.
 - `session promote <dest>`: mv a throwaway page into the repo with the binding following.
-- Annotations — agent review notes, distinct from feedback — likely the db; decided when built.
 - iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim.
 </sv-prose>
 
