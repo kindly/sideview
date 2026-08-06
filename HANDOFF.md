@@ -6,6 +6,16 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v1 shipped: 0.1.0 published to crates.io, 2026-08-07.** Every done-when bar in V1.md was
+met: pages are files (verified by deleting the only db, twice), broken files heal on save,
+deletion is file removal from page and CLI, code highlights in both themes, multi-file diffs
+render unified and side-by-side with rail navigation, and the four-harness matrix ran live —
+all on OpenAI models — with the author manually confirming all three foreign harnesses before
+release. v2's core is already designed with reasons attached (V1.md's committed-to-v2
+entries): watched diffs via gitoxide, comments in the db behind `sideview watch`, Sphinx-style
+hover placement, explicit agent outlines, and the dividing principle that governs them all —
+sv files are version-control-worthy canon; the db holds what should not be versioned.
+
 **The skeleton exists (2026-08-03).** A compiling crate with the v0 shape end to end: spec
 types with envelope-first decoding, the store with `user_version` migration and the daemon
 row, session resolution, the netns reachability verdict, server-side rendering (comrak GFM),
