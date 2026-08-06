@@ -126,6 +126,29 @@ opencode and pi end-to-end (neither sandboxes by default, so auto-spawn should j
 and their session-identity env vars. `codex sandbox`'s default is read-only fs, so the
 store-write path also waits for the real `codex exec` run.
 
+**The harness matrix ran live 2026-08-06 — all three legs pass, all on OpenAI models** (the
+author's provider choice, which made it a cross-model-family test of the skill and format).
+Per harness, in a shared scratch project, each run's env captured to a file for ground truth:
+
+- **codex** (exec, `--full-auto`; its default exec sandbox is read-only and even blocks
+  `env > file`): skill activated, two blocks + label written, and the netcheck socket-probe
+  fix fired exactly as designed — the honest "no daemon running — run `sideview` in …" line
+  under a sandbox that denies `socket()`. No session id in its shell env (`CODEX_THREAD_ID`
+  is MCP-only in 0.146); falls to the cwd rung.
+- **opencode** (run): skill activated, and **auto-spawn worked — the first agent-started
+  daemon in the project's history** (no namespace, permitted sockets; pid claimed the row,
+  page served 200, the browser tab opened on the author's desktop, which unsandboxed is the
+  right UX). Exposes `OPENCODE_PID` → now a session rung (`opencode:<pid>`).
+- **pi** (`-p`): skill activated, block written against the already-running daemon (third
+  daemon path, silent success). Markers only (`PI_CODING_AGENT`), no id → cwd rung.
+
+Findings that became code: the `OPENCODE_PID` rung; `--session ''` (a codex model invented
+the spelling) minted an empty-id session — empty explicit ids now fall through. Findings
+recorded, not coded: env-less harnesses sharing a project share the cwd session (pi's label
+overwrote codex's mid-matrix — coarse identity working as designed); one contaminated first
+run (launching codex from inside Claude Code leaks `CLAUDE_CODE_SESSION_ID` — matrix runs
+must scrub the env). Claude Code's own leg is this entire project's history.
+
 **Session deletion followed the same day.** Deleting a page is deleting its file: `sideview
 session rm [id]` (no id = your own; never auto-spawns a daemon) and `DELETE
 /api/sessions/{id}` — the page's first write, behind the ✕ on the session chip, two-step and

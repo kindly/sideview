@@ -13,7 +13,9 @@ pub struct Resolved {
 /// First match wins. The controlling tty is deliberately not on this list:
 /// agent Bash calls have none, and each invocation is a fresh shell.
 pub fn resolve(explicit: Option<&str>, cwd: &Path) -> Resolved {
-    if let Some(id) = explicit {
+    // An empty --session falls through the chain rather than minting the ""
+    // session — found live by a codex run inventing `--session ''`.
+    if let Some(id) = explicit.filter(|s| !s.is_empty()) {
         return Resolved { id: id.to_string(), detected_from: "flag" };
     }
     if let Ok(id) = std::env::var("SIDEVIEW_SESSION") {
@@ -28,12 +30,19 @@ pub fn resolve(explicit: Option<&str>, cwd: &Path) -> Resolved {
             return Resolved { id, detected_from: "claude-code" };
         }
     }
-    // codex exposes its thread id to shell executions; whether opencode and
-    // pi expose an equivalent is an open question the harness matrix answers
-    // empirically (V1.md) — until then they land on the tmux/cwd rungs.
+    // The harness matrix (2026-08-06) measured what each actually exposes:
+    // codex 0.146 sets no session id for shell tools (this rung is cheap
+    // insurance if a later version does), opencode sets OPENCODE_PID (its
+    // server process — instance-grade identity, tmux-pane calibre), pi sets
+    // only markers (PI_CODING_AGENT) and lands on the cwd rung.
     if let Ok(id) = std::env::var("CODEX_THREAD_ID") {
         if !id.is_empty() {
             return Resolved { id, detected_from: "codex" };
+        }
+    }
+    if let Ok(pid) = std::env::var("OPENCODE_PID") {
+        if !pid.is_empty() {
+            return Resolved { id: format!("opencode:{pid}"), detected_from: "opencode" };
         }
     }
     if let Ok(pane) = std::env::var("TMUX_PANE") {
