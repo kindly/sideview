@@ -18,6 +18,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Placement is Sphinx's headerlink model: hover a heading or paragraph, a margin mark appears, click to comment there. Existing comments stay invisible until their anchor is hovered — a faint count-dot is the only tell. Mobile has no hover: faint marks, tap to reveal, its own design pass.
 - Anchors: headings by their stable prefixed ids; paragraphs by content hash, computed identically client- and daemon-side. Orphans are a query — targets not among the file's current ids — shown at the page tail, re-anchoring automatically if an id returns.
 - The browser writes through a comments-only endpoint: the page talks *about* the document, never *as* it.
+- Diffs take per-line comments (user- or agent-initiated, promotable to `sv-note`), anchored by **fingerprint, not position**: line text + two lines of context, quoted into the comment at creation so meaning survives churn. Re-resolution when a diff block updates is three-state — exact follows silently, fuzzy follows wearing an "edited since commented" marker, below confidence orphans rather than guesses. Watched-ready for when live diffs arrive.
 </sv-prose>
 
 <sv-prose id="watch">
@@ -28,22 +29,13 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Gives turn-based agents "present the plan, then wait for the user's reaction". stderr nudges on ordinary commands are garnish; watch is the mechanism.
 </sv-prose>
 
-<sv-prose id="watched-diffs">
-## Watched diffs
-
-- `src="git:HEAD"` on `sv-diff`: the daemon re-diffs on its poll tick — a live view of the working tree in the middle of a document.
-- Via gitoxide, never a `git` subprocess (the textconv escalation — reasons in V1.md), with a constrained `git:` revspec grammar.
-- Per-line comments (user- or agent-initiated, promotable to `sv-note`) anchor by **fingerprint, not position**: line text + two lines of context, quoted into the comment at creation so meaning survives any churn.
-- Re-resolution per re-diff is three-state: exact match follows silently; a fuzzy match (`similar` ratio over line and context, context dominating for low-entropy lines, proximity breaking ties) follows wearing an "edited since commented" marker; below confidence it orphans as possibly-resolved. **Never a silent wrong attach.**
-</sv-prose>
-
 <sv-prose id="annotations">
 ## Annotations: both homes, split by intent
 
 - One shape, two homes. `sv-note` blocks in the file are document content — written by the page's one author, versioned with the plan, always visible (margin-note styling). Context notes go to the db — the *same* comments table as user feedback, written via `sideview comment`, hover-revealed, gone when the db goes.
 - **Visibility communicates status: if you can see it without hovering, it's canon.**
 - Promotion bridges them, the system's recurring lifecycle: a context note that earns keeping is rewritten into the file as an `sv-note`.
-- For diffs: annotations on moving content (watched) are conversation; on frozen content (snapshots) they may be canon, versioned beside what they annotate.
+- For diffs: annotations on frozen content (snapshots) may be canon, versioned beside what they annotate; on moving content (watched diffs, when they arrive) they stay conversation.
 </sv-prose>
 
 <sv-prose id="outlines">
@@ -62,9 +54,9 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 </sv-prose>
 
 <sv-prose id="candidates">
-## Candidates, not committed
+## Pushed to later, deliberately
 
-Chip ordering (agent `order` key + viewer drag) · mobile rail · the scroll-feel decision · `tailscale serve` SSE buffering check · unknown-class logging · tables and app subprocesses — deferred twice; reopening them is a deliberate act.
+**Watched diffs and the git machinery** — re-sequenced out of v2 by the author (2026-08-07): proven possible, mechanism settled (gitoxide, never a subprocess — V1.md), consciously not now. Plus the standing candidates: chip ordering (agent `order` key + viewer drag) · mobile rail · the scroll-feel decision · `tailscale serve` SSE buffering check · unknown-class logging · tables and app subprocesses — deferred twice; reopening them is a deliberate act.
 </sv-prose>
 
 <sv-prose id="goal">
