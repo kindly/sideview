@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08e ord-tie';
+const CLIENT_STAMP = '2026-08-08f reading-line';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -189,9 +189,15 @@ addEventListener('message', (e) => {
 // exactly when the block being read is the one that moved (found live,
 // 2026-08-08 — a cascade of moved blocks stranded the author mid-page).
 function readingRef() {
+  // Anchor the block under the reading line (~a third down the viewport,
+  // where eyes actually sit) — anchoring the topmost visible block left a
+  // blind spot: an insertion between that block and the reading line was
+  // invisible to compensation and nudged the text by its height (the
+  // residual small jump, take seven).
+  const line = Math.max(100, innerHeight * 0.3);
   for (const el of $blocks.children) {
     const r = el.getBoundingClientRect();
-    if (r.bottom > 90) return { block: el.dataset.block, top: r.top };
+    if (r.bottom > line) return { block: el.dataset.block, top: r.top };
   }
   return null;
 }
