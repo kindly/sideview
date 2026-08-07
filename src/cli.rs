@@ -581,7 +581,7 @@ pub fn comment(
 /// reopens. Never a delete: the thread keeps its conversation and its place
 /// in the page-tail list.
 pub fn resolve(thread: i64, undo: bool) -> Result<()> {
-    let store = open_project_store()?;
+    let mut store = open_project_store()?;
     let Some(t) = store.thread(thread)? else {
         bail!("no thread {thread}");
     };
@@ -607,7 +607,7 @@ pub fn resolve(thread: i64, undo: bool) -> Result<()> {
 /// when present (inference off). Entries arrive as JSON on stdin:
 /// [{"title": "Overview", "anchor": "h:b2-overview", "children": […]}].
 pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
-    let store = open_project_store()?;
+    let mut store = open_project_store()?;
     let cwd = std::env::current_dir()?;
     let page_id = match page {
         Some(p) => p.to_string(),
@@ -656,11 +656,11 @@ pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()
         .collect();
 
     let mut out = std::io::stdout();
-    let mut probe = String::new(); // never matches, so the first pass always reads
+    let mut generation = -1i64; // never matches, so the first pass always reads
     loop {
-        let p = store.conversation_probe()?;
-        if p != probe {
-            probe = p;
+        let g = store.conversation_gen()?;
+        if g != generation {
+            generation = g;
 
             for (c, t) in store.comments_after(cursor)? {
                 cursor = cursor.max(c.id);

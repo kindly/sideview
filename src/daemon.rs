@@ -387,7 +387,7 @@ async fn unresolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl R
 /// Resolve is undoable and idempotent from the page's point of view: asking
 /// for a state the thread already holds is success, not conflict.
 fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
-    let store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap();
     match store.thread(id) {
         Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
         Ok(Some(_)) => match store.resolve_thread(id, Some("user"), undo) {
@@ -427,10 +427,12 @@ fn poll_loop(
     let opened = std::fs::metadata(&db_path)?;
     let (dev, ino) = (opened.dev(), opened.ino());
     let mut ticks: u32 = 0;
-    // Conversation change detection: the aggregate probe, every tick.
+    // Conversation change detection: the generation counter, bumped in the
+    // same transaction as every conversation write — one O(1) row read.
     // (data_version was caught missing a cross-process commit under WAL
-    // after a long idle — live, 2026-08-08. The probe is index-cheap.)
-    let mut conversation_probe = String::new();
+    // after a long idle, live 2026-08-08; an aggregate probe briefly stood
+    // in before the author called for the counter.)
+    let mut conversation_gen = -1i64;
 
     loop {
         ticks = ticks.wrapping_add(1);
@@ -508,9 +510,9 @@ fn poll_loop(
             // On any conversation mutation: re-serialize conversation
             // snapshots (shipping the pages that changed), and reload the
             // explicit outlines, which ride the sessions event as a prop.
-            let p = store.conversation_probe().unwrap_or_else(|_| conversation_probe.clone());
-            if p != conversation_probe {
-                conversation_probe = p;
+            let g = store.conversation_gen().unwrap_or(conversation_gen);
+            if g != conversation_gen {
+                conversation_gen = g;
 
                 let fresh: HashMap<String, serde_json::Value> = store
                     .outlines()

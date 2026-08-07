@@ -198,6 +198,19 @@ pub struct Comment {
     pub seen_by: Option<String>,
 }
 
+const GEN_KEY: &str = "conversation_gen";
+
+/// The bump half of the atomicity contract: only ever called inside the
+/// mutation's own transaction.
+fn bump_gen(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO meta(key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1",
+        [GEN_KEY],
+    )?;
+    Ok(())
+}
+
 const THREAD_COLS: &str = "threads.id, threads.page, threads.target, threads.anchor, \
      threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by";
 const COMMENT_COLS: &str = "comments.id, comments.thread_id, comments.body, comments.author, \
@@ -341,6 +354,7 @@ impl Store {
         tx.execute("DELETE FROM threads WHERE page = ?1", [id])?;
         tx.execute("DELETE FROM outlines WHERE page = ?1", [id])?;
         let n = tx.execute("DELETE FROM bindings WHERE id = ?1", [id])?;
+        bump_gen(&tx)?;
         tx.commit()?;
         Ok(n > 0)
     }
@@ -359,6 +373,8 @@ impl Store {
     // Threads own placement (page, target, anchor, quote/context, resolution);
     // comments own utterances. Multi-writer and bursty — exactly what the db
     // is for. Serialized shapes double as the watch event and snapshot JSON.
+    // Every mutation bumps the generation counter inside its own transaction
+    // — see conversation_gen for why that atomicity is the contract.
 
     /// Start a thread with its first comment, atomically. An anchor-form
     /// comment always creates a fresh thread — replies address a thread id,
@@ -386,38 +402,47 @@ impl Store {
             rusqlite::params![thread_id, body, author, now],
         )?;
         let comment_id = tx.last_insert_rowid();
+        bump_gen(&tx)?;
         tx.commit()?;
         Ok((thread_id, comment_id))
     }
 
     /// Add a comment to an existing thread. The foreign key makes a reply to
     /// a nonexistent thread an error, not a silent orphan row.
-    pub fn reply(&self, thread_id: i64, body: &str, author: Option<&str>) -> Result<i64> {
-        self.conn
-            .execute(
-                "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![thread_id, body, author, now_ms()],
-            )
-            .with_context(|| format!("no thread {thread_id}?"))?;
-        Ok(self.conn.last_insert_rowid())
+    pub fn reply(&mut self, thread_id: i64, body: &str, author: Option<&str>) -> Result<i64> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![thread_id, body, author, now_ms()],
+        )
+        .with_context(|| format!("no thread {thread_id}?"))?;
+        let id = tx.last_insert_rowid();
+        bump_gen(&tx)?;
+        tx.commit()?;
+        Ok(id)
     }
 
     /// Resolve (or with `undo`, reopen) a thread. Undoable by design — never
     /// a delete. Returns whether the thread existed in the opposite state.
-    pub fn resolve_thread(&self, id: i64, by: Option<&str>, undo: bool) -> Result<bool> {
+    pub fn resolve_thread(&mut self, id: i64, by: Option<&str>, undo: bool) -> Result<bool> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let n = if undo {
-            self.conn.execute(
+            tx.execute(
                 "UPDATE threads SET resolved_at = NULL, resolved_by = NULL
                  WHERE id = ?1 AND resolved_at IS NOT NULL",
                 [id],
             )?
         } else {
-            self.conn.execute(
+            tx.execute(
                 "UPDATE threads SET resolved_at = ?2, resolved_by = ?3
                  WHERE id = ?1 AND resolved_at IS NULL",
                 rusqlite::params![id, now_ms(), by],
             )?
         };
+        if n > 0 {
+            bump_gen(&tx)?;
+        }
+        tx.commit()?;
         Ok(n > 0)
     }
 
@@ -452,26 +477,19 @@ impl Store {
 
     // ---- the watch queries: cursors, claims, and resolve transitions -------
 
-    /// The conversation change probe: a handful of MAXes and COUNTs whose
-    /// concatenation moves on any mutation — new comment, new thread,
-    /// resolve, unresolve, cascade, outline write. This replaced `PRAGMA
-    /// data_version` after it was caught (live, 2026-08-08) not noticing
-    /// another process's commit under WAL following a long idle; these
-    /// queries are index-cheap enough to just run every tick.
-    pub fn conversation_probe(&self) -> Result<String> {
-        self.conn
-            .query_row(
-                "SELECT (SELECT COALESCE(MAX(id),0) FROM comments) || ':' ||
-                        (SELECT COUNT(*) FROM comments) || ':' ||
-                        (SELECT COUNT(*) FROM threads) || ':' ||
-                        (SELECT COALESCE(MAX(resolved_at),0) FROM threads) || ':' ||
-                        (SELECT COUNT(*) FROM threads WHERE resolved_at IS NOT NULL) || ':' ||
-                        (SELECT COALESCE(MAX(updated_at),0) FROM outlines) || ':' ||
-                        (SELECT COUNT(*) FROM outlines)",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(Into::into)
+    /// The conversation generation counter: bumped **in the same transaction
+    /// as every conversation write**, which is the whole point — "gen moved"
+    /// and "the data is visible" are one atomic fact, the guarantee PRAGMA
+    /// data_version failed to give across processes under WAL (caught live,
+    /// 2026-08-08). Watchers poll this one row; a queue table of undelivered
+    /// items was considered and rejected — watchers are readers of one
+    /// shared history (claim already arbitrates who *acts*), not consumers
+    /// of per-watcher queues.
+    pub fn conversation_gen(&self) -> Result<i64> {
+        Ok(self
+            .meta(GEN_KEY)?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0))
     }
 
     pub fn max_comment_id(&self) -> Result<i64> {
@@ -527,17 +545,25 @@ impl Store {
     // The agent's ordered list, used verbatim by the rail when present
     // (inference off). Coordination, not content — so it lives here.
 
-    pub fn set_outline(&self, page: &str, spec: &str) -> Result<()> {
-        self.conn.execute(
+    pub fn set_outline(&mut self, page: &str, spec: &str) -> Result<()> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
             "INSERT INTO outlines(page, spec, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(page) DO UPDATE SET spec = excluded.spec, updated_at = excluded.updated_at",
             rusqlite::params![page, spec, now_ms()],
         )?;
+        bump_gen(&tx)?;
+        tx.commit()?;
         Ok(())
     }
 
-    pub fn clear_outline(&self, page: &str) -> Result<bool> {
-        let n = self.conn.execute("DELETE FROM outlines WHERE page = ?1", [page])?;
+    pub fn clear_outline(&mut self, page: &str) -> Result<bool> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let n = tx.execute("DELETE FROM outlines WHERE page = ?1", [page])?;
+        if n > 0 {
+            bump_gen(&tx)?;
+        }
+        tx.commit()?;
         Ok(n > 0)
     }
 
@@ -798,27 +824,33 @@ mod tests {
     }
 
     #[test]
-    fn the_probe_moves_on_every_kind_of_mutation() {
+    fn the_gen_counter_moves_with_every_mutation_and_only_real_ones() {
         let mut store = test_store();
-        let mut last = store.conversation_probe().unwrap();
-        let mut step = |store: &Store, what: &str| {
-            let p = store.conversation_probe().unwrap();
-            assert_ne!(p, last, "probe must move after {what}");
-            last = p;
+        let mut last = store.conversation_gen().unwrap();
+        let mut step = |store: &Store, what: &str, expect_move: bool| {
+            let g = store.conversation_gen().unwrap();
+            if expect_move {
+                assert!(g > last, "gen must move after {what}");
+            } else {
+                assert_eq!(g, last, "gen must NOT move after {what}");
+            }
+            last = g;
         };
         let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None).unwrap();
-        step(&store, "create_thread");
+        step(&store, "create_thread", true);
         store.reply(t, "again", None).unwrap();
-        step(&store, "reply");
+        step(&store, "reply", true);
         store.resolve_thread(t, None, false).unwrap();
-        step(&store, "resolve");
+        step(&store, "resolve", true);
+        store.resolve_thread(t, None, false).unwrap();
+        step(&store, "no-op resolve", false); // watchers don't wake for nothing
         store.resolve_thread(t, None, true).unwrap();
-        step(&store, "unresolve");
+        step(&store, "unresolve", true);
         store.set_outline("v2", "[]").unwrap();
-        step(&store, "set_outline");
+        step(&store, "set_outline", true);
         store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
         store.delete_binding("v2").unwrap();
-        step(&store, "page rm cascade");
+        step(&store, "page rm cascade", true);
     }
 
     #[test]
