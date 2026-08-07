@@ -55,6 +55,95 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim — as a small **versioned envelope** (`{sv: 1, type: "size" | "theme" | …}`), because theme (today's known gap), React blocks and origin-iframed service blocks all want the same channel; theme rides along in v2.
 </sv-prose>
 
+<sv-prose id="models">
+## The v2 models — for review before a line is written
+
+**Migration v2** (the rename plus the two new tables):
+
+```sql
+ALTER TABLE sessions RENAME TO bindings;          -- pages are the noun; this row was always a binding
+
+CREATE TABLE comments (
+    id         INTEGER PRIMARY KEY,
+    page       TEXT NOT NULL,      -- binding id
+    target     TEXT NOT NULL,      -- block id ("b7")
+    anchor     TEXT,               -- sub-block position; NULL = the block's tail
+    quote      TEXT,               -- the text commented on, captured at creation:
+    context    TEXT,               --   quote + surrounding lines are what re-resolution
+                                   --   matches against, and meaning outlives placement
+    body       TEXT NOT NULL,
+    author     TEXT,               -- NULL locally; tailnet identity fills it at T2
+    created_at INTEGER NOT NULL,
+    seen_at    INTEGER,            -- claim marker, not a read marker
+    seen_by    TEXT                -- which watcher claimed it
+);
+CREATE INDEX comments_by_page ON comments(page, created_at);
+
+CREATE TABLE outlines (
+    page       TEXT PRIMARY KEY,
+    spec       TEXT NOT NULL,      -- the JSON below, used verbatim by the rail
+    updated_at INTEGER NOT NULL
+);
+```
+
+**Anchor strings** — compact, one grammar for db comments and `sv-note` attrs alike (attr values cannot hold quotes, so anchors are strings, with `quote`/`context` columns carrying the prose):
+
+```text
+(absent)              the block's tail — the common case
+h:b3-overview         a heading, by its stable prefixed id
+p:3f9c2a1b04d2        a paragraph, by 12-hex content hash
+l:src/store.rs:8a1f   a diff line: file + fingerprint hash; context column holds the lines
+```
+
+**`sv-note`** (in-file annotation, canon):
+
+```text
+ <sv-note target="b3" at="l:src/store.rs:8a1f">
+ Markdown body — rendered as an always-visible margin note at the anchor.
+ </sv-note>
+```
+
+**Comment endpoint and watch events**:
+
+```json
+POST /api/comments
+{"page": "v2", "target": "b3", "anchor": "p:3f9c2a1b04d2",
+ "quote": "the paragraph text…", "body": "yay complete"}
+```
+
+```json
+{"type": "comment", "id": 42, "page": "v2", "target": "b3",
+ "anchor": "p:3f9c2a1b04d2", "quote": "…", "body": "yay complete",
+ "author": null, "created_at": 1786400000000}
+```
+
+— one JSON object per line on stdout; `watch` starts from its invocation moment (`--since <id>` to reach back), `--claim` marks `seen_at`/`seen_by` via `UPDATE … WHERE seen_at IS NULL RETURNING` so concurrent watchers get exactly-once.
+
+**CLI surface** (new and renamed):
+
+```text
+sideview comment <block> [--at <anchor>] [--page <id>]   # body on stdin
+sideview watch [--timeout N] [--since ID] [--claim]
+sideview outline [--clear] [--page <id>]                 # entries on stdin
+sideview open <file>                                     # bind a committed page
+sideview page set|rm|promote                             # session set/rm live as aliases one release
+```
+
+**Outline spec** (stdin and stored form):
+
+```json
+[{"title": "Overview", "anchor": "h:b2-overview",
+  "children": [{"title": "The store", "anchor": "h:b2-store"}]}]
+```
+
+**The iframe envelope** (autosizing + theme, one protocol):
+
+```json
+{"sv": 1, "type": "size", "height": 842}
+{"sv": 1, "type": "theme", "mode": "dark"}
+```
+</sv-prose>
+
 <sv-prose id="candidates">
 ## Pushed to later, deliberately
 
