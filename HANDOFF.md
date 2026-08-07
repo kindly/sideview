@@ -6,6 +6,28 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v2 built on branch `v2`, overnight 2026-08-07 (agent, for the author's morning review) —
+unreleased, unmerged.** Everything V2.sv commits to except watched diffs (re-sequenced out by
+the author) is implemented and green (43 tests): migration v2 (sessions→bindings + the
+threads/comments/outlines tables), `page set/rm/promote` with session aliases, `open <file>`,
+`comment`/`resolve --undo`/`watch --claim` (typed JSON-lines; the whole loop verified live —
+CLI comment → watch replay → live resolve event → exactly-once claims), the browser endpoints
+plus a per-page `threads` SSE snapshot, the margin-mark/count-dot/popover/tail-list UI, the
+iframe envelope (size out, theme in — 85vh retired), sv-note rendering, explicit outlines
+verbatim in the rail, and startup rediscovery — the resurrection test ran live and passed
+(db deleted, page back from canon, conversation gone). Binary installed and both project
+daemons restarted on it; both stores migrated with `-pre-v2` backups beside them.
+
+Honest gaps for the review: the comment UI has had no human visual pass (built to the CSS
+system, never seen by eyes); paragraph anchors hash in JS only (`anchorHash`, FNV-1a 64/48,
+vector pinned in app.js — the rust twin belongs with diff re-resolution, which didn't start);
+`l:` anchors and per-line diff comments are unimplemented; sv-note renders in place with a
+reference line rather than physically at its anchor; explicit outlines assume scrollspy
+(tabs+spec degrades to all-visible); V2.sv's sign-off ritual (comment every heading from the
+browser, agent picks each up via watch) awaits the author.
+
+## Older state
+
 **v1 shipped: 0.1.0 published to crates.io, 2026-08-07.** Every done-when bar in V1.md was
 met: pages are files (verified by deleting the only db, twice), broken files heal on save,
 deletion is file removal from page and CLI, code highlights in both themes, multi-file diffs
