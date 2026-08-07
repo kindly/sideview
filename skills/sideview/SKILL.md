@@ -111,10 +111,13 @@ root, so copy files into the project first (`$TMPDIR` gets cleaned up).
 ## The page talks back — comments, and who resolves them
 
 Readers comment on the page (hover any paragraph, heading, list item or code
-block). Await their feedback with `sideview watch --since 0 --claim` — typed
-JSON-lines, one event per comment/resolve, `--claim` making each comment
-yours exactly once even with several watchers. Reply on the thread the event
-names: `sideview comment --thread <id>` (body on stdin). Start your own
+block). Await their feedback with `sideview watch --since 0 --skip-author
+agent` — typed JSON-lines, one event per comment/resolve, your own echoes
+filtered server-side. Add `--claim` only when several watchers split one
+page's work and each event is acted on the moment it is read: claim couples
+"seen" with "acted", and a claimed event lost in transit is invisible to
+reach-back. Reply on the thread the event names:
+`sideview comment --thread <id>` (body on stdin). Start your own
 thread with `sideview comment <block> [--at <anchor>]`. Your comments carry
 `author: "agent"`; a thread where the agent spoke last shows a filled bubble
 on the page — that is the handoff.

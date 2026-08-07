@@ -636,7 +636,12 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
 /// object per line. Sandbox-compatible (SQLite file access, no network) and
 /// daemon-independent. `--claim` uses the supersession pattern so several
 /// agents serving one page each see a comment exactly once.
-pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()> {
+pub fn watch(
+    timeout: Option<u64>,
+    since: Option<i64>,
+    claim: bool,
+    skip_author: Option<&str>,
+) -> Result<()> {
     use std::io::Write as _;
 
     let store = open_project_store()?;
@@ -664,6 +669,11 @@ pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()
 
             for (c, t) in store.comments_after(cursor)? {
                 cursor = cursor.max(c.id);
+                // Filter before claim: an event this watcher won't emit is
+                // not one it should take from anyone else.
+                if skip_author.is_some() && c.author.as_deref() == skip_author {
+                    continue;
+                }
                 if claim && !store.claim_comment(c.id, &whoami)? {
                     continue; // another watcher got it — exactly-once holds
                 }
@@ -685,7 +695,9 @@ pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()
 
             for (id, page, at, by) in store.thread_resolutions()? {
                 let known = resolutions.insert(id, at);
+                let skip = skip_author.is_some() && by.as_deref() == skip_author;
                 let event = match (known, at) {
+                    _ if skip => None,
                     (Some(None), Some(when)) => Some(serde_json::json!({
                         "type": "resolve", "thread": id, "page": page,
                         "by": by, "created_at": when,

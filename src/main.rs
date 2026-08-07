@@ -124,9 +124,15 @@ enum Cmd {
         /// Also emit comments back to this id (watch starts at invocation otherwise)
         #[arg(long)]
         since: Option<i64>,
-        /// Claim each comment (exactly-once across concurrent watchers)
+        /// Claim each comment (exactly-once across concurrent watchers).
+        /// Claim only what you will act on: a claimed event lost in transit
+        /// is invisible to reach-back
         #[arg(long)]
         claim: bool,
+        /// Drop events authored by this role (e.g. your own echoes: agent).
+        /// Server-side, so a comment merely quoting the pattern survives
+        #[arg(long)]
+        skip_author: Option<String>,
     },
     /// What's running here, and at which URLs
     Sessions,
@@ -278,7 +284,9 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Resolve { thread, undo }) => cli::resolve(thread, undo),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
-        Some(Cmd::Watch { timeout, since, claim }) => cli::watch(timeout, since, claim),
+        Some(Cmd::Watch { timeout, since, claim, skip_author }) => {
+            cli::watch(timeout, since, claim, skip_author.as_deref())
+        }
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Styles) => cli::styles(),
