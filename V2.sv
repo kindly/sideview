@@ -58,6 +58,8 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="candidates">
 ## Pushed to later, deliberately
 
+**An MCP route** — reopened by the author (2026-08-07) after the stateless 2026-07-28 spec deleted what the original rejection objected to (stateful stdio servers, handshakes, session ids, per-client lifecycle). The shape when built: the daemon grows `/mcp` as a fourth face of the same binary; tools map 1:1 onto CLI verbs through the same internals and locks; page targeting is an explicit tool parameter (stateless has no session — honest anyway); `watch` becomes a Multi-Round-Trip `await_comments`. Buys hosted no-shell agents over the tailnet, structured args, self-describing tools. Two invariants: the CLI stays primary (it works daemon-down; MCP doesn't), and `/mcp` is the first network *authoring* channel — a deliberate trust-line crossing, gated (loopback/token/tailnet identity), never a default.
+
 **Watched diffs and the git machinery** — re-sequenced out of v2 by the author (2026-08-07): proven possible, mechanism settled (gitoxide, never a subprocess — V1.md), consciously not now. Plus the standing candidates: chip ordering (agent `order` key + viewer drag) · mobile rail · the scroll-feel decision · `tailscale serve` SSE buffering check · unknown-class logging · tables and app subprocesses — deferred twice; reopening them is a deliberate act.
 </sv-prose>
 
