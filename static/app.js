@@ -7,6 +7,12 @@
 // panes — the mode for prototypes and app-like pages).
 'use strict';
 
+// Bumped by hand whenever client behaviour changes: the daemon's version
+// skew warns loudly, but a stale tab's JS is invisible — this stamp (console
+// + the brand tooltip) is how you tell which client a tab is running.
+const CLIENT_STAMP = '2026-08-08d id-anchor';
+console.log('sideview client', CLIENT_STAMP);
+
 const state = {
   sessions: [],          // [{id, last_active_at, props}] most recent first
   blocks: new Map(),     // session id -> Map(block id -> {ord, html, headings})
@@ -258,7 +264,7 @@ es.addEventListener('open', () => {
   $blocks.textContent = '';
   document.body.classList.remove('sv-disconnected');
   $status.hidden = true;
-  $brand.title = 'connected';
+  $brand.title = 'connected · client ' + CLIENT_STAMP;
 });
 es.addEventListener('error', () => {
   // EventSource reconnects on its own; the dot goes hollow while it does.
