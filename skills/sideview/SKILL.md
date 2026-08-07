@@ -108,6 +108,27 @@ small `sv-` layer (metrics, deltas), run `sideview styles`. Images: `<img
 src="shots/before.png">` in a markup block — the path resolves against the project
 root, so copy files into the project first (`$TMPDIR` gets cleaned up).
 
+## The page talks back — comments, and who resolves them
+
+Readers comment on the page (hover any paragraph, heading, list item or code
+block). Await their feedback with `sideview watch --since 0 --claim` — typed
+JSON-lines, one event per comment/resolve, `--claim` making each comment
+yours exactly once even with several watchers. Reply on the thread the event
+names: `sideview comment --thread <id>` (body on stdin). Start your own
+thread with `sideview comment <block> [--at <anchor>]`. Your comments carry
+`author: "agent"`; a thread where the agent spoke last shows a filled bubble
+on the page — that is the handoff.
+
+**Answering a thread is not closing it — do not resolve just because you
+replied.** Resolving moves the conversation off the page into the tail list,
+which buries your answer at the exact moment the filled bubble was pointing
+the reader at it. Threads are conversations, not tickets: the person whose
+concern started the thread decides when it is settled. Reply, then stop.
+
+`sideview resolve <thread>` is for when the user tells you — a direct ask, a
+standing instruction ("resolve these once fixed"), or bulk cleanup they have
+requested. `--undo` reopens anything resolved by mistake.
+
 ## If it says "no daemon running"
 
 Your block is saved — nothing is lost — but no page is showing it. The daemon cannot

@@ -98,7 +98,8 @@ enum Cmd {
         #[arg(long)]
         page: Option<String>,
     },
-    /// Resolve a thread — the agent's "feedback addressed" (--undo reopens)
+    /// Resolve a thread (--undo reopens). Normally the user's move — agents
+    /// resolve only when asked; answering a thread is not closing it
     Resolve {
         /// The thread id (watch events carry it)
         thread: i64,
