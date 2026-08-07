@@ -58,6 +58,46 @@ const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL            -- port, which must outlive the daemon row
     );
     "#,
+    // v2: pages are the noun (this row was always a binding), and the
+    // feedback loop's conversation tables. Full rationale in V2.sv's models
+    // block — notably: threads own placement, comments own utterances;
+    // anchor is '' for the block's tail (NULLs compare distinct in SQL);
+    // and there is deliberately no UNIQUE(page, target, anchor), not even
+    // partial on open threads — threads succeed each other at an anchor,
+    // and an unresolve must never fail on an index.
+    r#"
+    ALTER TABLE sessions RENAME TO bindings;
+
+    CREATE TABLE threads(
+        id          INTEGER PRIMARY KEY,
+        page        TEXT NOT NULL,     -- binding id
+        target      TEXT NOT NULL,     -- block id ("b7")
+        anchor      TEXT NOT NULL DEFAULT '',
+        quote       TEXT,              -- the text commented on, captured at thread
+        context     TEXT,              --   creation; what re-resolution matches against
+        created_at  INTEGER NOT NULL,
+        resolved_at INTEGER,           -- NULL = open; resolve is undoable, never delete
+        resolved_by TEXT
+    );
+    CREATE INDEX threads_by_page ON threads(page, resolved_at);
+
+    CREATE TABLE comments(
+        id         INTEGER PRIMARY KEY,
+        thread_id  INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        body       TEXT NOT NULL,
+        author     TEXT,               -- NULL locally; tailnet identity fills it at T2
+        created_at INTEGER NOT NULL,
+        seen_at    INTEGER,            -- claim marker, not a read marker
+        seen_by    TEXT                -- which watcher claimed it
+    );
+    CREATE INDEX comments_by_thread ON comments(thread_id, created_at);
+
+    CREATE TABLE outlines(
+        page       TEXT PRIMARY KEY,
+        spec       TEXT NOT NULL,      -- agent-supplied JSON, used verbatim by the rail
+        updated_at INTEGER NOT NULL
+    );
+    "#,
 ];
 
 pub fn now_ms() -> i64 {
@@ -129,6 +169,70 @@ pub struct Binding {
     pub last_active_at: i64,
 }
 
+/// One conversation's placement: where it hangs, what it quoted at creation,
+/// whether someone has resolved it. Serialized shape doubles as the daemon
+/// snapshot and the watch event payload.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Thread {
+    pub id: i64,
+    pub page: String,
+    pub target: String,
+    /// '' = the block's tail. See V2.sv's anchor grammar.
+    pub anchor: String,
+    pub quote: Option<String>,
+    pub context: Option<String>,
+    pub created_at: i64,
+    pub resolved_at: Option<i64>,
+    pub resolved_by: Option<String>,
+}
+
+/// One utterance within a thread.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Comment {
+    pub id: i64,
+    pub thread_id: i64,
+    pub body: String,
+    pub author: Option<String>,
+    pub created_at: i64,
+    pub seen_at: Option<i64>,
+    pub seen_by: Option<String>,
+}
+
+const THREAD_COLS: &str = "threads.id, threads.page, threads.target, threads.anchor, \
+     threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by";
+const COMMENT_COLS: &str = "comments.id, comments.thread_id, comments.body, comments.author, \
+     comments.created_at, comments.seen_at, comments.seen_by";
+
+fn thread_row(r: &rusqlite::Row) -> rusqlite::Result<Thread> {
+    thread_row_at(r, 0)
+}
+
+fn thread_row_at(r: &rusqlite::Row, base: usize) -> rusqlite::Result<Thread> {
+    Ok(Thread {
+        id: r.get(base)?,
+        page: r.get(base + 1)?,
+        target: r.get(base + 2)?,
+        anchor: r.get(base + 3)?,
+        quote: r.get(base + 4)?,
+        context: r.get(base + 5)?,
+        created_at: r.get(base + 6)?,
+        resolved_at: r.get(base + 7)?,
+        resolved_by: r.get(base + 8)?,
+    })
+}
+
+fn comment_row(r: &rusqlite::Row) -> rusqlite::Result<Comment> {
+    Ok(Comment {
+        id: r.get(0)?,
+        thread_id: r.get(1)?,
+        body: r.get(2)?,
+        author: r.get(3)?,
+        created_at: r.get(4)?,
+        seen_at: r.get(5)?,
+        seen_by: r.get(6)?,
+    })
+}
+
 pub struct Store {
     pub conn: Connection,
     /// The `.sideview/` directory itself.
@@ -155,6 +259,9 @@ impl Store {
 
         let mut conn = Connection::open(dir.join(DB_FILE))?;
         conn.pragma_update(None, "journal_mode", "WAL")?; // persists; harmless to re-set
+        // Per-connection, off by default in SQLite: without it the comments
+        // table's ON DELETE CASCADE is decoration.
+        conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(Duration::from_secs(5))?;
         migrate(&mut conn)?;
 
@@ -189,7 +296,7 @@ impl Store {
     ) -> Result<()> {
         let now = now_ms();
         self.conn.execute(
-            "INSERT INTO sessions(id, path, cwd, detected_from, started_at, last_active_at)
+            "INSERT INTO bindings(id, path, cwd, detected_from, started_at, last_active_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?5)
              ON CONFLICT(id) DO UPDATE SET last_active_at = ?5",
             rusqlite::params![id, path, cwd, detected_from, now],
@@ -204,7 +311,7 @@ impl Store {
         // last_active_at — ordering stopped doing double duty after the
         // author watched chips reorder themselves mid-session.
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, last_active_at FROM sessions ORDER BY started_at ASC, id ASC",
+            "SELECT id, path, last_active_at FROM bindings ORDER BY started_at ASC, id ASC",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -217,7 +324,7 @@ impl Store {
     pub fn binding(&self, id: &str) -> Result<Option<Binding>> {
         self.conn
             .query_row(
-                "SELECT id, path, last_active_at FROM sessions WHERE id = ?1",
+                "SELECT id, path, last_active_at FROM bindings WHERE id = ?1",
                 [id],
                 |r| Ok(Binding { id: r.get(0)?, path: r.get(1)?, last_active_at: r.get(2)? }),
             )
@@ -225,11 +332,181 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// Drop a binding. Returns whether one existed — deleting the file is the
-    /// caller's job (the binding is bookkeeping; the file is the content).
-    pub fn delete_binding(&self, id: &str) -> Result<bool> {
-        let n = self.conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+    /// Drop a binding and its conversation — threads cascade their comments,
+    /// and `page rm` is the one place conversation is destroyed on purpose.
+    /// Returns whether a binding existed; deleting the file is the caller's
+    /// job (the binding is bookkeeping; the file is the content).
+    pub fn delete_binding(&mut self, id: &str) -> Result<bool> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("DELETE FROM threads WHERE page = ?1", [id])?;
+        tx.execute("DELETE FROM outlines WHERE page = ?1", [id])?;
+        let n = tx.execute("DELETE FROM bindings WHERE id = ?1", [id])?;
+        tx.commit()?;
         Ok(n > 0)
+    }
+
+    /// Move a binding's page file path — `page promote` is the only caller;
+    /// paths otherwise never change through re-binding.
+    pub fn rebind_path(&self, id: &str, path: &str) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE bindings SET path = ?2, last_active_at = ?3 WHERE id = ?1",
+            rusqlite::params![id, path, now_ms()],
+        )?;
+        Ok(n > 0)
+    }
+
+    // ---- conversation: threads and comments --------------------------------
+    // Threads own placement (page, target, anchor, quote/context, resolution);
+    // comments own utterances. Multi-writer and bursty — exactly what the db
+    // is for. Serialized shapes double as the watch event and snapshot JSON.
+
+    /// Start a thread with its first comment, atomically. An anchor-form
+    /// comment always creates a fresh thread — replies address a thread id,
+    /// which is what lets threads succeed each other at an anchor.
+    pub fn create_thread(
+        &mut self,
+        page: &str,
+        target: &str,
+        anchor: &str,
+        quote: Option<&str>,
+        context: Option<&str>,
+        body: &str,
+        author: Option<&str>,
+    ) -> Result<(i64, i64)> {
+        let now = now_ms();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO threads(page, target, anchor, quote, context, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![page, target, anchor, quote, context, now],
+        )?;
+        let thread_id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![thread_id, body, author, now],
+        )?;
+        let comment_id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok((thread_id, comment_id))
+    }
+
+    /// Add a comment to an existing thread. The foreign key makes a reply to
+    /// a nonexistent thread an error, not a silent orphan row.
+    pub fn reply(&self, thread_id: i64, body: &str, author: Option<&str>) -> Result<i64> {
+        self.conn
+            .execute(
+                "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![thread_id, body, author, now_ms()],
+            )
+            .with_context(|| format!("no thread {thread_id}?"))?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Resolve (or with `undo`, reopen) a thread. Undoable by design — never
+    /// a delete. Returns whether the thread existed in the opposite state.
+    pub fn resolve_thread(&self, id: i64, by: Option<&str>, undo: bool) -> Result<bool> {
+        let n = if undo {
+            self.conn.execute(
+                "UPDATE threads SET resolved_at = NULL, resolved_by = NULL
+                 WHERE id = ?1 AND resolved_at IS NOT NULL",
+                [id],
+            )?
+        } else {
+            self.conn.execute(
+                "UPDATE threads SET resolved_at = ?2, resolved_by = ?3
+                 WHERE id = ?1 AND resolved_at IS NULL",
+                rusqlite::params![id, now_ms(), by],
+            )?
+        };
+        Ok(n > 0)
+    }
+
+    pub fn thread(&self, id: i64) -> Result<Option<Thread>> {
+        self.conn
+            .query_row(
+                &format!("SELECT {THREAD_COLS} FROM threads WHERE id = ?1"),
+                [id],
+                thread_row,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn threads_for_page(&self, page: &str) -> Result<Vec<Thread>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {THREAD_COLS} FROM threads WHERE page = ?1 ORDER BY created_at ASC, id ASC"
+        ))?;
+        let rows = stmt.query_map([page], thread_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn comments_for_page(&self, page: &str) -> Result<Vec<Comment>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COMMENT_COLS} FROM comments
+             JOIN threads ON threads.id = comments.thread_id
+             WHERE threads.page = ?1 ORDER BY comments.created_at ASC, comments.id ASC"
+        ))?;
+        let rows = stmt.query_map([page], comment_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    // ---- the watch queries: cursors, claims, and resolve transitions -------
+
+    /// `PRAGMA data_version` — bumps when *another* connection commits, which
+    /// is exactly a watcher's wake-up condition.
+    pub fn data_version(&self) -> Result<i64> {
+        self.conn
+            .pragma_query_value(None, "data_version", |r| r.get(0))
+            .map_err(Into::into)
+    }
+
+    pub fn max_comment_id(&self) -> Result<i64> {
+        self.conn
+            .query_row("SELECT COALESCE(MAX(id), 0) FROM comments", [], |r| r.get(0))
+            .map_err(Into::into)
+    }
+
+    /// Comments after the cursor, each with its thread — the watch event
+    /// carries placement so consumers never need a second query.
+    pub fn comments_after(&self, cursor: i64) -> Result<Vec<(Comment, Thread)>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COMMENT_COLS}, {THREAD_COLS} FROM comments
+             JOIN threads ON threads.id = comments.thread_id
+             WHERE comments.id > ?1 ORDER BY comments.id ASC"
+        ))?;
+        let rows = stmt
+            .query_map([cursor], |r| Ok((comment_row(r)?, thread_row_at(r, 7)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The supersession pattern: claim if unclaimed. Zero rows means another
+    /// watcher got there first — skip the event, exactly-once holds.
+    pub fn claim_comment(&self, id: i64, by: &str) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE comments SET seen_at = ?2, seen_by = ?3 WHERE id = ?1 AND seen_at IS NULL",
+            rusqlite::params![id, now_ms(), by],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Pages that have any conversation at all — the daemon's snapshot set.
+    pub fn conversation_pages(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT DISTINCT page FROM threads")?;
+        let rows = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Every thread's resolution state — a watcher diffs successive readings
+    /// to turn stored state into resolve/unresolve events.
+    pub fn thread_resolutions(&self) -> Result<Vec<(i64, String, Option<i64>, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, page, resolved_at, resolved_by FROM threads ORDER BY id ASC")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     // ---- meta --------------------------------------------------------------
@@ -442,6 +719,80 @@ mod tests {
         assert_eq!(store.meta("port").unwrap().as_deref(), Some("33753")); // …not the port
         store.set_meta("port", "34947").unwrap();
         assert_eq!(store.meta("port").unwrap().as_deref(), Some("34947"));
+    }
+
+    #[test]
+    fn threads_carry_placement_and_comments_are_utterances() {
+        let mut store = test_store();
+        let (t1, c1) = store
+            .create_thread("v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None)
+            .unwrap();
+        let c2 = store.reply(t1, "second thoughts", None).unwrap();
+        assert!(c2 > c1);
+        let threads = store.threads_for_page("v2").unwrap();
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].quote.as_deref(), Some("the paragraph…"));
+        let comments = store.comments_for_page("v2").unwrap();
+        assert_eq!(comments.len(), 2, "replies join their thread, not a new one");
+        assert!(store.reply(999, "into the void", None).is_err(), "FK: no orphan utterances");
+    }
+
+    #[test]
+    fn threads_succeed_each_other_at_an_anchor_and_resolve_is_undoable() {
+        let mut store = test_store();
+        let (t1, _) = store.create_thread("v2", "b3", "", None, None, "first concern", None).unwrap();
+        assert!(store.resolve_thread(t1, None, false).unwrap());
+        assert!(!store.resolve_thread(t1, None, false).unwrap(), "already resolved: no-op");
+        // A fresh thread at the same spot — no uniqueness in the way…
+        let (t2, _) = store.create_thread("v2", "b3", "", None, None, "new concern", None).unwrap();
+        assert_ne!(t1, t2);
+        // …and unresolving the first can never fail on an index.
+        assert!(store.resolve_thread(t1, None, true).unwrap());
+        let open: Vec<_> = store
+            .threads_for_page("v2")
+            .unwrap()
+            .into_iter()
+            .filter(|t| t.resolved_at.is_none())
+            .collect();
+        assert_eq!(open.len(), 2);
+    }
+
+    #[test]
+    fn claims_are_exactly_once_and_page_rm_cascades_conversation() {
+        let mut store = test_store();
+        store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
+        let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None).unwrap();
+        assert!(store.claim_comment(c1, "watch:1").unwrap());
+        assert!(!store.claim_comment(c1, "watch:2").unwrap(), "second watcher sees zero rows");
+        assert_eq!(store.comments_after(0).unwrap().len(), 1);
+        assert!(store.delete_binding("v2").unwrap());
+        assert!(store.threads_for_page("v2").unwrap().is_empty(), "threads die with the page");
+        assert_eq!(store.comments_after(0).unwrap().len(), 0, "comments cascade via threads");
+    }
+
+    #[test]
+    fn a_v1_store_migrates_to_v2_with_bindings_intact() {
+        let dir = std::env::temp_dir().join(format!("sideview-mig-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join(DB_FILE);
+        {
+            let mut conn = Connection::open(&db).unwrap();
+            let tx = conn.transaction().unwrap();
+            tx.execute_batch(MIGRATIONS[0]).unwrap();
+            tx.execute(
+                "INSERT INTO sessions(id, path, cwd, detected_from, started_at, last_active_at)
+                 VALUES ('s1', 'p.sv', '/tmp', 'test', 1, 1)",
+                [],
+            )
+            .unwrap();
+            tx.pragma_update(None, "user_version", 1).unwrap();
+            tx.commit().unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        let b = store.bindings().unwrap();
+        assert_eq!(b.len(), 1, "the rename kept the rows");
+        assert_eq!(b[0].id, "s1");
+        assert!(store.threads_for_page("any").unwrap().is_empty(), "v2 tables exist");
     }
 
     #[test]

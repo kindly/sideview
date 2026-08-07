@@ -68,10 +68,55 @@ enum Cmd {
         #[command(flatten)]
         author: AuthorArgs,
     },
-    /// Set properties of this session's page
+    /// Set properties of a page, delete one, or promote it into the repo
+    Page {
+        #[command(subcommand)]
+        action: PageCmd,
+    },
+    /// Alias of `page` — lives one release, then goes
     Session {
         #[command(subcommand)]
         action: SessionCmd,
+    },
+    /// Bind a committed .sv file as a page (the missing verb for documents
+    /// that live in the repo rather than under .sideview/pages/)
+    Open {
+        /// The .sv file, relative to the project
+        file: std::path::PathBuf,
+    },
+    /// Comment on a block (body on stdin): --at places it, --thread replies
+    Comment {
+        /// Target block id (e.g. b3); omit when replying with --thread
+        block: Option<String>,
+        /// Anchor within the block (h:…, p:…, l:…); absent = the block's tail
+        #[arg(long)]
+        at: Option<String>,
+        /// Reply to an existing thread instead of starting one
+        #[arg(long)]
+        thread: Option<i64>,
+        /// Page (binding id) to comment on; otherwise resolved from the environment
+        #[arg(long)]
+        page: Option<String>,
+    },
+    /// Resolve a thread — the agent's "feedback addressed" (--undo reopens)
+    Resolve {
+        /// The thread id (watch events carry it)
+        thread: i64,
+        /// Reopen instead: clears resolved_at, the thread reattaches
+        #[arg(long)]
+        undo: bool,
+    },
+    /// Await feedback: typed JSON-lines (comment/resolve/unresolve) on stdout
+    Watch {
+        /// Give up quietly after this many seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Also emit comments back to this id (watch starts at invocation otherwise)
+        #[arg(long)]
+        since: Option<i64>,
+        /// Claim each comment (exactly-once across concurrent watchers)
+        #[arg(long)]
+        claim: bool,
     },
     /// What's running here, and at which URLs
     Sessions,
@@ -94,6 +139,36 @@ enum Cmd {
         open: bool,
         #[arg(long, default_value = "auto")]
         bind: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PageCmd {
+    /// Set page properties: a human-facing label, whether the outline shows
+    Set {
+        /// Name shown in the page's session strip
+        #[arg(long)]
+        label: Option<String>,
+        /// Contents rail: `scrollspy` (default — whole page, rail follows the
+        /// scroll), `tabs` (sections as separate panes), or `off`
+        #[arg(long)]
+        outline: Option<String>,
+        #[command(flatten)]
+        author: AuthorArgs,
+    },
+    /// Delete a page: its file, its binding, its conversation. No id means this session's
+    Rm {
+        /// The page to delete (defaults to your own)
+        id: Option<String>,
+        #[command(flatten)]
+        author: AuthorArgs,
+    },
+    /// Move a throwaway page into the repo, the binding following
+    Promote {
+        /// Destination path for the .sv file, relative to the project
+        dest: std::path::PathBuf,
+        #[command(flatten)]
+        author: AuthorArgs,
     },
 }
 
@@ -176,12 +251,23 @@ fn main() -> anyhow::Result<()> {
             cli::update(&id, kind(&r#type)?, author.session.as_deref())
         }
         Some(Cmd::Rm { id, author }) => cli::rm(&id, author.session.as_deref()),
-        Some(Cmd::Session { action: SessionCmd::Set { label, outline, author } }) => {
+        Some(Cmd::Page { action: PageCmd::Set { label, outline, author } })
+        | Some(Cmd::Session { action: SessionCmd::Set { label, outline, author } }) => {
             cli::session_set(author.session.as_deref(), label.as_deref(), outline.as_deref())
         }
-        Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
+        Some(Cmd::Page { action: PageCmd::Rm { id, author } })
+        | Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
             cli::session_rm(author.session.as_deref(), id.as_deref())
         }
+        Some(Cmd::Page { action: PageCmd::Promote { dest, author } }) => {
+            cli::page_promote(author.session.as_deref(), &dest)
+        }
+        Some(Cmd::Open { file }) => cli::open_page(&file),
+        Some(Cmd::Comment { block, at, thread, page }) => {
+            cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref())
+        }
+        Some(Cmd::Resolve { thread, undo }) => cli::resolve(thread, undo),
+        Some(Cmd::Watch { timeout, since, claim }) => cli::watch(timeout, since, claim),
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Styles) => cli::styles(),

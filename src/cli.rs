@@ -437,7 +437,7 @@ pub fn session_set(
 /// never touches the daemon: deletion must not auto-spawn one, and a running
 /// one notices the binding vanish on its next tick.
 pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()> {
-    let store = open_project_store()?;
+    let mut store = open_project_store()?;
     let target = match id {
         Some(id) => id.to_string(),
         None => {
@@ -464,6 +464,224 @@ pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()
     }
     eprintln!("removed session {target} ({rel})");
     Ok(())
+}
+
+/// `sideview open <file>` — bind a committed page. The binding id is the
+/// file stem (V2.sv → "V2"): stable, guessable, and recognizable in the URL.
+/// This is the missing verb from V2.sv's document-pages section; before it,
+/// committed pages needed a hand-written INSERT.
+pub fn open_page(file: &Path) -> Result<()> {
+    let mut store = open_project_store()?;
+    let cwd = std::env::current_dir()?;
+    let abs = cwd.join(file);
+    let abs = abs
+        .canonicalize()
+        .with_context(|| format!("no file {}", abs.display()))?;
+    let root = store.root.canonicalize()?;
+    let rel = abs
+        .strip_prefix(&root)
+        .map_err(|_| anyhow::anyhow!("{} is outside the project ({})", abs.display(), root.display()))?
+        .to_string_lossy()
+        .to_string();
+    let id = abs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .context("file has no stem to name the page after")?
+        .to_string();
+    store.bind_session(&id, &rel, &cwd.display().to_string(), "open")?;
+    eprintln!("bound page {id} → {rel}");
+    ensure_daemon(&mut store)?;
+    if let Some(d) = store.daemon_alive()?.filter(|d| d.reachable) {
+        eprintln!("http://127.0.0.1:{}/s/{}", d.port, session::encode(&id));
+    }
+    Ok(())
+}
+
+/// `sideview page promote <dest>` — mv a throwaway page into the repo with
+/// the binding following. The file is already canon-shaped; promotion just
+/// gives it a version-control-worthy address.
+pub fn page_promote(explicit_session: Option<&str>, dest: &Path) -> Result<()> {
+    if dest.is_absolute() || dest.components().any(|c| c.as_os_str() == "..") {
+        bail!("destination must be a relative path inside the project");
+    }
+    let store = open_project_store()?;
+    let cwd = std::env::current_dir()?;
+    let id = session::resolve(explicit_session, &cwd).id;
+    let Some(binding) = store.binding(&id)? else {
+        bail!("no page bound for session {id}");
+    };
+    let from = store.root.join(&binding.path);
+    let to = store.root.join(dest);
+    if to.exists() {
+        bail!("{} already exists", to.display());
+    }
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::rename(&from, &to)
+        .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
+    let _ = std::fs::remove_file(from.with_extension("sv.lock"));
+    store.rebind_path(&id, &dest.to_string_lossy())?;
+    eprintln!("promoted {} → {} (binding follows)", binding.path, dest.display());
+    Ok(())
+}
+
+/// `sideview comment` — the db half of annotations, and the agent's way to
+/// speak in a page's conversation. An anchor form creates a fresh thread
+/// (threads succeed each other at an anchor); `--thread` replies. Prints the
+/// thread id — what `resolve` and further replies address.
+pub fn comment(
+    block: Option<&str>,
+    at: Option<&str>,
+    thread: Option<i64>,
+    page: Option<&str>,
+) -> Result<()> {
+    let mut store = open_project_store()?;
+    let body = read_stdin()?;
+    let body = body.trim_end_matches('\n');
+    if body.is_empty() {
+        bail!("empty comment (body arrives on stdin)");
+    }
+    let thread_id = match (thread, block) {
+        (Some(_), Some(_)) => {
+            bail!("pass a block to start a thread, or --thread to reply — not both")
+        }
+        (Some(tid), None) => {
+            if at.is_some() {
+                bail!("--at places a new thread; a reply inherits its thread's anchor");
+            }
+            store.reply(tid, body, None)?;
+            tid
+        }
+        (None, Some(target)) => {
+            // Commenting never mints a page binding — resolve without binding.
+            let cwd = std::env::current_dir()?;
+            let page_id = match page {
+                Some(p) => p.to_string(),
+                None => session::resolve(None, &cwd).id,
+            };
+            let (tid, _) = store.create_thread(
+                &page_id,
+                target,
+                at.unwrap_or(""),
+                None,
+                None,
+                body,
+                None,
+            )?;
+            tid
+        }
+        (None, None) => bail!("name a block to comment on, or --thread to reply"),
+    };
+    println!("{thread_id}");
+    Ok(())
+}
+
+/// `sideview resolve <thread>` — the agent's "feedback addressed"; `--undo`
+/// reopens. Never a delete: the thread keeps its conversation and its place
+/// in the page-tail list.
+pub fn resolve(thread: i64, undo: bool) -> Result<()> {
+    let store = open_project_store()?;
+    let Some(t) = store.thread(thread)? else {
+        bail!("no thread {thread}");
+    };
+    if !store.resolve_thread(thread, None, undo)? {
+        // The state it's already in, said plainly — not an error worth a
+        // nonzero exit, since the desired end state holds.
+        eprintln!(
+            "thread {thread} is already {}",
+            if undo { "open" } else { "resolved" }
+        );
+        return Ok(());
+    }
+    eprintln!(
+        "{} thread {thread} on {} ({})",
+        if undo { "reopened" } else { "resolved" },
+        t.page,
+        t.target
+    );
+    Ok(())
+}
+
+/// `sideview watch` — the agent's await: a blocking read on the store
+/// itself. Typed JSON-lines on stdout (comment / resolve / unresolve), one
+/// object per line. Sandbox-compatible (SQLite file access, no network) and
+/// daemon-independent. `--claim` uses the supersession pattern so several
+/// agents serving one page each see a comment exactly once.
+pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()> {
+    use std::io::Write as _;
+
+    let store = open_project_store()?;
+    let whoami = format!("watch:{}", std::process::id());
+    let deadline = timeout.map(|t| Instant::now() + Duration::from_secs(t));
+
+    // Watch starts at its invocation moment; --since reaches back (comments
+    // only — resolution is state, so only transitions from here on out).
+    let mut cursor = match since {
+        Some(id) => id,
+        None => store.max_comment_id()?,
+    };
+    let mut resolutions: std::collections::HashMap<i64, Option<i64>> = store
+        .thread_resolutions()?
+        .into_iter()
+        .map(|(id, _, at, _)| (id, at))
+        .collect();
+
+    let mut out = std::io::stdout();
+    let mut version = -1i64; // never matches, so the first pass always reads
+    loop {
+        let v = store.data_version()?;
+        if v != version {
+            version = v;
+
+            for (c, t) in store.comments_after(cursor)? {
+                cursor = cursor.max(c.id);
+                if claim && !store.claim_comment(c.id, &whoami)? {
+                    continue; // another watcher got it — exactly-once holds
+                }
+                let line = serde_json::json!({
+                    "type": "comment",
+                    "id": c.id,
+                    "thread": t.id,
+                    "page": t.page,
+                    "target": t.target,
+                    "anchor": t.anchor,
+                    "quote": t.quote,
+                    "body": c.body,
+                    "author": c.author,
+                    "created_at": c.created_at,
+                });
+                writeln!(out, "{line}")?;
+                out.flush()?;
+            }
+
+            for (id, page, at, by) in store.thread_resolutions()? {
+                let known = resolutions.insert(id, at);
+                let event = match (known, at) {
+                    (Some(None), Some(when)) => Some(serde_json::json!({
+                        "type": "resolve", "thread": id, "page": page,
+                        "by": by, "created_at": when,
+                    })),
+                    (Some(Some(_)), None) => Some(serde_json::json!({
+                        "type": "unresolve", "thread": id, "page": page,
+                        "created_at": store::now_ms(),
+                    })),
+                    // New threads announce themselves through their first
+                    // comment; a state seen at baseline is not an event.
+                    _ => None,
+                };
+                if let Some(line) = event {
+                    writeln!(out, "{line}")?;
+                    out.flush()?;
+                }
+            }
+        }
+
+        if deadline.map_or(false, |d| Instant::now() >= d) {
+            return Ok(()); // --timeout gives up quietly
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 pub fn sessions() -> Result<()> {

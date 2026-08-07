@@ -47,7 +47,7 @@ pub struct Opts {
 /// A pre-serialized SSE event, fanned out to every connected page.
 #[derive(Debug, Clone)]
 struct Outgoing {
-    kind: &'static str, // "block" | "sessions"
+    kind: &'static str, // "block" | "sessions" | "threads"
     data: String,
 }
 
@@ -76,6 +76,10 @@ struct Shared {
     /// Binding order (most recently active first), as of the last poll.
     sessions: Vec<(String, i64)>,
     pages: HashMap<String, PageState>,
+    /// Per-page conversation snapshots (threads + comments), pre-serialized.
+    /// Page-scale full resends, same trust story as block replay: the client
+    /// resets on connect and every change ships the whole page's conversation.
+    conversations: HashMap<String, String>,
 }
 
 struct AppState {
@@ -200,7 +204,12 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 .route("/", web::get().to(page))
                 .route("/s/{session}", web::get().to(page))
                 .route("/events", web::get().to(events))
+                .route("/api/pages/{page}", web::delete().to(delete_session))
+                // The old noun, one release of grace — same handler.
                 .route("/api/sessions/{session}", web::delete().to(delete_session))
+                .route("/api/comments", web::post().to(post_comment))
+                .route("/api/threads/{id}/resolve", web::post().to(resolve_thread))
+                .route("/api/threads/{id}/unresolve", web::post().to(unresolve_thread))
                 .route("/f/{path:.*}", web::get().to(project_file))
                 .route("/assets/{path:.*}", web::get().to(asset))
         })
@@ -229,7 +238,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
 /// snapshot converges every client.
 async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
     let id = path.into_inner();
-    let store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap();
     let Ok(Some(binding)) = store.binding(&id) else {
         return HttpResponse::NotFound().body(format!("no session {id:?}"));
     };
@@ -247,6 +256,85 @@ async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl 
     }
 }
 
+/// The browser's write path for conversation: the page talks *about* the
+/// document, never *as* it. A `thread` field replies; page+target starts a
+/// fresh thread at the anchor (threads succeed each other — see V2.sv).
+#[derive(serde::Deserialize)]
+struct CommentBody {
+    thread: Option<i64>,
+    page: Option<String>,
+    target: Option<String>,
+    #[serde(default)]
+    anchor: String,
+    quote: Option<String>,
+    context: Option<String>,
+    body: String,
+}
+
+async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> impl Responder {
+    let b = body.into_inner();
+    if b.body.trim().is_empty() {
+        return HttpResponse::BadRequest().body("empty comment body");
+    }
+    let mut store = state.store.lock().unwrap();
+    let result = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
+        (Some(tid), _, _) => store.reply(tid, &b.body, None).map(|cid| (tid, cid)),
+        (None, Some(page), Some(target)) => store.create_thread(
+            page,
+            target,
+            &b.anchor,
+            b.quote.as_deref(),
+            b.context.as_deref(),
+            &b.body,
+            None,
+        ),
+        _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
+    };
+    match result {
+        Ok((thread, id)) => HttpResponse::Ok().json(serde_json::json!({
+            "thread": thread, "id": id,
+        })),
+        Err(e) => HttpResponse::BadRequest().body(format!("{e:#}")),
+    }
+}
+
+async fn resolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl Responder {
+    set_resolution(path.into_inner(), false, &state)
+}
+
+async fn unresolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl Responder {
+    set_resolution(path.into_inner(), true, &state)
+}
+
+/// Resolve is undoable and idempotent from the page's point of view: asking
+/// for a state the thread already holds is success, not conflict.
+fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
+    let store = state.store.lock().unwrap();
+    match store.thread(id) {
+        Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
+        Ok(Some(_)) => match store.resolve_thread(id, None, undo) {
+            Ok(_) => HttpResponse::NoContent().finish(),
+            Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
+    }
+}
+
+/// One page's conversation, serialized for the `threads` SSE event. Sent
+/// whole on every change — page-scale, same reasoning as block replay.
+fn conversation_json(store: &Store, page: &str) -> Result<String> {
+    Ok(serde_json::json!({
+        "page": page,
+        "threads": store.threads_for_page(page)?,
+        "comments": store.comments_for_page(page)?,
+    })
+    .to_string())
+}
+
+fn threads_event(data: String) -> Outgoing {
+    Outgoing { kind: "threads", data }
+}
+
 /// Change detection, liveness, supersession and the deleted-underneath-us
 /// check, all in one loop that is already running. Content change detection
 /// is file stat, not `data_version`: the db no longer holds content.
@@ -261,6 +349,10 @@ fn poll_loop(
     let opened = std::fs::metadata(&db_path)?;
     let (dev, ino) = (opened.dev(), opened.ino());
     let mut ticks: u32 = 0;
+    // Conversation change detection: `data_version` bumps when any other
+    // connection commits — a browser comment through our handlers, or an
+    // agent's `sideview comment` from another process entirely.
+    let mut conversation_version: i64 = -1;
 
     loop {
         ticks = ticks.wrapping_add(1);
@@ -337,6 +429,37 @@ fn poll_loop(
 
             if changed_sessions {
                 events.insert(0, sessions_event(&shared));
+            }
+
+            // Conversation snapshots: on any db commit from elsewhere,
+            // re-serialize each conversing page and ship the ones that
+            // changed. A page whose last thread was deleted (page rm
+            // cascade) ships one final empty snapshot, then leaves the map.
+            let v = store.data_version().unwrap_or(conversation_version);
+            if v != conversation_version {
+                conversation_version = v;
+                let pages = store.conversation_pages().unwrap_or_default();
+                for page in &pages {
+                    if let Ok(json) = conversation_json(&store, page) {
+                        if shared.conversations.get(page) != Some(&json) {
+                            shared.conversations.insert(page.clone(), json.clone());
+                            events.push(threads_event(json));
+                        }
+                    }
+                }
+                let conversing: std::collections::HashSet<&String> = pages.iter().collect();
+                shared.conversations.retain(|page, _| {
+                    let keep = conversing.contains(page);
+                    if !keep {
+                        events.push(threads_event(
+                            serde_json::json!({
+                                "page": page, "threads": [], "comments": [],
+                            })
+                            .to_string(),
+                        ));
+                    }
+                    keep
+                });
             }
         }
         for e in events {
@@ -520,6 +643,9 @@ async fn events(state: Data<AppState>) -> actix_web::Result<impl Responder> {
                     replay.push(to_sse(block_event(id, b)));
                 }
             }
+        }
+        for json in shared.conversations.values() {
+            replay.push(to_sse(threads_event(json.clone())));
         }
     }
 
@@ -731,6 +857,61 @@ mod tests {
             state.store.lock().unwrap().binding("s1").unwrap().is_none(),
             "the binding is deleted"
         );
+    }
+
+    #[actix_web::test]
+    async fn comment_endpoint_creates_threads_replies_and_resolves() {
+        let dir = std::env::temp_dir().join(format!("sv-cm-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/api/comments", web::post().to(post_comment))
+                .route("/api/threads/{id}/resolve", web::post().to(resolve_thread))
+                .route("/api/threads/{id}/unresolve", web::post().to(unresolve_thread)),
+        )
+        .await;
+
+        // First comment creates its thread…
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({
+                "page": "v2", "target": "b3", "anchor": "p:3f9c2a1b04d2",
+                "quote": "the paragraph…", "body": "yay complete"
+            }))
+            .to_request();
+        let res: serde_json::Value =
+            actix_web::test::call_and_read_body_json(&app, req).await;
+        let thread = res["thread"].as_i64().unwrap();
+
+        // …a reply names the thread, anchor-free…
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({ "thread": thread, "body": "second thoughts" }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert!(res.status().is_success());
+
+        // …resolve round-trips, and an unknown thread 404s.
+        for (uri, expect) in [
+            (format!("/api/threads/{thread}/resolve"), 204u16),
+            (format!("/api/threads/{thread}/unresolve"), 204),
+            ("/api/threads/999/resolve".to_string(), 404),
+        ] {
+            let req = actix_web::test::TestRequest::post().uri(&uri).to_request();
+            let res = actix_web::test::call_service(&app, req).await;
+            assert_eq!(res.status().as_u16(), expect, "{uri}");
+        }
+        let store = state.store.lock().unwrap();
+        assert_eq!(store.comments_for_page("v2").unwrap().len(), 2);
+        assert!(store.threads_for_page("v2").unwrap()[0].resolved_at.is_none());
     }
 
     /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed
