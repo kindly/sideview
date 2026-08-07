@@ -994,6 +994,7 @@ body.sv-rail #sv-outline { display: block; }
   transition: opacity 0.12s ease;
 }
 :is(p, li) > :is(.sv-cdot, .sv-cmark) { top: -3px; }
+h2 > :is(.sv-cdot, .sv-cmark) { top: -2px; }
 :is(h3, h4, h5, h6) > :is(.sv-cdot, .sv-cmark) { top: -1.5px; }
 
 .sv-cdot { color: var(--sv-ink); opacity: 0.6; }
