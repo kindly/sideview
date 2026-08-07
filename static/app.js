@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08g refresh-restore';
+const CLIENT_STAMP = '2026-08-08h open-anchor';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -274,9 +274,12 @@ const es = new EventSource('/events');
 es.addEventListener('open', () => {
   state.connectedAt = Date.now();
   const ref = readingRef();
-  reconnectAnchor = ref
-    ? { block: ref.el.dataset.block, top: ref.top, until: Date.now() + 8000 }
-    : null;
+  if (ref) {
+    reconnectAnchor = { block: ref.block, top: ref.top, until: Date.now() + 8000 };
+  }
+  // No ref means the page is empty — a fresh load. Keep whatever the
+  // sessionStorage anchor parked in reconnectAnchor; an empty page has
+  // nothing better to say about where the reading was.
   hideNewPill();
   // Every connection replays the full current state (the daemon keeps no
   // per-client cursor), so drop what we hold — blocks removed while we were
