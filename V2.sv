@@ -49,10 +49,9 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 </sv-prose>
 
 <sv-note id="note-scroll-test" target="pages">
-Take two, on your mark this time: this note arrived above the scroll bullet
-while you were reading it. If the reading anchor holds, nothing moved under
-your eye just now — the page grew above and counter-scrolled by exactly the
-same amount.
+Take three — grow-half, id-anchored. If the scroll bullet you're reading
+didn't move as this appeared, the anchor holds both ways and this note has
+earned its keep as the page's memorial to the day scroll got decided.
 </sv-note>
 
 <sv-prose id="pages">
