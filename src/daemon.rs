@@ -356,7 +356,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     }
     let mut store = state.store.lock().unwrap();
     let result = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
-        (Some(tid), _, _) => store.reply(tid, &b.body, None).map(|cid| (tid, cid)),
+        (Some(tid), _, _) => store.reply(tid, &b.body, Some("user")).map(|cid| (tid, cid)),
         (None, Some(page), Some(target)) => store.create_thread(
             page,
             target,
@@ -364,7 +364,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
             b.quote.as_deref(),
             b.context.as_deref(),
             &b.body,
-            None,
+            Some("user"),
         ),
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
@@ -390,7 +390,7 @@ fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
     let store = state.store.lock().unwrap();
     match store.thread(id) {
         Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
-        Ok(Some(_)) => match store.resolve_thread(id, None, undo) {
+        Ok(Some(_)) => match store.resolve_thread(id, Some("user"), undo) {
             Ok(_) => HttpResponse::NoContent().finish(),
             Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
         },

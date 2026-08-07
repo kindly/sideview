@@ -14,7 +14,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="feedback">
 ## Feedback: comments from the page
 
-- **Conversation is two tables, split by what the data is (author, 2026-08-07).** A `threads` table owns *placement* — page, target, anchor, the `quote`/`context` captured at creation, and resolution state — because placement is a property of the conversation, not of each utterance: re-resolution after churn updates one thread row, not N, and a reply written days later never re-captures a quote. A `comments` table owns *utterances*: thread id, body, `author` (nullable now; SHARING T2's tailnet identity fills it later — one column today versus a backfill), created_at, and `seen_at` as a **claim marker**, not a read marker. Both are multi-writer and bursty — SQLite's job. `page rm` cascades threads, and their comments with them.
+- **Conversation is two tables, split by what the data is (author, 2026-08-07).** A `threads` table owns *placement* — page, target, anchor, the `quote`/`context` captured at creation, and resolution state — because placement is a property of the conversation, not of each utterance: re-resolution after churn updates one thread row, not N, and a reply written days later never re-captures a quote. A `comments` table owns *utterances*: thread id, body, `author` — **role before identity (author, 2026-08-07): `agent` when written through the CLI, `user` when written from the page**; SHARING T2's tailnet identity later refines the user side only — created_at, and `seen_at` as a **claim marker**, not a read marker. The role also lets a watcher skip the agent's own echoes, and lets the page mark whose turn it is: a thread whose last word is the agent's shows a **filled** bubble — the user's move. Both are multi-writer and bursty — SQLite's job. `page rm` cascades threads, and their comments with them.
 - **Threads resolve, never delete (author, 2026-08-07):** `resolved_at`/`resolved_by`, undoable by design — with resolution in the model, per-thread deletion has no job left; conversation still dies only with the db. Resolved and orphaned are the same *kind* of thing — a conversation not attached to a live spot — so one page-tail list serves both. They stay two independent axes: orphaned is *computed* (anchor absent from the file's current ids — never stored, so re-anchoring stays automatic when an id returns), resolved is *stored* (someone decided). Unresolve clears `resolved_at`; the thread reattaches if its anchor still resolves, or sits in the list as a plain orphan. Both correct, no special case.
 - **Multiple threads per anchor are allowed** — not for parallel arguments but because threads *succeed* each other: resolve one, and a later concern starts fresh at the same spot. No uniqueness constraint, not even a partial index on open threads: an unresolve that an index can reject is bad UI. "One open thread per bit, usually" is a UI norm — the popover leads with reply-to-the-open-thread and tucks "new thread" behind a smaller affordance — not a schema law.
 - Placement (author, 2026-08-07, revising the margin-mark idea after seeing it): the affordance trails the text, never the margin. Every commentable bit ends with a comment bubble — hover-revealed when empty, **persistent with the count inside where a thread lives** (open threads' comments only: resolved conversations live in the tail list, visibly, which keeps the visibility law honest). Click the bubble to comment, or to open the conversation. Mobile has no hover: tap the text to reveal the empty bubble, tap the bubble to comment.
@@ -26,7 +26,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="watch">
 ## `sideview watch` — the agent's await
 
-- A blocking read on the store itself: polls `data_version`, prints events as they arrive; `--timeout N` gives up quietly. **Typed JSON-lines from day one** — `comment`, `resolve`, `unresolve` — so future event kinds don't break consumers; a resolve is an event in its own right, since it is often the "feedback addressed, move on" signal the agent is actually waiting for. Watch holds its own cursor, and `--claim` uses the supersession pattern (`UPDATE … WHERE seen_at IS NULL RETURNING`) for exactly-once when several agents serve one page.
+- A blocking read on the store itself: polls `data_version`, prints events as they arrive; `--timeout N` gives up quietly. **Typed JSON-lines from day one** — `comment`, `resolve`, `unresolve` — so future event kinds don't break consumers; a resolve is an event in its own right, since it is often the "feedback addressed, move on" signal the agent is actually waiting for. Watch holds its own cursor, and `--claim` uses the supersession pattern (`UPDATE … WHERE seen_at IS NULL RETURNING`) for exactly-once when several agents serve one page. A watcher that joins late reaches back with `--since 0 --claim` — the claim marker is what makes reach-back safe, and it should be the standing form (learned live, 2026-08-07: three pre-watcher comments sat invisible until a db query surfaced them).
 - Sandbox-compatible (SQLite file access, no network) and daemon-independent — works no matter who started what.
 - Gives turn-based agents "present the plan, then wait for the user's reaction". stderr nudges on ordinary commands are garnish; watch is the mechanism.
 </sv-prose>
@@ -78,7 +78,7 @@ CREATE TABLE threads (
                                    --   matches against, and meaning outlives placement
     created_at  INTEGER NOT NULL,
     resolved_at INTEGER,           -- NULL = open; resolve is undoable, never delete
-    resolved_by TEXT               -- who decided; tailnet identity fills it at T2
+    resolved_by TEXT               -- 'agent' | 'user' — who decided
 );
 CREATE INDEX threads_by_page ON threads(page, resolved_at);
 -- deliberately no UNIQUE(page, target, anchor), not even partial on open threads:
@@ -88,7 +88,8 @@ CREATE TABLE comments (
     id         INTEGER PRIMARY KEY,
     thread_id  INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
     body       TEXT NOT NULL,
-    author     TEXT,               -- NULL locally; tailnet identity fills it at T2
+    author     TEXT,               -- 'agent' (CLI) | 'user' (page); tailnet identity
+                                   --   refines the user side at T2
     created_at INTEGER NOT NULL,
     seen_at    INTEGER,            -- claim marker, not a read marker
     seen_by    TEXT                -- which watcher claimed it
@@ -134,8 +135,8 @@ POST /api/threads/7/resolve                                  and …/unresolve; 
 ```json
 {"type": "comment", "id": 42, "thread": 7, "page": "v2", "target": "b3",
  "anchor": "p:3f9c2a1b04d2", "quote": "…", "body": "yay complete",
- "author": null, "created_at": 1786400000000}
-{"type": "resolve", "thread": 7, "page": "v2", "by": null,
+ "author": "user", "created_at": 1786400000000}
+{"type": "resolve", "thread": 7, "page": "v2", "by": "user",
  "created_at": 1786400000000}
 ```
 

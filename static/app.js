@@ -656,16 +656,19 @@ function textOf(el) {
 
 // The comment bubble, drawn inline: an empty one (rounded, two text lines)
 // trails every commentable bit, hover-revealed; a numbered one stays put
-// where a thread lives, the count in place of the lines.
-function bubbleSvg(count) {
+// where a thread lives, the count in place of the lines. Filled means the
+// agent had the last word — the user's turn.
+function bubbleSvg(count, filled) {
   const inner = count == null
     ? '<path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/>'
     : `<text x="12" y="10" text-anchor="middle" dominant-baseline="central"
-         font-size="11" font-weight="600" stroke="none" fill="currentColor">${count}</text>`;
+         font-size="11" font-weight="600" stroke="none"
+         fill="${filled ? 'var(--bs-body-bg)' : 'currentColor'}">${count}</text>`;
   return `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
       fill="none" stroke="currentColor" stroke-width="1.8"
       stroke-linejoin="round" stroke-linecap="round">
-    <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>
+    <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"
+      ${filled ? 'fill="currentColor"' : ''}/>
     ${inner}</svg>`;
 }
 
@@ -727,9 +730,15 @@ function renderConversation() {
     const dot = document.createElement('button');
     dot.type = 'button';
     dot.className = 'sv-cdot';
-    const n = threads.reduce((a, t) => a + commentsFor(t.id).length, 0);
-    dot.innerHTML = bubbleSvg(n);
-    dot.title = n + (n === 1 ? ' comment' : ' comments');
+    const all = threads.flatMap((t) => commentsFor(t.id));
+    const last = all[all.length - 1];
+    // The agent had the last word: filled bubble, the user's turn.
+    const turn = last && last.author === 'agent';
+    dot.classList.toggle('sv-turn', !!turn);
+    dot.innerHTML = bubbleSvg(all.length, turn);
+    dot.title =
+      all.length + (all.length === 1 ? ' comment' : ' comments') +
+      (turn ? ' — the agent replied' : '');
     dot.addEventListener('click', (e) => {
       e.stopPropagation();
       openPopover(el, threads);
@@ -835,7 +844,9 @@ function commentEl(c) {
   const when = new Date(c.created_at).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
-  meta.textContent = (c.author ? c.author + ' · ' : '') + when;
+  // Role before identity: agent or user (pre-role rows read as user).
+  meta.textContent = (c.author || 'user') + ' · ' + when;
+  if (c.author === 'agent') meta.classList.add('sv-agent');
   const body = document.createElement('div');
   body.className = 'sv-comment-body';
   body.textContent = c.body;

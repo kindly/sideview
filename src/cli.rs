@@ -550,7 +550,7 @@ pub fn comment(
             if at.is_some() {
                 bail!("--at places a new thread; a reply inherits its thread's anchor");
             }
-            store.reply(tid, body, None)?;
+            store.reply(tid, body, Some("agent"))?;
             tid
         }
         (None, Some(target)) => {
@@ -567,7 +567,7 @@ pub fn comment(
                 None,
                 None,
                 body,
-                None,
+                Some("agent"),
             )?;
             tid
         }
@@ -585,7 +585,7 @@ pub fn resolve(thread: i64, undo: bool) -> Result<()> {
     let Some(t) = store.thread(thread)? else {
         bail!("no thread {thread}");
     };
-    if !store.resolve_thread(thread, None, undo)? {
+    if !store.resolve_thread(thread, Some("agent"), undo)? {
         // The state it's already in, said plainly — not an error worth a
         // nonzero exit, since the desired end state holds.
         eprintln!(

@@ -1009,6 +1009,10 @@ pre > :is(.sv-cdot, .sv-cmark) {
 
 .sv-cdot { color: var(--sv-ink); opacity: 0.6; }
 .sv-cdot:hover, .sv-cdot:focus-visible { opacity: 1; }
+/* The agent had the last word: filled and full-strength — the user's turn. */
+.sv-cdot.sv-turn { opacity: 1; }
+
+.sv-comment-meta.sv-agent { color: var(--sv-ink); }
 
 .sv-cmark { color: var(--bs-secondary-color); opacity: 0; }
 :hover > .sv-cmark { opacity: 0.5; }
