@@ -331,14 +331,14 @@ body.sv-rail .sv-block > table {
   margin-bottom: 0.25rem;
 }
 
-/* Iframe-isolated html blocks: viewport-relative height so tall documents
-   get real room, and draggable taller on desktop (the resize handle). The
-   proper fix — ResizeObserver + postMessage autosizing — is committed to v2;
-   this is the honest interim. */
+/* Iframe-isolated html blocks: content-sized by the envelope (the iframe's
+   ResizeObserver posts {sv:1, type:"size"}; app.js sets the pixel height).
+   The height here is only the placeholder before the first report, and the
+   viewer's drag still wins over everything. */
 iframe.sv-html {
   width: 100%;
-  height: 85vh;
-  min-height: 12rem;
+  height: 16rem;
+  min-height: 3rem;
   border: 0;
   resize: vertical;
   overflow: auto;

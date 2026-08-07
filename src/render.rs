@@ -169,26 +169,40 @@ fn fragment_outline(html: &str, keep_ids: bool) -> Vec<Heading> {
 }
 
 /// Whole documents are isolated in a sandboxed iframe, with the same base
-/// stylesheets injected so isolated blocks look consistent for free — and the
-/// same data-bs-theme wiring, since Bootstrap themes entirely off it.
+/// stylesheets injected so isolated blocks look consistent for free — plus
+/// the envelope script: a versioned postMessage channel ({sv:1, type:…})
+/// that carries size out (ResizeObserver, retiring the 85vh interim) and
+/// theme in (the override finally reaches srcdoc, which can't see our
+/// localStorage). One channel because theme, React blocks and origin-iframed
+/// service blocks all want it — see V2.sv.
 fn iframe(document: &str, height: Option<&str>) -> String {
     let with_style = format!(
         concat!(
             r#"<link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">"#,
             r#"<link rel="stylesheet" href="/assets/sideview.css">"#,
-            r#"<script>document.documentElement.setAttribute('data-bs-theme',"#,
-            r#"matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>"#,
+            "<script>",
+            // The OS guess paints first; the parent's theme message corrects
+            // it as soon as the size handshake announces this iframe.
+            r#"document.documentElement.setAttribute('data-bs-theme',"#,
+            r#"matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');"#,
+            r#"addEventListener('message',(e)=>{const m=e.data;"#,
+            r#"if(m&&m.sv===1&&m.type==='theme')document.documentElement.setAttribute('data-bs-theme',m.mode)});"#,
+            r#"(()=>{const report=()=>parent.postMessage({sv:1,type:'size',"#,
+            r#"height:document.documentElement.scrollHeight},'*');"#,
+            r#"const ready=()=>{report();const ro=new ResizeObserver(report);"#,
+            r#"ro.observe(document.documentElement);if(document.body)ro.observe(document.body)};"#,
+            r#"if(document.readyState==='complete')ready();else addEventListener('load',ready)})()"#,
+            "</script>",
             "{}"
         ),
         document
     );
     let srcdoc = attr_escape(&with_style);
-    // Height: the css default (85vh, user-draggable) unless the block's
-    // `height` attribute names a CSS length — the agent's default, the
-    // viewer's drag the override, same symmetry as the outline and diff
-    // views. The proper fix stays v2: ResizeObserver + postMessage.
+    // An explicit `height` attribute is the agent saying "this tall": it
+    // pins the iframe (data-sv-fixed tells the parent to ignore size
+    // reports), and the viewer's drag still wins over both.
     let style = match height.filter(|h| is_css_length(h)) {
-        Some(h) => format!(r#" style="height:{h}""#),
+        Some(h) => format!(r#" data-sv-fixed="1" style="height:{h}""#),
         None => String::new(),
     };
     format!(r#"<iframe class="sv-html" sandbox="allow-scripts"{style} srcdoc="{srcdoc}"></iframe>"#)

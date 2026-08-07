@@ -141,6 +141,29 @@ function renderMermaid(el) {
   if (nodes.length) window.mermaid.run({ nodes }).catch(() => {});
 }
 
+// ---- the iframe envelope --------------------------------------------------
+// html blocks are sandboxed srcdoc iframes; the envelope is their one channel
+// ({sv: 1, type: …}). Size flows out — the iframe grows to its content and
+// the 85vh placeholder retires — and theme flows in, fixing the known gap
+// where srcdoc themed off the OS instead of the viewer's override. The first
+// size report doubles as the handshake that triggers the theme send.
+
+addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.sv !== 1) return;
+  for (const f of document.querySelectorAll('iframe.sv-html')) {
+    if (f.contentWindow !== e.source) continue;
+    if (m.type === 'size' && !f.dataset.svFixed && Number.isFinite(m.height)) {
+      f.style.height = Math.ceil(m.height) + 'px';
+    }
+    f.contentWindow.postMessage(
+      { sv: 1, type: 'theme', mode: document.documentElement.getAttribute('data-bs-theme') },
+      '*'
+    );
+    break;
+  }
+});
+
 const es = new EventSource('/events');
 es.addEventListener('open', () => {
   state.connectedAt = Date.now();
