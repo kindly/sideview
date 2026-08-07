@@ -14,7 +14,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="feedback">
 ## Feedback: comments from the page
 
-- A `comments` table in the db (multi-writer and bursty — SQLite's job): session, target, text, created_at, seen_at.
+- A `comments` table in the db (multi-writer and bursty — SQLite's job): session, target, text, created_at, `author` (nullable now; SHARING T2's tailnet identity fills it later — one column today versus a backfill), and `seen_at` as a **claim marker**, not a read marker. `page rm` cascades its comments.
 - Placement is Sphinx's headerlink model: hover a heading or paragraph, a margin mark appears, click to comment there. Existing comments stay invisible until their anchor is hovered — a faint count-dot is the only tell. Mobile has no hover: faint marks, tap to reveal, its own design pass.
 - Anchors: headings by their stable prefixed ids; paragraphs by content hash, computed identically client- and daemon-side. Orphans are a query — targets not among the file's current ids — shown at the page tail, re-anchoring automatically if an id returns.
 - The browser writes through a comments-only endpoint: the page talks *about* the document, never *as* it.
@@ -24,7 +24,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="watch">
 ## `sideview watch` — the agent's await
 
-- A blocking read on the store itself: polls `data_version`, prints comment events as they arrive; `--timeout N` gives up quietly.
+- A blocking read on the store itself: polls `data_version`, prints events as they arrive; `--timeout N` gives up quietly. **Typed JSON-lines from day one** (`{"type": "comment", …}`) so future event kinds don't break consumers; watch holds its own cursor, and `--claim` uses the supersession pattern (`UPDATE … WHERE seen_at IS NULL RETURNING`) for exactly-once when several agents serve one page.
 - Sandbox-compatible (SQLite file access, no network) and daemon-independent — works no matter who started what.
 - Gives turn-based agents "present the plan, then wait for the user's reaction". stderr nudges on ordinary commands are garnish; watch is the mechanism.
 </sv-prose>
@@ -52,7 +52,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Nothing about storage changes: all pages are files already, and the db only holds the binding (the daemon's watch list). Committed pages work today — this very file is served through the ordinary machinery — but its binding had to be a hand-written SQL INSERT. The feature is the missing verb.
 - Fresh-clone rediscovery: a startup scan re-finds committed `.sv` files. **Chip order for rediscovered pages comes from canon, not scan time**: path order by default, the `order` attribute on `<sv-page>` when the author cares — for committed pages, ordering is plan-worthy, so it lives in the file. Throwaway pages keep creation order.
 - `page promote <dest>`: mv a throwaway page into the repo with the binding following.
-- iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim.
+- iframe autosizing done properly: ResizeObserver + postMessage, retiring the 85vh interim — as a small **versioned envelope** (`{sv: 1, type: "size" | "theme" | …}`), because theme (today's known gap), React blocks and origin-iframed service blocks all want the same channel; theme rides along in v2.
 </sv-prose>
 
 <sv-prose id="candidates">
