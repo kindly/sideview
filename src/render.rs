@@ -300,6 +300,15 @@ mod tests {
         assert!(html.contains("select 1"), "the raw body stays visible: {html}");
     }
 
+
+    #[test]
+    fn code_fences_do_not_double_escape() {
+        let b = parse_one("<sv-prose id=\"b9\">\n```text\nsideview comment <block>\n```\n</sv-prose>");
+        let html = block("b9", &b);
+        assert!(!html.contains("&amp;lt;"), "double escaped: {html}");
+        assert!(html.contains("&lt;block&gt;"), "single escape expected: {html}");
+    }
+
     #[test]
     fn sv_note_is_canon_visible_and_wears_its_target() {
         let b = parse_one("<sv-note target=\"b3\" at=\"p:3f9c2a1b04d2\">\n**Own** the anchor.\n</sv-note>");

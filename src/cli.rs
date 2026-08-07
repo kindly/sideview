@@ -656,11 +656,11 @@ pub fn watch(timeout: Option<u64>, since: Option<i64>, claim: bool) -> Result<()
         .collect();
 
     let mut out = std::io::stdout();
-    let mut version = -1i64; // never matches, so the first pass always reads
+    let mut probe = String::new(); // never matches, so the first pass always reads
     loop {
-        let v = store.data_version()?;
-        if v != version {
-            version = v;
+        let p = store.conversation_probe()?;
+        if p != probe {
+            probe = p;
 
             for (c, t) in store.comments_after(cursor)? {
                 cursor = cursor.max(c.id);

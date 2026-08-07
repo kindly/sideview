@@ -452,11 +452,25 @@ impl Store {
 
     // ---- the watch queries: cursors, claims, and resolve transitions -------
 
-    /// `PRAGMA data_version` — bumps when *another* connection commits, which
-    /// is exactly a watcher's wake-up condition.
-    pub fn data_version(&self) -> Result<i64> {
+    /// The conversation change probe: a handful of MAXes and COUNTs whose
+    /// concatenation moves on any mutation — new comment, new thread,
+    /// resolve, unresolve, cascade, outline write. This replaced `PRAGMA
+    /// data_version` after it was caught (live, 2026-08-08) not noticing
+    /// another process's commit under WAL following a long idle; these
+    /// queries are index-cheap enough to just run every tick.
+    pub fn conversation_probe(&self) -> Result<String> {
         self.conn
-            .pragma_query_value(None, "data_version", |r| r.get(0))
+            .query_row(
+                "SELECT (SELECT COALESCE(MAX(id),0) FROM comments) || ':' ||
+                        (SELECT COUNT(*) FROM comments) || ':' ||
+                        (SELECT COUNT(*) FROM threads) || ':' ||
+                        (SELECT COALESCE(MAX(resolved_at),0) FROM threads) || ':' ||
+                        (SELECT COUNT(*) FROM threads WHERE resolved_at IS NOT NULL) || ':' ||
+                        (SELECT COALESCE(MAX(updated_at),0) FROM outlines) || ':' ||
+                        (SELECT COUNT(*) FROM outlines)",
+                [],
+                |r| r.get(0),
+            )
             .map_err(Into::into)
     }
 
@@ -781,6 +795,30 @@ mod tests {
             .filter(|t| t.resolved_at.is_none())
             .collect();
         assert_eq!(open.len(), 2);
+    }
+
+    #[test]
+    fn the_probe_moves_on_every_kind_of_mutation() {
+        let mut store = test_store();
+        let mut last = store.conversation_probe().unwrap();
+        let mut step = |store: &Store, what: &str| {
+            let p = store.conversation_probe().unwrap();
+            assert_ne!(p, last, "probe must move after {what}");
+            last = p;
+        };
+        let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None).unwrap();
+        step(&store, "create_thread");
+        store.reply(t, "again", None).unwrap();
+        step(&store, "reply");
+        store.resolve_thread(t, None, false).unwrap();
+        step(&store, "resolve");
+        store.resolve_thread(t, None, true).unwrap();
+        step(&store, "unresolve");
+        store.set_outline("v2", "[]").unwrap();
+        step(&store, "set_outline");
+        store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
+        store.delete_binding("v2").unwrap();
+        step(&store, "page rm cascade");
     }
 
     #[test]

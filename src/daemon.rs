@@ -427,10 +427,10 @@ fn poll_loop(
     let opened = std::fs::metadata(&db_path)?;
     let (dev, ino) = (opened.dev(), opened.ino());
     let mut ticks: u32 = 0;
-    // Conversation change detection: `data_version` bumps when any other
-    // connection commits — a browser comment through our handlers, or an
-    // agent's `sideview comment` from another process entirely.
-    let mut conversation_version: i64 = -1;
+    // Conversation change detection: the aggregate probe, every tick.
+    // (data_version was caught missing a cross-process commit under WAL
+    // after a long idle — live, 2026-08-08. The probe is index-cheap.)
+    let mut conversation_probe = String::new();
 
     loop {
         ticks = ticks.wrapping_add(1);
@@ -505,12 +505,12 @@ fn poll_loop(
                 bindings.iter().map(|b| &b.id).collect();
             shared.pages.retain(|id, _| live.contains(id));
 
-            // On any db commit from elsewhere: re-serialize conversation
+            // On any conversation mutation: re-serialize conversation
             // snapshots (shipping the pages that changed), and reload the
             // explicit outlines, which ride the sessions event as a prop.
-            let v = store.data_version().unwrap_or(conversation_version);
-            if v != conversation_version {
-                conversation_version = v;
+            let p = store.conversation_probe().unwrap_or_else(|_| conversation_probe.clone());
+            if p != conversation_probe {
+                conversation_probe = p;
 
                 let fresh: HashMap<String, serde_json::Value> = store
                     .outlines()
