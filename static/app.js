@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08f reading-line';
+const CLIENT_STAMP = '2026-08-08g refresh-restore';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -240,8 +240,23 @@ addEventListener('scroll', () => {
 }, { passive: true });
 
 // Across a reconnect: remember which block was being read, restore it once
-// the replay burst goes quiet.
+// the replay burst goes quiet. Refreshes ride the same machinery: the
+// browser's own restoration races the SSE stream and clamps to whatever
+// height exists when its window fires (observed: always "a little way down"),
+// so it's set to manual and the anchor travels through sessionStorage.
+history.scrollRestoration = 'manual';
 let reconnectAnchor = null;
+try {
+  const saved = JSON.parse(sessionStorage.getItem('sv-reading') || 'null');
+  sessionStorage.removeItem('sv-reading');
+  if (saved && saved.block) {
+    reconnectAnchor = { block: saved.block, top: saved.top, until: Date.now() + 10000 };
+  }
+} catch { /* a torn save is just a top-of-page load */ }
+addEventListener('pagehide', () => {
+  const ref = readingRef();
+  if (ref) sessionStorage.setItem('sv-reading', JSON.stringify(ref));
+});
 let restoreTimer = 0;
 function scheduleRestore() {
   if (!reconnectAnchor) return;
