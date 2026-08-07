@@ -984,11 +984,17 @@ body.sv-rail #sv-outline { display: block; }
   border: 0;
   background: none;
   font-family: var(--sv-mono);
-  vertical-align: -0.02em;
+  /* middle centres on the x-height, then a per-context lift: one rule can't
+     seat a fixed-size icon in three font sizes (calibrated by eye against
+     Plex — big headings need none, body text needs the most). */
+  vertical-align: middle;
+  position: relative;
   line-height: 1;
   cursor: pointer;
   transition: opacity 0.12s ease;
 }
+:is(p, li) > :is(.sv-cdot, .sv-cmark) { top: -3px; }
+:is(h3, h4, h5, h6) > :is(.sv-cdot, .sv-cmark) { top: -1.5px; }
 
 .sv-cdot { color: var(--sv-ink); opacity: 0.6; }
 .sv-cdot:hover, .sv-cdot:focus-visible { opacity: 1; }
