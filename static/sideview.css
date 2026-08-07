@@ -984,7 +984,7 @@ body.sv-rail #sv-outline { display: block; }
   border: 0;
   background: none;
   font-family: var(--sv-mono);
-  vertical-align: -0.12em;
+  vertical-align: -0.02em;
   line-height: 1;
   cursor: pointer;
   transition: opacity 0.12s ease;

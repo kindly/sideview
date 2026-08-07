@@ -654,17 +654,19 @@ function textOf(el) {
   return clone.textContent;
 }
 
-// The comment bubble, drawn inline: an empty one trails every commentable
-// bit (hover-revealed), a numbered one stays put where a thread lives.
+// The comment bubble, drawn inline: an empty one (rounded, two text lines)
+// trails every commentable bit, hover-revealed; a numbered one stays put
+// where a thread lives, the count in place of the lines.
 function bubbleSvg(count) {
-  const label = count == null
-    ? ''
-    : `<text x="10" y="8" text-anchor="middle" dominant-baseline="central"
-         font-size="9" stroke="none" fill="currentColor">${count}</text>`;
-  return `<svg viewBox="0 0 20 19" width="17" height="16" aria-hidden="true">
-    <path d="M1.5 1.5h17v12h-11l-4 4v-4h-2z"
-      fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-    ${label}</svg>`;
+  const inner = count == null
+    ? '<path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/>'
+    : `<text x="12" y="10" text-anchor="middle" dominant-baseline="central"
+         font-size="11" font-weight="600" stroke="none" fill="currentColor">${count}</text>`;
+  return `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+      fill="none" stroke="currentColor" stroke-width="1.8"
+      stroke-linejoin="round" stroke-linecap="round">
+    <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>
+    ${inner}</svg>`;
 }
 
 // thread -> the element its anchor names right now, or null (orphaned).
