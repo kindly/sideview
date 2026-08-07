@@ -14,17 +14,19 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="feedback">
 ## Feedback: comments from the page
 
-- A `comments` table in the db (multi-writer and bursty — SQLite's job): session, target, text, created_at, `author` (nullable now; SHARING T2's tailnet identity fills it later — one column today versus a backfill), and `seen_at` as a **claim marker**, not a read marker. `page rm` cascades its comments.
-- Placement is Sphinx's headerlink model: hover a heading or paragraph, a margin mark appears, click to comment there. Existing comments stay invisible until their anchor is hovered — a faint count-dot is the only tell. Mobile has no hover: faint marks, tap to reveal, its own design pass.
-- Anchors: headings by their stable prefixed ids; paragraphs by content hash, computed identically client- and daemon-side. Orphans are a query — targets not among the file's current ids — shown at the page tail, re-anchoring automatically if an id returns.
-- The browser writes through a comments-only endpoint: the page talks *about* the document, never *as* it.
-- Diffs take per-line comments (user- or agent-initiated, promotable to `sv-note`), anchored by **fingerprint, not position**: line text + two lines of context, quoted into the comment at creation so meaning survives churn. Re-resolution when a diff block updates is three-state — exact follows silently, fuzzy follows wearing an "edited since commented" marker, below confidence orphans rather than guesses. Watched-ready for when live diffs arrive.
+- **Conversation is two tables, split by what the data is (author, 2026-08-07).** A `threads` table owns *placement* — page, target, anchor, the `quote`/`context` captured at creation, and resolution state — because placement is a property of the conversation, not of each utterance: re-resolution after churn updates one thread row, not N, and a reply written days later never re-captures a quote. A `comments` table owns *utterances*: thread id, body, `author` (nullable now; SHARING T2's tailnet identity fills it later — one column today versus a backfill), created_at, and `seen_at` as a **claim marker**, not a read marker. Both are multi-writer and bursty — SQLite's job. `page rm` cascades threads, and their comments with them.
+- **Threads resolve, never delete (author, 2026-08-07):** `resolved_at`/`resolved_by`, undoable by design — with resolution in the model, per-thread deletion has no job left; conversation still dies only with the db. Resolved and orphaned are the same *kind* of thing — a conversation not attached to a live spot — so one page-tail list serves both. They stay two independent axes: orphaned is *computed* (anchor absent from the file's current ids — never stored, so re-anchoring stays automatic when an id returns), resolved is *stored* (someone decided). Unresolve clears `resolved_at`; the thread reattaches if its anchor still resolves, or sits in the list as a plain orphan. Both correct, no special case.
+- **Multiple threads per anchor are allowed** — not for parallel arguments but because threads *succeed* each other: resolve one, and a later concern starts fresh at the same spot. No uniqueness constraint, not even a partial index on open threads: an unresolve that an index can reject is bad UI. "One open thread per bit, usually" is a UI norm — the popover leads with reply-to-the-open-thread and tucks "new thread" behind a smaller affordance — not a schema law.
+- Placement is Sphinx's headerlink model: hover a heading or paragraph, a margin mark appears, click to comment there. Existing threads stay invisible until their anchor is hovered — a faint count-dot is the only tell, and it counts **open** threads' comments only: resolved conversations live in the tail list, visibly, which keeps the visibility law honest. Mobile has no hover: faint marks, tap to reveal, its own design pass.
+- Anchors: headings by their stable prefixed ids; paragraphs by content hash, computed identically client- and daemon-side.
+- The browser writes through a comments-only endpoint: the page talks *about* the document, never *as* it. Replies address the thread id (the popover and watch events both have it in hand); an anchor in the payload only ever places a *first* comment, creating its thread.
+- Diffs take per-line comments (user- or agent-initiated, promotable to `sv-note`), anchored by **fingerprint, not position**: line text + two lines of context, quoted into the thread at creation so meaning survives churn. Re-resolution when a diff block updates is three-state — exact follows silently, fuzzy follows wearing an "edited since commented" marker, below confidence orphans rather than guesses. Watched-ready for when live diffs arrive.
 </sv-prose>
 
 <sv-prose id="watch">
 ## `sideview watch` — the agent's await
 
-- A blocking read on the store itself: polls `data_version`, prints events as they arrive; `--timeout N` gives up quietly. **Typed JSON-lines from day one** (`{"type": "comment", …}`) so future event kinds don't break consumers; watch holds its own cursor, and `--claim` uses the supersession pattern (`UPDATE … WHERE seen_at IS NULL RETURNING`) for exactly-once when several agents serve one page.
+- A blocking read on the store itself: polls `data_version`, prints events as they arrive; `--timeout N` gives up quietly. **Typed JSON-lines from day one** — `comment`, `resolve`, `unresolve` — so future event kinds don't break consumers; a resolve is an event in its own right, since it is often the "feedback addressed, move on" signal the agent is actually waiting for. Watch holds its own cursor, and `--claim` uses the supersession pattern (`UPDATE … WHERE seen_at IS NULL RETURNING`) for exactly-once when several agents serve one page.
 - Sandbox-compatible (SQLite file access, no network) and daemon-independent — works no matter who started what.
 - Gives turn-based agents "present the plan, then wait for the user's reaction". stderr nudges on ordinary commands are garnish; watch is the mechanism.
 </sv-prose>
@@ -32,7 +34,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 <sv-prose id="annotations">
 ## Annotations: both homes, split by intent
 
-- One shape, two homes. `sv-note` blocks in the file are document content — written by the page's one author, versioned with the plan, always visible (margin-note styling). Context notes go to the db — the *same* comments table as user feedback, written via `sideview comment`, hover-revealed, gone when the db goes.
+- One shape, two homes. `sv-note` blocks in the file are document content — written by the page's one author, versioned with the plan, always visible (margin-note styling). Context notes go to the db — the *same* threads-and-comments tables as user feedback, written via `sideview comment`, hover-revealed, gone when the db goes.
 - **Visibility communicates status: if you can see it without hovering, it's canon.**
 - Promotion bridges them, the system's recurring lifecycle: a context note that earns keeping is rewritten into the file as an `sv-note`.
 - For diffs: annotations on frozen content (snapshots) may be canon, versioned beside what they annotate; on moving content (watched diffs, when they arrive) they stay conversation.
@@ -63,21 +65,35 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 ```sql
 ALTER TABLE sessions RENAME TO bindings;          -- pages are the noun; this row was always a binding
 
+CREATE TABLE threads (
+    id          INTEGER PRIMARY KEY,
+    page        TEXT NOT NULL,     -- binding id
+    target      TEXT NOT NULL,     -- block id ("b7")
+    anchor      TEXT NOT NULL DEFAULT '',
+                                   -- sub-block position; '' = the block's tail.
+                                   --   '' and not NULL: NULLs compare distinct in SQL,
+                                   --   and tail threads must group like any other anchor
+    quote       TEXT,              -- the text commented on, captured at thread creation:
+    context     TEXT,              --   quote + surrounding lines are what re-resolution
+                                   --   matches against, and meaning outlives placement
+    created_at  INTEGER NOT NULL,
+    resolved_at INTEGER,           -- NULL = open; resolve is undoable, never delete
+    resolved_by TEXT               -- who decided; tailnet identity fills it at T2
+);
+CREATE INDEX threads_by_page ON threads(page, resolved_at);
+-- deliberately no UNIQUE(page, target, anchor), not even partial on open threads:
+-- threads succeed each other at an anchor, and unresolve must never fail on an index
+
 CREATE TABLE comments (
     id         INTEGER PRIMARY KEY,
-    page       TEXT NOT NULL,      -- binding id
-    target     TEXT NOT NULL,      -- block id ("b7")
-    anchor     TEXT,               -- sub-block position; NULL = the block's tail
-    quote      TEXT,               -- the text commented on, captured at creation:
-    context    TEXT,               --   quote + surrounding lines are what re-resolution
-                                   --   matches against, and meaning outlives placement
+    thread_id  INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
     body       TEXT NOT NULL,
     author     TEXT,               -- NULL locally; tailnet identity fills it at T2
     created_at INTEGER NOT NULL,
     seen_at    INTEGER,            -- claim marker, not a read marker
     seen_by    TEXT                -- which watcher claimed it
 );
-CREATE INDEX comments_by_page ON comments(page, created_at);
+CREATE INDEX comments_by_thread ON comments(thread_id, created_at);
 
 CREATE TABLE outlines (
     page       TEXT PRIMARY KEY,
@@ -89,7 +105,8 @@ CREATE TABLE outlines (
 **Anchor strings** — compact, one grammar for db comments and `sv-note` attrs alike (attr values cannot hold quotes, so anchors are strings, with `quote`/`context` columns carrying the prose):
 
 ```text
-(absent)              the block's tail — the common case
+(absent / '')         the block's tail — the common case; absent in sv-note
+                      attrs, '' in the db column, one meaning
 h:b3-overview         a heading, by its stable prefixed id
 p:3f9c2a1b04d2        a paragraph, by 12-hex content hash
 l:src/store.rs:8a1f   a diff line: file + fingerprint hash; context column holds the lines
@@ -103,18 +120,23 @@ l:src/store.rs:8a1f   a diff line: file + fingerprint hash; context column holds
  </sv-note>
 ```
 
-**Comment endpoint and watch events**:
+**Comment endpoints and watch events** — a reply names its thread; an anchor only ever places a first comment, creating its thread:
 
 ```json
 POST /api/comments
 {"page": "v2", "target": "b3", "anchor": "p:3f9c2a1b04d2",
- "quote": "the paragraph text…", "body": "yay complete"}
+ "quote": "the paragraph text…", "body": "yay complete"}     first comment — creates its thread
+{"page": "v2", "thread": 7, "body": "second thoughts…"}      reply
+
+POST /api/threads/7/resolve                                  and …/unresolve; never DELETE
 ```
 
 ```json
-{"type": "comment", "id": 42, "page": "v2", "target": "b3",
+{"type": "comment", "id": 42, "thread": 7, "page": "v2", "target": "b3",
  "anchor": "p:3f9c2a1b04d2", "quote": "…", "body": "yay complete",
  "author": null, "created_at": 1786400000000}
+{"type": "resolve", "thread": 7, "page": "v2", "by": null,
+ "created_at": 1786400000000}
 ```
 
 — one JSON object per line on stdout; `watch` starts from its invocation moment (`--since <id>` to reach back), `--claim` marks `seen_at`/`seen_by` via `UPDATE … WHERE seen_at IS NULL RETURNING` so concurrent watchers get exactly-once.
@@ -122,7 +144,9 @@ POST /api/comments
 **CLI surface** (new and renamed):
 
 ```text
-sideview comment <block> [--at <anchor>] [--page <id>]   # body on stdin
+sideview comment <block> [--at <anchor>] [--page <id>]   # body on stdin; creates a thread
+sideview comment --thread <id>                           # reply to an existing thread
+sideview resolve <thread> [--undo]                       # the agent's "feedback addressed"
 sideview watch [--timeout N] [--since ID] [--claim]
 sideview outline [--clear] [--page <id>]                 # entries on stdin
 sideview open <file>                                     # bind a committed page
