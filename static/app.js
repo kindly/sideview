@@ -178,10 +178,14 @@ addEventListener('message', (e) => {
 // remember the block being read and put it back.
 
 // The block currently under the reading line, and where its top sat.
+// Identified by block id, never by node: replace/move mutations swap in
+// fresh nodes, and an anchor held on the dead node would skip compensation
+// exactly when the block being read is the one that moved (found live,
+// 2026-08-08 — a cascade of moved blocks stranded the author mid-page).
 function readingRef() {
   for (const el of $blocks.children) {
     const r = el.getBoundingClientRect();
-    if (r.bottom > 60) return { el, top: r.top };
+    if (r.bottom > 90) return { block: el.dataset.block, top: r.top };
   }
   return null;
 }
@@ -192,9 +196,14 @@ function readingRef() {
 function keepReading(mutate) {
   const ref = readingRef();
   mutate();
-  if (!ref || !ref.el.isConnected) return;
-  const delta = ref.el.getBoundingClientRect().top - ref.top;
-  if (delta) scrollBy(0, delta);
+  if (!ref) return;
+  const el = blockEl(ref.block);
+  if (!el) return; // the reading itself was removed; nothing to hold to
+  const delta = el.getBoundingClientRect().top - ref.top;
+  if (delta) {
+    console.debug('sideview: reading anchor compensated', delta, 'px');
+    scrollBy(0, delta);
+  }
 }
 
 // The pill: genuinely-new content that landed out of view, offered, never
