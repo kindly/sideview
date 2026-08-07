@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08d id-anchor';
+const CLIENT_STAMP = '2026-08-08e ord-tie';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -667,8 +667,13 @@ function applyBlock(ev) {
   keepReading(() => {
     // The block moved (file order is the order): re-place it below.
     if (existing) existing.remove();
-    // Place by ord so the client never needs to know about neighbours.
-    const next = [...$blocks.children].find((c) => (c.dataset.ord || '') > ev.ord);
+    // Place before the first sibling at-or-after this ord. >= and not >:
+    // during an insertion cascade the not-yet-updated sibling below carries
+    // the SAME stale ord, and strict > placed blocks one slot too low —
+    // transient teleports the reading anchor then chased downward,
+    // compounding to the end of the page (found live, 2026-08-08; deletions
+    // never tie, which is why only insertions broke).
+    const next = [...$blocks.children].find((c) => (c.dataset.ord || '') >= ev.ord);
     if (next) $blocks.insertBefore(el, next);
     else $blocks.appendChild(el);
   });
