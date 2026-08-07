@@ -190,4 +190,8 @@ v2 is done when its own loop signs it off, on this very page:
 The done-when is the feature: the plan's completion is announced through the machinery the plan describes, the chat's silence is part of the test — and the order matters, since the resurrection test destroys the sign-off's comments.
 </sv-prose>
 
+<sv-note id="note-loop-live" target="goal">
+Partially exercised live, 2026-08-08, ahead of the formal ritual: comment → watch → reply → resolve each ran end to end, and two features (code-block bubbles, author-as-role) were requested *through the page* and shipped the same hour. This note is itself the sv-note demonstration — canon, always visible, versioned with the plan.
+</sv-note>
+
 </sv-page>
