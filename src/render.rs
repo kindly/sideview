@@ -176,27 +176,26 @@ fn fragment_outline(html: &str, keep_ids: bool) -> Vec<Heading> {
 /// localStorage). One channel because theme, React blocks and origin-iframed
 /// service blocks all want it — see V2.sv.
 fn iframe(document: &str, height: Option<&str>) -> String {
-    let with_style = format!(
-        concat!(
-            r#"<link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">"#,
-            r#"<link rel="stylesheet" href="/assets/sideview.css">"#,
-            "<script>",
-            // The OS guess paints first; the parent's theme message corrects
-            // it as soon as the size handshake announces this iframe.
-            r#"document.documentElement.setAttribute('data-bs-theme',"#,
-            r#"matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');"#,
-            r#"addEventListener('message',(e)=>{const m=e.data;"#,
-            r#"if(m&&m.sv===1&&m.type==='theme')document.documentElement.setAttribute('data-bs-theme',m.mode)});"#,
-            r#"(()=>{const report=()=>parent.postMessage({sv:1,type:'size',"#,
-            r#"height:document.documentElement.scrollHeight},'*');"#,
-            r#"const ready=()=>{report();const ro=new ResizeObserver(report);"#,
-            r#"ro.observe(document.documentElement);if(document.body)ro.observe(document.body)};"#,
-            r#"if(document.readyState==='complete')ready();else addEventListener('load',ready)})()"#,
-            "</script>",
-            "{}"
-        ),
-        document
+    // A const rather than an inline format string: the envelope script is
+    // full of JS braces, which format! would try to parse.
+    const PRELUDE: &str = concat!(
+        r#"<link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">"#,
+        r#"<link rel="stylesheet" href="/assets/sideview.css">"#,
+        "<script>",
+        // The OS guess paints first; the parent's theme message corrects
+        // it as soon as the size handshake announces this iframe.
+        r#"document.documentElement.setAttribute('data-bs-theme',"#,
+        r#"matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');"#,
+        r#"addEventListener('message',(e)=>{const m=e.data;"#,
+        r#"if(m&&m.sv===1&&m.type==='theme')document.documentElement.setAttribute('data-bs-theme',m.mode)});"#,
+        r#"(()=>{const report=()=>parent.postMessage({sv:1,type:'size',"#,
+        r#"height:document.documentElement.scrollHeight},'*');"#,
+        r#"const ready=()=>{report();const ro=new ResizeObserver(report);"#,
+        r#"ro.observe(document.documentElement);if(document.body)ro.observe(document.body)};"#,
+        r#"if(document.readyState==='complete')ready();else addEventListener('load',ready)})()"#,
+        "</script>",
     );
+    let with_style = format!("{PRELUDE}{document}");
     let srcdoc = attr_escape(&with_style);
     // An explicit `height` attribute is the agent saying "this tall": it
     // pins the iframe (data-sv-fixed tells the parent to ignore size

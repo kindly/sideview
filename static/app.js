@@ -16,6 +16,7 @@ const state = {
   spyActive: null,       // scrollspy mode: the section currently in view
   expand: new Map(),     // section key -> bool, manual twist overrides (per session)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
+  conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
 };
 
 let outline = { sections: [], blockSections: new Map() };
@@ -217,7 +218,14 @@ es.addEventListener('block', (e) => {
   if (ev.session === state.selected) {
     applyBlock(ev);
     refreshOutline();
+    scheduleConversation(); // a replaced block sheds its count-dots
   }
+});
+
+es.addEventListener('threads', (e) => {
+  const ev = JSON.parse(e.data);
+  state.conversations.set(ev.page, { threads: ev.threads, comments: ev.comments });
+  if (ev.page === state.selected) scheduleConversation();
 });
 
 function switchSession(id) {
@@ -578,4 +586,344 @@ function renderAllBlocks() {
     }
   }
   refreshOutline();
+  scheduleConversation();
+}
+
+// ---- conversation: comments from the page -----------------------------------
+// The daemon ships each page's threads+comments whole (the `threads` event);
+// this side places them. Placement is Sphinx's headerlink model: hover a
+// heading, paragraph or block and a margin mark appears — click to comment
+// there. Existing threads are a faint count-dot until their anchor is
+// hovered. Resolved OR orphaned threads share the tail list: the same kind
+// of thing, a conversation not attached to a live spot. Orphanhood is
+// computed here (does the anchor still resolve?), never stored — so a
+// returning anchor re-attaches its thread by construction.
+
+const $tail = document.getElementById('sv-tail');
+let placed = new Map(); // element -> [threads], as of the last render
+
+function conversation() {
+  return state.conversations.get(state.selected) || { threads: [], comments: [] };
+}
+
+function commentsFor(threadId) {
+  return conversation().comments.filter((c) => c.thread_id === threadId);
+}
+
+// FNV-1a 64 over the whitespace-normalized text, low 48 bits as 12 hex —
+// the `p:` anchor. Vector: anchorHash('the quick brown fox') = '8115ea47e2c8'.
+// The daemon-side twin arrives with re-resolution (V2.sv); until then this
+// is the only implementation, and the vector above is the contract.
+function anchorHash(text) {
+  const s = text.replace(/\s+/g, ' ').trim();
+  let h = 0xcbf29ce484222325n;
+  for (const b of new TextEncoder().encode(s)) {
+    h ^= BigInt(b);
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return (h & 0xffffffffffffn).toString(16).padStart(12, '0');
+}
+
+// textContent with our own injected UI (count-dots) stripped — hashing must
+// see the author's text, not the decoration.
+function textOf(el) {
+  const clone = el.cloneNode(true);
+  for (const d of clone.querySelectorAll('.sv-cdot')) d.remove();
+  return clone.textContent;
+}
+
+// thread -> the element its anchor names right now, or null (orphaned).
+function resolveAnchor(t) {
+  const block = blockEl(t.target);
+  if (!block) return null;
+  if (!t.anchor) return block;
+  if (t.anchor.startsWith('h:')) {
+    const el = document.getElementById(t.anchor.slice(2));
+    return el && block.contains(el) ? el : null;
+  }
+  if (t.anchor.startsWith('p:')) {
+    const want = t.anchor.slice(2);
+    for (const p of block.querySelectorAll('p')) {
+      if (anchorHash(textOf(p)) === want) return p;
+    }
+    return null;
+  }
+  return null; // l: — per-line diff placement lands with watched diffs
+}
+
+// element -> the anchor string a new thread there would carry.
+function anchorOf(el) {
+  const block = el.closest('[data-block]');
+  if (!block || el === block) return '';
+  if (/^H[1-6]$/.test(el.tagName) && el.id) return 'h:' + el.id;
+  if (el.tagName === 'P') return 'p:' + anchorHash(textOf(el));
+  return '';
+}
+
+let conversationScheduled = false;
+function scheduleConversation() {
+  if (conversationScheduled) return;
+  conversationScheduled = true;
+  requestAnimationFrame(() => {
+    conversationScheduled = false;
+    renderConversation();
+  });
+}
+
+function renderConversation() {
+  for (const d of $blocks.querySelectorAll('.sv-cdot')) d.remove();
+  placed = new Map();
+  const tail = [];
+  for (const t of conversation().threads) {
+    const el = resolveAnchor(t);
+    if (t.resolved_at != null) {
+      tail.push({ t, orphan: !el });
+    } else if (!el) {
+      tail.push({ t, orphan: true });
+    } else {
+      if (!placed.has(el)) placed.set(el, []);
+      placed.get(el).push(t);
+    }
+  }
+  for (const [el, threads] of placed) {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'sv-cdot';
+    const n = threads.reduce((a, t) => a + commentsFor(t.id).length, 0);
+    dot.textContent = String(n);
+    dot.title = n + (n === 1 ? ' comment' : ' comments');
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPopover(el, threads);
+    });
+    el.appendChild(dot);
+  }
+  renderTail(tail);
+}
+
+// ---- the tail list: resolved OR orphaned, one list --------------------------
+
+function renderTail(entries) {
+  $tail.textContent = '';
+  $tail.hidden = entries.length === 0;
+  if (!entries.length) return;
+  const title = document.createElement('h2');
+  title.id = 'sv-tail-title';
+  title.textContent = 'Conversations off the page';
+  $tail.appendChild(title);
+  for (const { t, orphan } of entries) {
+    const item = document.createElement('article');
+    item.className = 'sv-tail-item' + (t.resolved_at != null ? ' sv-resolved' : '');
+
+    const meta = document.createElement('div');
+    meta.className = 'sv-tail-meta';
+    const status = t.resolved_at != null ? 'resolved' : 'orphaned';
+    meta.textContent = `${status} · ${t.target}${t.anchor ? ' · ' + t.anchor : ''}`;
+    item.appendChild(meta);
+
+    if (t.quote) {
+      const q = document.createElement('blockquote');
+      q.className = 'sv-tail-quote';
+      q.textContent = t.quote;
+      item.appendChild(q);
+    }
+    for (const c of commentsFor(t.id)) {
+      item.appendChild(commentEl(c));
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'sv-tail-actions';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sv-pop-btn';
+    if (t.resolved_at != null) {
+      btn.textContent = 'reopen';
+      btn.title = orphan
+        ? 'reopen — stays here until its anchor returns'
+        : 'reopen — reattaches to its spot on the page';
+      btn.addEventListener('click', () => setResolution(t.id, true));
+    } else {
+      btn.textContent = 'resolve';
+      btn.addEventListener('click', () => setResolution(t.id, false));
+    }
+    actions.appendChild(btn);
+    item.appendChild(actions);
+    $tail.appendChild(item);
+  }
+}
+
+function commentEl(c) {
+  const el = document.createElement('div');
+  el.className = 'sv-comment';
+  const meta = document.createElement('span');
+  meta.className = 'sv-comment-meta';
+  const when = new Date(c.created_at).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  meta.textContent = (c.author ? c.author + ' · ' : '') + when;
+  const body = document.createElement('div');
+  body.className = 'sv-comment-body';
+  body.textContent = c.body;
+  el.append(meta, body);
+  return el;
+}
+
+async function postComment(payload) {
+  const res = await fetch('/api/comments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+function setResolution(threadId, undo) {
+  fetch(`/api/threads/${threadId}/${undo ? 'unresolve' : 'resolve'}`, { method: 'POST' })
+    .catch(() => {});
+  // The daemon's snapshot repaints everything within a tick; no local state.
+}
+
+// ---- the margin mark: hover an anchorable spot, click to comment ------------
+
+const $mark = document.createElement('button');
+$mark.id = 'sv-mark';
+$mark.type = 'button';
+$mark.title = 'comment here';
+$mark.textContent = '+';
+$mark.hidden = true;
+document.body.appendChild($mark);
+let markTarget = null;
+
+function anchorable(node) {
+  if (!(node instanceof Element)) return null;
+  if (node.closest('#sv-popover, .sv-cdot')) return null;
+  return (
+    node.closest('#sv-blocks :is(h1, h2, h3, h4, h5, h6)[id], #sv-blocks p') ||
+    node.closest('#sv-blocks > [data-block]')
+  );
+}
+
+// The mark lives in the margin, outside #sv-blocks — hiding must survive
+// the cursor's short hop across the gap, so it goes through a grace timer
+// that hovering the mark itself cancels.
+let markHideTimer = 0;
+function hideMark() {
+  markTarget = null;
+  $mark.hidden = true;
+}
+function hideMarkSoon() {
+  clearTimeout(markHideTimer);
+  markHideTimer = setTimeout(hideMark, 350);
+}
+
+$blocks.addEventListener('mouseover', (e) => {
+  const el = anchorable(e.target);
+  if (!el) return;
+  clearTimeout(markHideTimer);
+  if (el === markTarget) return;
+  markTarget = el;
+  const r = el.getBoundingClientRect();
+  $mark.style.top = scrollY + r.top + 'px';
+  $mark.style.left = Math.max(4, scrollX + r.left - 28) + 'px';
+  $mark.hidden = false;
+});
+$blocks.addEventListener('mouseleave', hideMarkSoon);
+addEventListener('scroll', hideMark, { passive: true });
+$mark.addEventListener('mouseover', () => clearTimeout(markHideTimer));
+$mark.addEventListener('mouseleave', hideMarkSoon);
+$mark.addEventListener('click', () => {
+  if (markTarget) openPopover(markTarget, placed.get(markTarget) || []);
+});
+
+// ---- the popover: one conversation, or a fresh comment ----------------------
+
+let $popover = null;
+
+function closePopover() {
+  if ($popover) { $popover.remove(); $popover = null; }
+}
+
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopover(); });
+addEventListener('click', (e) => {
+  if ($popover && !$popover.contains(e.target) && e.target !== $mark) closePopover();
+});
+
+// One open thread per bit, usually: the popover leads with the existing
+// conversation and its reply box; "start a new thread" is the smaller
+// affordance. With no threads it opens straight into composing.
+function openPopover(el, threads, forceNew) {
+  closePopover();
+  const target = el.closest('[data-block]')?.dataset.block;
+  if (!target) return;
+  const anchor = anchorOf(el);
+
+  $popover = document.createElement('div');
+  $popover.id = 'sv-popover';
+
+  const open = forceNew ? [] : threads.filter((t) => t.resolved_at == null);
+  for (const t of open) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sv-pop-thread';
+    for (const c of commentsFor(t.id)) wrap.appendChild(commentEl(c));
+    const resolveBtn = document.createElement('button');
+    resolveBtn.type = 'button';
+    resolveBtn.className = 'sv-pop-btn';
+    resolveBtn.textContent = 'resolve';
+    resolveBtn.title = 'resolve — undoable from the list at the page tail';
+    resolveBtn.addEventListener('click', () => {
+      setResolution(t.id, false);
+      closePopover();
+    });
+    wrap.appendChild(resolveBtn);
+    $popover.appendChild(wrap);
+  }
+
+  const box = document.createElement('textarea');
+  box.className = 'sv-pop-box';
+  box.rows = 2;
+  box.placeholder = open.length ? 'Reply…' : 'Comment…';
+  const send = document.createElement('button');
+  send.type = 'button';
+  send.className = 'sv-pop-btn sv-pop-send';
+  send.textContent = open.length ? 'reply' : 'comment';
+  const err = document.createElement('div');
+  err.className = 'sv-pop-error';
+  send.addEventListener('click', async () => {
+    const body = box.value.trim();
+    if (!body) return;
+    const payload = open.length
+      ? { thread: open[open.length - 1].id, body }
+      : {
+          page: state.selected,
+          target,
+          anchor,
+          quote: anchor && el !== blockEl(target) ? textOf(el).trim().slice(0, 300) : null,
+          body,
+        };
+    try {
+      await postComment(payload);
+      closePopover(); // the snapshot repaints the dots within a tick
+    } catch (e) {
+      err.textContent = String(e.message || e);
+    }
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send.click();
+  });
+  $popover.append(box, send, err);
+
+  if (open.length && !forceNew) {
+    const fresh = document.createElement('button');
+    fresh.type = 'button';
+    fresh.className = 'sv-pop-new';
+    fresh.textContent = 'start a new thread here';
+    fresh.addEventListener('click', () => openPopover(el, threads, true));
+    $popover.appendChild(fresh);
+  }
+
+  const r = el.getBoundingClientRect();
+  $popover.style.top = scrollY + r.bottom + 6 + 'px';
+  $popover.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - 380) + 'px';
+  document.body.appendChild($popover);
+  box.focus();
 }

@@ -965,3 +965,164 @@ body.sv-rail #sv-outline { display: block; }
     transition: none !important;
   }
 }
+
+/* --- conversation: marks, dots, popover, tail ---------------------------------
+   The visibility law (V2.sv): if you can see it without hovering, it's canon.
+   Threads are a faint count-dot until their anchor is hovered; the margin
+   mark appears only on hover; resolved and orphaned conversations live in
+   the one visible place — the tail list — because a page showing its own
+   detached conversation is honest, not noise. */
+
+.sv-cdot {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--sv-ink);
+  background: transparent;
+  color: var(--sv-ink);
+  font-family: var(--sv-mono);
+  font-size: 0.7rem;
+  line-height: 1.15rem;
+  vertical-align: 0.1rem;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.12s ease;
+}
+:hover > .sv-cdot, .sv-cdot:hover, .sv-cdot:focus-visible { opacity: 1; }
+
+#sv-mark {
+  position: absolute;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  color: var(--bs-secondary-color);
+  font-family: var(--sv-mono);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 40;
+}
+#sv-mark:hover { border-color: var(--sv-ink); color: var(--sv-ink); }
+
+#sv-popover {
+  position: absolute;
+  z-index: 50;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.sv-pop-thread {
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.sv-comment { margin-bottom: 0.5rem; }
+.sv-comment-meta {
+  display: block;
+  font-family: var(--sv-mono);
+  font-size: 0.7rem;
+  color: var(--bs-secondary-color);
+}
+.sv-comment-body { font-size: 0.92rem; white-space: pre-wrap; }
+
+.sv-pop-box {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  font-size: 0.92rem;
+  resize: vertical;
+}
+.sv-pop-box:focus-visible { outline: 2px solid var(--sv-ink); outline-offset: -1px; }
+
+.sv-pop-btn {
+  margin-top: 0.35rem;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--bs-border-color);
+  background: transparent;
+  color: var(--bs-body-color);
+  font-family: var(--sv-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.sv-pop-btn:hover { border-color: var(--sv-ink); color: var(--sv-ink); }
+.sv-pop-send { margin-left: 0; }
+
+.sv-pop-new {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bs-secondary-color);
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.sv-pop-new:hover { color: var(--sv-ink); }
+
+.sv-pop-error {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: #b3423e;
+}
+
+#sv-tail {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 1.25rem 6rem;
+}
+body.sv-rail #sv-tail {
+  max-width: 68rem;
+  margin: 0;
+  padding-left: 3.5rem;
+  padding-right: 2.5rem;
+}
+body.sv-rail #sv-tail > * { max-width: 46rem; }
+
+#sv-tail-title {
+  font-family: var(--sv-mono);
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--bs-secondary-color);
+  border-top: 1px solid var(--bs-border-color);
+  padding-top: 1.5rem;
+}
+
+.sv-tail-item {
+  margin-top: 1.1rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--bs-border-color);
+}
+.sv-tail-item.sv-resolved { opacity: 0.75; }
+
+.sv-tail-meta {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.3rem;
+}
+
+.sv-tail-quote {
+  margin: 0 0 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--sv-ink-soft);
+  font-size: 0.88rem;
+  color: var(--bs-secondary-color);
+}
+
+.sv-tail-actions { margin-top: 0.1rem; }
+
+@media (max-width: 48rem) {
+  /* Touch has no hover: the marks stay visible-faint, tap to reveal. The
+     full mobile pass is its own design task (V2.sv). */
+  .sv-cdot { opacity: 0.55; }
+}
