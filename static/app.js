@@ -155,7 +155,12 @@ addEventListener('message', (e) => {
   for (const f of document.querySelectorAll('iframe.sv-html')) {
     if (f.contentWindow !== e.source) continue;
     if (m.type === 'size' && !f.dataset.svFixed && Number.isFinite(m.height)) {
-      f.style.height = Math.ceil(m.height) + 'px';
+      const px = Math.ceil(m.height) + 'px';
+      // Compensated: an iframe growing above the viewport must not shove
+      // the reading. Remembered: the next rebuild starts at this size.
+      keepReading(() => { f.style.height = px; });
+      const b = f.closest('[data-block]');
+      if (b) localStorage.setItem(iframeKey(b.dataset.block), String(Math.ceil(m.height)));
     }
     f.contentWindow.postMessage(
       { sv: 1, type: 'theme', mode: document.documentElement.getAttribute('data-bs-theme') },
@@ -165,9 +170,78 @@ addEventListener('message', (e) => {
   }
 });
 
+// ---- scroll: the reading position is sacred ---------------------------------
+// The author's rule (2026-08-08, deciding the v0 scroll question on a day of
+// real use): never move what the user is reading. No auto-follow — new
+// content below the fold gets a floating pill instead; changes above the
+// viewport are compensated so the text under the eye stays put; reconnects
+// remember the block being read and put it back.
+
+// The block currently under the reading line, and where its top sat.
+function readingRef() {
+  for (const el of $blocks.children) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom > 60) return { el, top: r.top };
+  }
+  return null;
+}
+
+// Run a DOM mutation, then counter-scroll so the block being read stays
+// exactly where it was. Wholesale block replacement defeats the browser's
+// native scroll anchoring, so this is our own.
+function keepReading(mutate) {
+  const ref = readingRef();
+  mutate();
+  if (!ref || !ref.el.isConnected) return;
+  const delta = ref.el.getBoundingClientRect().top - ref.top;
+  if (delta) scrollBy(0, delta);
+}
+
+// The pill: genuinely-new content that landed out of view, offered, never
+// imposed. Click to go; it retires itself once the content scrolls into view.
+const $newpill = document.createElement('button');
+$newpill.id = 'sv-newpill';
+$newpill.type = 'button';
+$newpill.textContent = '↓ new content below';
+$newpill.hidden = true;
+document.body.appendChild($newpill);
+let newBelowEl = null;
+function hideNewPill() {
+  newBelowEl = null;
+  $newpill.hidden = true;
+}
+$newpill.addEventListener('click', () => {
+  newBelowEl?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  hideNewPill();
+});
+addEventListener('scroll', () => {
+  if (newBelowEl && newBelowEl.getBoundingClientRect().top < innerHeight) hideNewPill();
+}, { passive: true });
+
+// Across a reconnect: remember which block was being read, restore it once
+// the replay burst goes quiet.
+let reconnectAnchor = null;
+let restoreTimer = 0;
+function scheduleRestore() {
+  if (!reconnectAnchor) return;
+  clearTimeout(restoreTimer);
+  restoreTimer = setTimeout(() => {
+    const a = reconnectAnchor;
+    reconnectAnchor = null;
+    if (!a || Date.now() > a.until) return;
+    const el = blockEl(a.block);
+    if (el) scrollBy(0, el.getBoundingClientRect().top - a.top);
+  }, 300);
+}
+
 const es = new EventSource('/events');
 es.addEventListener('open', () => {
   state.connectedAt = Date.now();
+  const ref = readingRef();
+  reconnectAnchor = ref
+    ? { block: ref.el.dataset.block, top: ref.top, until: Date.now() + 8000 }
+    : null;
+  hideNewPill();
   // Every connection replays the full current state (the daemon keeps no
   // per-client cursor), so drop what we hold — blocks removed while we were
   // away would otherwise linger as ghosts.
@@ -219,6 +293,7 @@ es.addEventListener('block', (e) => {
     applyBlock(ev);
     refreshOutline();
     scheduleConversation(); // a replaced block sheds its count-dots
+    scheduleRestore();      // reconnect replay: put the reading back
   }
 });
 
@@ -556,39 +631,53 @@ function activateScripts(el) {
 }
 
 function applyBlock(ev) {
+  // Genuinely live, as opposed to the replay burst after every (re)connect.
+  const live = Date.now() - state.connectedAt > 1500;
   const existing = blockEl(ev.block);
   if (ev.action === 'remove') {
-    if (existing) existing.remove();
+    if (existing) keepReading(() => existing.remove());
     return;
   }
   const el = elementFor(ev.block, ev.html, ev.ord);
   if (!el) return;
   applyDiffPref(el);
-  if (existing) {
-    if ((existing.dataset.ord || '') === ev.ord) {
-      // update: patch in place, nothing scrolls or reflows around it
-      existing.replaceWith(el);
-      activateScripts(el);
-      renderMermaid(el);
-      return;
-    }
-    // The block moved (file order is the order): re-place it below.
-    existing.remove();
+  applyIframeMemory(el, ev.block);
+  if (existing && (existing.dataset.ord || '') === ev.ord) {
+    // update: patch in place, compensated so the reading doesn't move
+    keepReading(() => existing.replaceWith(el));
+    activateScripts(el);
+    renderMermaid(el);
+    return;
   }
-  // Place by ord so the client never needs to know about neighbours.
-  const next = [...$blocks.children].find((c) => (c.dataset.ord || '') > ev.ord);
-  const atBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 48;
-  if (next) $blocks.insertBefore(el, next);
-  else $blocks.appendChild(el);
-  // The arrival ink marks genuinely-live blocks, not the replay burst that
-  // follows every (re)connect.
-  if (Date.now() - state.connectedAt > 1500) el.classList.add('sv-arrive');
+  keepReading(() => {
+    // The block moved (file order is the order): re-place it below.
+    if (existing) existing.remove();
+    // Place by ord so the client never needs to know about neighbours.
+    const next = [...$blocks.children].find((c) => (c.dataset.ord || '') > ev.ord);
+    if (next) $blocks.insertBefore(el, next);
+    else $blocks.appendChild(el);
+  });
+  if (live) el.classList.add('sv-arrive');
   activateScripts(el);
   renderMermaid(el);
-  // Provisional: follow new content only when already at the bottom, never
-  // yank away while reading above. V0.md leaves this to be decided by feel.
-  if (!next && atBottom && railMode() === 'scrollspy') {
-    el.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  // Never scroll for new content (the author's rule); when it lands out of
+  // view, offer the pill instead.
+  if (live && !newBelowEl && el.getBoundingClientRect().top > innerHeight) {
+    newBelowEl = el;
+    $newpill.hidden = false;
+  }
+}
+
+// Iframes are reborn on every replay; remembering their last reported size
+// means the envelope's first report confirms the layout instead of shoving it.
+function iframeKey(block) {
+  return 'sv-iframeh:' + state.selected + ':' + block;
+}
+function applyIframeMemory(el, block) {
+  const h = localStorage.getItem(iframeKey(block));
+  if (!h) return;
+  for (const f of el.querySelectorAll('iframe.sv-html')) {
+    if (!f.dataset.svFixed) f.style.height = h + 'px';
   }
 }
 
@@ -712,6 +801,10 @@ function scheduleConversation() {
 }
 
 function renderConversation() {
+  keepReading(renderConversationInner);
+}
+
+function renderConversationInner() {
   for (const d of $blocks.querySelectorAll('.sv-cdot, .sv-cmark')) d.remove();
   placed = new Map();
   const tail = [];

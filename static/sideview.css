@@ -1159,3 +1159,23 @@ body.sv-rail #sv-tail > * { max-width: 46rem; }
   margin-bottom: 0.2rem;
 }
 .sv-note :last-child { margin-bottom: 0; }
+
+/* New content that landed out of view: offered, never imposed. */
+#sv-newpill {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 1.25rem;
+  z-index: 45;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--sv-ink);
+  background: var(--bs-body-bg);
+  color: var(--sv-ink);
+  font-family: var(--sv-mono);
+  font-size: 0.78rem;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+#sv-newpill:hover {
+  background: color-mix(in srgb, var(--sv-ink) 8%, var(--bs-body-bg));
+}
