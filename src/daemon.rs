@@ -80,6 +80,9 @@ struct Shared {
     /// Page-scale full resends, same trust story as block replay: the client
     /// resets on connect and every change ships the whole page's conversation.
     conversations: HashMap<String, String>,
+    /// Explicit outlines (page → parsed spec), riding the sessions event as a
+    /// prop so the client needs no fourth event kind.
+    outlines: HashMap<String, serde_json::Value>,
 }
 
 struct AppState {
@@ -108,6 +111,14 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     let mut store = Store::open(store_dir)?;
+
+    // Fresh-clone (and fresh-db) rediscovery: pages are files, so a deleted
+    // store must not lose them. Committed .sv files re-bind by stem; the
+    // throwaway pages under .sideview/pages/ re-bind by their encoded name.
+    // The resurrection test (V2.sv's goal) leans on this running first.
+    if let Err(e) = rediscover_pages(&store) {
+        eprintln!("note: page rediscovery failed: {e:#}");
+    }
 
     // Port: remembered so an open tab reconnects to the same origin across
     // restarts. Taken? Take another and print the new URL. Meta is the
@@ -254,6 +265,73 @@ async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl 
         Ok(_) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
     }
+}
+
+/// Re-find every page file the db doesn't know: committed .sv files bind by
+/// stem (V2.sv → "V2"), throwaway pages under .sideview/pages/ by decoding
+/// their filename back to the session id. Chip order for rediscovered pages
+/// comes from canon: the `order` attribute on `<sv-page>` when the author
+/// cares, path order otherwise — binding insertion order carries it.
+fn rediscover_pages(store: &Store) -> Result<()> {
+    let known: std::collections::HashSet<String> =
+        store.bindings()?.into_iter().map(|b| b.path).collect();
+    let mut found: Vec<(f64, String, String, String)> = Vec::new(); // (order, path, rel, id)
+
+    let pages_dir = store.dir.join(crate::store::PAGES_DIR);
+    let mut stack = vec![store.root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                // Hidden trees, dependencies and build output stay unscanned —
+                // except the store's own throwaway pages.
+                if name.starts_with('.') || name == "node_modules" || name == "target" {
+                    if path == store.dir || store.dir.starts_with(&path) {
+                        stack.push(pages_dir.clone());
+                    }
+                    continue;
+                }
+                stack.push(path);
+            } else if name.ends_with(".sv") {
+                let Ok(rel) = path.strip_prefix(&store.root) else { continue };
+                let rel = rel.to_string_lossy().to_string();
+                if known.contains(&rel) {
+                    continue;
+                }
+                let stem = name.trim_end_matches(".sv").to_string();
+                let id = if path.starts_with(&pages_dir) {
+                    // The throwaway filename is the encoded session id.
+                    percent_encoding::percent_decode_str(&stem)
+                        .decode_utf8_lossy()
+                        .to_string()
+                } else {
+                    stem
+                };
+                let order = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|src| {
+                        format::parse(&src).prop("order").and_then(|o| o.parse::<f64>().ok())
+                    })
+                    .unwrap_or(f64::MAX);
+                found.push((order, rel.clone(), rel, id));
+            }
+        }
+    }
+
+    found.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
+    for (_, _, rel, id) in found {
+        if store.binding(&id)?.is_some() {
+            eprintln!("note: {rel} not rebound — a different file already holds page id {id:?}");
+            continue;
+        }
+        store.bind_session(&id, &rel, &store.root.display().to_string(), "rediscovered")?;
+        eprintln!("rediscovered page {id} ({rel})");
+        // Distinct started_at millis keep the canon order stable in the strip.
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    Ok(())
 }
 
 /// The browser's write path for conversation: the page talks *about* the
@@ -427,17 +505,26 @@ fn poll_loop(
                 bindings.iter().map(|b| &b.id).collect();
             shared.pages.retain(|id, _| live.contains(id));
 
-            if changed_sessions {
-                events.insert(0, sessions_event(&shared));
-            }
-
-            // Conversation snapshots: on any db commit from elsewhere,
-            // re-serialize each conversing page and ship the ones that
-            // changed. A page whose last thread was deleted (page rm
-            // cascade) ships one final empty snapshot, then leaves the map.
+            // On any db commit from elsewhere: re-serialize conversation
+            // snapshots (shipping the pages that changed), and reload the
+            // explicit outlines, which ride the sessions event as a prop.
             let v = store.data_version().unwrap_or(conversation_version);
             if v != conversation_version {
                 conversation_version = v;
+
+                let fresh: HashMap<String, serde_json::Value> = store
+                    .outlines()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|(page, spec)| {
+                        serde_json::from_str(&spec).ok().map(|v| (page, v))
+                    })
+                    .collect();
+                if fresh != shared.outlines {
+                    shared.outlines = fresh;
+                    changed_sessions = true;
+                }
+
                 let pages = store.conversation_pages().unwrap_or_default();
                 for page in &pages {
                     if let Ok(json) = conversation_json(&store, page) {
@@ -460,6 +547,10 @@ fn poll_loop(
                     }
                     keep
                 });
+            }
+
+            if changed_sessions {
+                events.insert(0, sessions_event(&shared));
             }
         }
         for e in events {
@@ -582,12 +673,16 @@ fn sessions_event(shared: &Shared) -> Outgoing {
         .map(|(id, last_active_at)| {
             // Props pass through whole from the file, so a key a newer CLI
             // writes reaches the page even through a daemon that has never
-            // heard of it.
-            let props = shared
+            // heard of it. An explicit outline (db, not file) rides along
+            // as outline_spec — used verbatim by the rail when present.
+            let mut props = shared
                 .pages
                 .get(id)
-                .map(|p| serde_json::Value::Object(p.props.clone()))
-                .unwrap_or_else(|| serde_json::json!({}));
+                .map(|p| p.props.clone())
+                .unwrap_or_default();
+            if let Some(spec) = shared.outlines.get(id) {
+                props.insert("outline_spec".into(), spec.clone());
+            }
             serde_json::json!({ "id": id, "last_active_at": last_active_at, "props": props })
         })
         .collect();
@@ -857,6 +952,32 @@ mod tests {
             state.store.lock().unwrap().binding("s1").unwrap().is_none(),
             "the binding is deleted"
         );
+    }
+
+    #[test]
+    fn rediscovery_binds_committed_and_throwaway_pages_in_canon_order() {
+        let dir = std::env::temp_dir().join(format!("sv-rd-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        // Two committed pages, order attribute inverting path order…
+        std::fs::write(store.root.join("zebra.sv"), "<sv-page order=\"1\">\n</sv-page>\n").unwrap();
+        std::fs::write(store.root.join("alpha.sv"), "<sv-page order=\"2\">\n</sv-page>\n").unwrap();
+        // …and a throwaway whose filename encodes its session id.
+        std::fs::write(
+            store.pages_dir().unwrap().join("cwd%3A%2Ftmp%2Fp.sv"),
+            "<sv-prose id=\"b1\">\nx\n</sv-prose>\n",
+        )
+        .unwrap();
+        rediscover_pages(&store).unwrap();
+        let bindings = store.bindings().unwrap();
+        let ids: Vec<&str> = bindings.iter().map(|b| b.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["zebra", "alpha", "cwd:/tmp/p"],
+            "order attr beats path order; throwaway ids decode"
+        );
+        // Idempotent: a second scan binds nothing new.
+        rediscover_pages(&store).unwrap();
+        assert_eq!(store.bindings().unwrap().len(), 3);
     }
 
     #[actix_web::test]

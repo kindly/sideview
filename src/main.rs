@@ -106,6 +106,15 @@ enum Cmd {
         #[arg(long)]
         undo: bool,
     },
+    /// Give the rail an explicit outline (JSON entries on stdin); used verbatim
+    Outline {
+        /// Remove the explicit outline; the rail returns to prose derivation
+        #[arg(long)]
+        clear: bool,
+        /// Page (binding id); otherwise resolved from the environment
+        #[arg(long)]
+        page: Option<String>,
+    },
     /// Await feedback: typed JSON-lines (comment/resolve/unresolve) on stdout
     Watch {
         /// Give up quietly after this many seconds
@@ -267,6 +276,7 @@ fn main() -> anyhow::Result<()> {
             cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref())
         }
         Some(Cmd::Resolve { thread, undo }) => cli::resolve(thread, undo),
+        Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
         Some(Cmd::Watch { timeout, since, claim }) => cli::watch(timeout, since, claim),
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),

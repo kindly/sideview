@@ -1126,3 +1126,20 @@ body.sv-rail #sv-tail > * { max-width: 46rem; }
      full mobile pass is its own design task (V2.sv). */
   .sv-cdot { opacity: 0.55; }
 }
+
+/* In-file annotations (sv-note): canon, so always visible — a margin-note
+   voice, quieter than prose, wearing its target as a mono reference line. */
+.sv-note {
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--sv-ink-soft);
+  font-size: 0.92rem;
+  color: var(--bs-secondary-color);
+}
+.sv-note-ref {
+  font-family: var(--sv-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--sv-ink);
+  margin-bottom: 0.2rem;
+}
+.sv-note :last-child { margin-bottom: 0; }

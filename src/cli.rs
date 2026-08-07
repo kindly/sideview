@@ -603,6 +603,34 @@ pub fn resolve(thread: i64, undo: bool) -> Result<()> {
     Ok(())
 }
 
+/// `sideview outline` — the agent's ordered list for the rail, used verbatim
+/// when present (inference off). Entries arrive as JSON on stdin:
+/// [{"title": "Overview", "anchor": "h:b2-overview", "children": […]}].
+pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
+    let store = open_project_store()?;
+    let cwd = std::env::current_dir()?;
+    let page_id = match page {
+        Some(p) => p.to_string(),
+        None => session::resolve(None, &cwd).id,
+    };
+    if clear {
+        if !store.clear_outline(&page_id)? {
+            eprintln!("no explicit outline on {page_id}");
+        }
+        return Ok(());
+    }
+    let spec = read_stdin()?;
+    // Validate the shape now — a broken outline should fail the command, not
+    // quietly wedge the rail.
+    let parsed: serde_json::Value =
+        serde_json::from_str(&spec).context("outline entries must be JSON")?;
+    if !parsed.is_array() {
+        bail!("outline entries are a JSON array of {{title, anchor, children?}}");
+    }
+    store.set_outline(&page_id, &parsed.to_string())?;
+    Ok(())
+}
+
 /// `sideview watch` — the agent's await: a blocking read on the store
 /// itself. Typed JSON-lines on stdout (comment / resolve / unresolve), one
 /// object per line. Sandbox-compatible (SQLite file access, no network) and

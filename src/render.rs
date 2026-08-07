@@ -16,6 +16,11 @@ pub fn block(id: &str, b: &Block) -> String {
         // is code you own in a page only you can reach. See DESIGN.md.
         "sv-markup" => ("sv-block", b.body.clone()),
         "sv-html" => ("sv-block", iframe(&b.body, b.attr("height"))),
+        // In-file annotation: canon, so always visible (the visibility law) —
+        // margin-note styling with its target worn as a reference line.
+        // Physical placement at the anchor is the client's future refinement;
+        // the honest v2 form is a visible note that names its spot.
+        "sv-note" => ("sv-block sv-note", note(b)),
         "sv-diff" => (
             "sv-block",
             crate::diff::render(id, &b.body, b.attr("view").unwrap_or("unified")),
@@ -43,6 +48,22 @@ pub fn block(id: &str, b: &Block) -> String {
         r#"<section class="{class}" data-block="{id}" data-type="{}">{warnings}{body}</section>"#,
         text_escape(&b.type_name)
     )
+}
+
+/// An sv-note's body is markdown like prose; the target/at attributes render
+/// as a quiet mono reference line above it.
+fn note(b: &Block) -> String {
+    let place = match (b.attr("target"), b.attr("at")) {
+        (Some(t), Some(a)) => format!("{t} · {a}"),
+        (Some(t), None) => t.to_string(),
+        _ => String::new(),
+    };
+    let refline = if place.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<div class="sv-note-ref">→ {}</div>"#, text_escape(&place))
+    };
+    format!("{refline}{}", markdown_opts(&b.body, None))
 }
 
 /// GFM via comrak — tables, task lists and strikethrough turn up constantly
@@ -277,6 +298,15 @@ mod tests {
         let html = block("b2", &b);
         assert!(html.contains("doesn't know"), "{html}");
         assert!(html.contains("select 1"), "the raw body stays visible: {html}");
+    }
+
+    #[test]
+    fn sv_note_is_canon_visible_and_wears_its_target() {
+        let b = parse_one("<sv-note target=\"b3\" at=\"p:3f9c2a1b04d2\">\n**Own** the anchor.\n</sv-note>");
+        let html = block("n1", &b);
+        assert!(html.contains("sv-note"), "{html}");
+        assert!(html.contains("b3 · p:3f9c2a1b04d2"), "the reference line names the spot: {html}");
+        assert!(html.contains("<strong>Own</strong>"), "the body is markdown: {html}");
     }
 
     #[test]

@@ -290,6 +290,28 @@ function shortLabel(id) {
 // Blocks before any section are front matter, visible on every tab.
 
 function computeOutline() {
+  // An explicit outline (sideview outline → outline_spec prop) is used
+  // verbatim: the agent's ordered list, inference off. Prose derivation
+  // below stays the default.
+  const spec = sessionProps().outline_spec;
+  if (Array.isArray(spec) && spec.length) {
+    const anchorId = (a) => (typeof a === 'string' && a.startsWith('h:') ? a.slice(2) : null);
+    return {
+      sections: spec.map((e, i) => ({
+        key: 'spec/' + i,
+        block: null,
+        title: String(e.title || ''),
+        id: anchorId(e.anchor),
+        children: (e.children || []).map((c) => ({
+          text: String(c.title || ''),
+          id: anchorId(c.anchor),
+          block: null,
+        })),
+      })),
+      blockSections: new Map(),
+    };
+  }
+
   const sections = [];
   const blockSections = new Map(); // block id -> Set(section index); empty = front matter
   const per = state.blocks.get(state.selected);
@@ -441,7 +463,7 @@ function goToChild(s, c) {
 }
 
 function blockEl(id) {
-  return $blocks.querySelector(`[data-block="${CSS.escape(id)}"]`);
+  return id ? $blocks.querySelector(`[data-block="${CSS.escape(id)}"]`) : null;
 }
 
 function applyVisibility() {

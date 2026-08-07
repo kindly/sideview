@@ -509,6 +509,32 @@ impl Store {
         Ok(rows)
     }
 
+    // ---- explicit outlines --------------------------------------------------
+    // The agent's ordered list, used verbatim by the rail when present
+    // (inference off). Coordination, not content — so it lives here.
+
+    pub fn set_outline(&self, page: &str, spec: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO outlines(page, spec, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(page) DO UPDATE SET spec = excluded.spec, updated_at = excluded.updated_at",
+            rusqlite::params![page, spec, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_outline(&self, page: &str) -> Result<bool> {
+        let n = self.conn.execute("DELETE FROM outlines WHERE page = ?1", [page])?;
+        Ok(n > 0)
+    }
+
+    pub fn outlines(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT page, spec FROM outlines")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     // ---- meta --------------------------------------------------------------
 
     pub fn meta(&self, key: &str) -> Result<Option<String>> {
