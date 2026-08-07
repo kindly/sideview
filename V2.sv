@@ -48,14 +48,6 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Prose derivation stays the default — a `##` in the canonical file is structure, not inference. Markup and html contribute nothing without an explicit outline (true since late v1).
 </sv-prose>
 
-<sv-note id="note-scroll-test" target="pages">
-Requested from the page (thread 11) as a live test of the reading anchor:
-this note was inserted *above* the scroll bullet while the author was
-reading it. If the decision below is implemented correctly, its arrival
-moved nothing under your eye — content grew above, the page counter-scrolled,
-and the only sign was the outline rail getting longer.
-</sv-note>
-
 <sv-prose id="pages">
 ## Document pages, properly — and the words get fixed
 
