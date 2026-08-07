@@ -50,6 +50,11 @@ in order to display the data, the block is designed wrong.
 
 ## Two surfaces, one machinery
 
+> **The duality survived two re-foundings; the mechanics didn't.** `sideview show` was cut in
+> v0, and "a plan is a row in `plans`" became "a plan is a committed `.sv` file" in v1. But
+> scratch-vs-durable lives on as the two page tiers — throwaway pages under `.sideview/pages/`,
+> document pages in the repo — with promotion a `mv` instead of an UPDATE.
+
 **The scratch stream** — a per-project visual scrollback. `sideview show <thing>` appends a
 view and it appears immediately: a parquet file, an image, a diff, a command's output. No
 plan, no title, no ordering decisions. This is the visual equivalent of `less`, it's the
@@ -212,9 +217,13 @@ invented for this was going to be a worse version of "a list of commands".
 
 ## Schema sketch
 
-> **Predates the v0 cut.** This is the long-term shape — plans, outputs, params, provenance — and
-> none of it is in v0 except `sessions` and `blocks`. The tables to actually create are in
-> [V0.md](V0.md)'s "The v0 schema"; keep this as the target the migrations walk towards.
+> **Predates the v0 cut, and v1 changed its fate (2026-08-04, pages-are-files — [V1.md](V1.md)).**
+> This is no longer the target the migrations walk towards: `blocks` and `plans` will never
+> return to the database, because block content lives in `.sv` files now. What *does* survive
+> of this sketch is exactly the part the new placement principles select for — `comments`,
+> `outputs`, `params`, `provenance` are multi-writer or derived, which is SQLite's remit
+> (*the page file has one author; everything multi-writer goes through SQLite*). Read the
+> table list below as "the db half of the future", not the whole.
 
 ```sql
 sessions(id, label, cwd, detected_from, started_at, ended_at)
@@ -244,6 +253,9 @@ serving many sessions uncontended.
 
 ## Change notification
 
+> **Still true, joined by a sibling (v1):** content changes are file mtimes now, so the poll
+> stats the bound page files on the same tick; `data_version` keeps covering the db's half.
+
 **The daemon polls `PRAGMA data_version` a few times a second.** Not the elegant answer, but the
 right one: the CLI runs inside the agent's sandbox and so cannot poke the daemon over the network,
 and a page-cache read a few times a second costs nothing. It also beats watching the WAL and
@@ -252,6 +264,11 @@ trying to infer what moved, needs no inotify, and picks up anyone editing the da
 ~100ms of latency, which nobody perceives against a browser paint.
 
 ## On disk
+
+> **Superseded by v1's substrate ([V1.md](V1.md)).** The db holds bindings, the daemon row and
+> durable meta — never block content; pages are `.sv` files (throwaway ones under
+> `.sideview/pages/`, document ones committed anywhere in the repo). The sidecar-files idea
+> below survives untouched and is still a sleeper feature.
 
 ```
 .sideview/
@@ -279,6 +296,16 @@ shell, a CI job, a long build. The agent doesn't have to be in the loop for a bl
 alive.
 
 ## Backup and export are different jobs, and neither round-trips
+
+> **Superseded in part by v1, and one claim below was inverted outright.** Block content now
+> lives in `.sv` files, so its backup story is git, not CSV — CSV remains right for what stays
+> in the db (comments, params, future outputs: real human input and derived state). And
+> **"version control is not a goal" did not survive**: v1 made committed, diffable `.sv` plans
+> a headline feature. The section's argument was honest for what it was looking at — app
+> blocks, live query results — and simply predates prose-and-structure becoming a file. Its
+> corollary ("if a plan is nothing but prose, markdown was already the correct tool") was
+> answered differently too: the `.sv` format *is* nearly that markdown, plus typed blocks the
+> moment prose stops being enough.
 
 **Backup is CSV.** Machine-written, machine-read, never hand-authored — which is exactly
 the case CSV is good at, and the escaping that would make it a bad *authoring* format
@@ -310,6 +337,10 @@ And if a plan is nothing but prose, markdown was already the correct tool and si
 shouldn't have been involved.
 
 ## Ownership
+
+> **Superseded by the sharper v2 form ([V2.sv](V2.sv)): the page file has one author;
+> everything multi-writer goes through SQLite.** Same instinct — single writer per artifact —
+> relocated to where the artifacts now live.
 
 The rule that keeps this from getting messy: **the agent writes `blocks` (via the CLI); the
 server writes everything derived** — `outputs`, `comments`, `params`, snapshots. Separate
@@ -592,6 +623,10 @@ either way. If usable-this-month beats distribution, Python + `uv` (`uvx sidevie
 close. I'd still take Rust — the daemon and the drop-in-anywhere property are the product.
 
 ## Storage roles
+
+> **Halved by v1**: the document store is the filesystem (`.sv` pages, canon, versionable);
+> SQLite keeps coordination, conversation and visual niceness — bindings, the daemon row,
+> comments when they arrive. DuckDB's role below is untouched.
 
 **SQLite** is the document and state store, as above.
 

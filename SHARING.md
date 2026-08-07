@@ -47,6 +47,11 @@ disclosure report names it explicitly.
 
 ### T1 — Pack and ship the store *(cheap, and underrated)*
 
+> **Updated by v1's substrate:** the plan is a `.sv` file now, not a SQLite file — and T1 got
+> *stronger*, because the simplest pack of a committed plan is `git clone`. `sideview pack`
+> becomes "page files + db + the data files blocks reference"; everything else in this tier
+> holds.
+
 Because the plan is a SQLite file, sharing can mean handing over the plan itself:
 `sideview pack` bundles the db plus the data files its blocks reference, and the recipient
 runs their own daemon against it.
