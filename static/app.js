@@ -680,7 +680,7 @@ function resolveAnchor(t) {
   }
   if (t.anchor.startsWith('p:')) {
     const want = t.anchor.slice(2);
-    for (const p of block.querySelectorAll('p, li')) {
+    for (const p of block.querySelectorAll('p, li, pre')) {
       if (anchorHash(textOf(p)) === want) return p;
     }
     return null;
@@ -694,7 +694,7 @@ function anchorOf(el) {
   const block = el.closest('[data-block]');
   if (!block || el === block) return '';
   if (/^H[1-6]$/.test(el.tagName) && el.id) return 'h:' + el.id;
-  if (el.tagName === 'P' || el.tagName === 'LI') return 'p:' + anchorHash(textOf(el));
+  if (['P', 'LI', 'PRE'].includes(el.tagName)) return 'p:' + anchorHash(textOf(el));
   return '';
 }
 
@@ -736,15 +736,17 @@ function renderConversation() {
     });
     el.appendChild(dot);
   }
-  // Every other commentable bit gets the empty bubble, trailing its text:
-  // invisible until its element is hovered (tapped, on touch screens).
-  // Loose list items defer to the paragraphs inside them.
+  // Every other commentable bit gets the empty bubble, trailing its text
+  // (floating top-right for code blocks): invisible until its element is
+  // hovered (tapped, on touch screens). Loose list items defer to the
+  // paragraphs inside them; diff and degraded blocks keep their own rules.
   const spots = [
-    ...$blocks.querySelectorAll(':is(h1, h2, h3, h4, h5, h6)[id], p, li'),
+    ...$blocks.querySelectorAll(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre'),
     ...$blocks.querySelectorAll(':scope > [data-block]'),
   ];
   for (const el of spots) {
     if (el.tagName === 'LI' && el.querySelector(':scope > p')) continue;
+    if (el.tagName === 'PRE' && el.closest('.sv-diff, .sv-degraded')) continue;
     if (el.querySelector(':scope > .sv-cdot')) continue;
     const mark = document.createElement('button');
     mark.type = 'button';
@@ -765,7 +767,7 @@ function renderConversation() {
 if (matchMedia('(hover: none)').matches) {
   $blocks.addEventListener('click', (e) => {
     if (e.target.closest('.sv-cmark, .sv-cdot, a, button, input, textarea')) return;
-    const el = e.target.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, #sv-blocks > [data-block]');
+    const el = e.target.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre, #sv-blocks > [data-block]');
     if (!el) return;
     const mark = el.querySelector(':scope > .sv-cmark');
     if (!mark) return;
