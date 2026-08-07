@@ -646,12 +646,25 @@ function anchorHash(text) {
   return (h & 0xffffffffffffn).toString(16).padStart(12, '0');
 }
 
-// textContent with our own injected UI (count-dots) stripped — hashing must
-// see the author's text, not the decoration.
+// textContent with our own injected UI (comment bubbles) stripped — hashing
+// must see the author's text, not the decoration.
 function textOf(el) {
   const clone = el.cloneNode(true);
-  for (const d of clone.querySelectorAll('.sv-cdot')) d.remove();
+  for (const d of clone.querySelectorAll('.sv-cdot, .sv-cmark')) d.remove();
   return clone.textContent;
+}
+
+// The comment bubble, drawn inline: an empty one trails every commentable
+// bit (hover-revealed), a numbered one stays put where a thread lives.
+function bubbleSvg(count) {
+  const label = count == null
+    ? ''
+    : `<text x="10" y="8" text-anchor="middle" dominant-baseline="central"
+         font-size="9" stroke="none" fill="currentColor">${count}</text>`;
+  return `<svg viewBox="0 0 20 19" width="17" height="16" aria-hidden="true">
+    <path d="M1.5 1.5h17v12h-11l-4 4v-4h-2z"
+      fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    ${label}</svg>`;
 }
 
 // thread -> the element its anchor names right now, or null (orphaned).
@@ -693,7 +706,7 @@ function scheduleConversation() {
 }
 
 function renderConversation() {
-  for (const d of $blocks.querySelectorAll('.sv-cdot')) d.remove();
+  for (const d of $blocks.querySelectorAll('.sv-cdot, .sv-cmark')) d.remove();
   placed = new Map();
   const tail = [];
   for (const t of conversation().threads) {
@@ -712,7 +725,7 @@ function renderConversation() {
     dot.type = 'button';
     dot.className = 'sv-cdot';
     const n = threads.reduce((a, t) => a + commentsFor(t.id).length, 0);
-    dot.textContent = String(n);
+    dot.innerHTML = bubbleSvg(n);
     dot.title = n + (n === 1 ? ' comment' : ' comments');
     dot.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -720,7 +733,40 @@ function renderConversation() {
     });
     el.appendChild(dot);
   }
+  // Every other commentable bit gets the empty bubble, trailing its text:
+  // invisible until its element is hovered (tapped, on touch screens).
+  const spots = [
+    ...$blocks.querySelectorAll(':is(h1, h2, h3, h4, h5, h6)[id], p'),
+    ...$blocks.querySelectorAll(':scope > [data-block]'),
+  ];
+  for (const el of spots) {
+    if (el.querySelector(':scope > .sv-cdot')) continue;
+    const mark = document.createElement('button');
+    mark.type = 'button';
+    mark.className = 'sv-cmark';
+    mark.title = 'comment here';
+    mark.innerHTML = bubbleSvg(null);
+    mark.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPopover(el, placed.get(el) || []);
+    });
+    el.appendChild(mark);
+  }
   renderTail(tail);
+}
+
+// Touch has no hover: the first tap on a commentable bit reveals its bubble
+// (one at a time), the second tap — on the bubble — opens the popover.
+if (matchMedia('(hover: none)').matches) {
+  $blocks.addEventListener('click', (e) => {
+    if (e.target.closest('.sv-cmark, .sv-cdot, a, button, input, textarea')) return;
+    const el = e.target.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, #sv-blocks > [data-block]');
+    if (!el) return;
+    const mark = el.querySelector(':scope > .sv-cmark');
+    if (!mark) return;
+    for (const r of $blocks.querySelectorAll('.sv-cmark.sv-reveal')) r.classList.remove('sv-reveal');
+    mark.classList.add('sv-reveal');
+  });
 }
 
 // ---- the tail list: resolved OR orphaned, one list --------------------------
@@ -805,58 +851,6 @@ function setResolution(threadId, undo) {
   // The daemon's snapshot repaints everything within a tick; no local state.
 }
 
-// ---- the margin mark: hover an anchorable spot, click to comment ------------
-
-const $mark = document.createElement('button');
-$mark.id = 'sv-mark';
-$mark.type = 'button';
-$mark.title = 'comment here';
-$mark.textContent = '+';
-$mark.hidden = true;
-document.body.appendChild($mark);
-let markTarget = null;
-
-function anchorable(node) {
-  if (!(node instanceof Element)) return null;
-  if (node.closest('#sv-popover, .sv-cdot')) return null;
-  return (
-    node.closest('#sv-blocks :is(h1, h2, h3, h4, h5, h6)[id], #sv-blocks p') ||
-    node.closest('#sv-blocks > [data-block]')
-  );
-}
-
-// The mark lives in the margin, outside #sv-blocks — hiding must survive
-// the cursor's short hop across the gap, so it goes through a grace timer
-// that hovering the mark itself cancels.
-let markHideTimer = 0;
-function hideMark() {
-  markTarget = null;
-  $mark.hidden = true;
-}
-function hideMarkSoon() {
-  clearTimeout(markHideTimer);
-  markHideTimer = setTimeout(hideMark, 350);
-}
-
-$blocks.addEventListener('mouseover', (e) => {
-  const el = anchorable(e.target);
-  if (!el) return;
-  clearTimeout(markHideTimer);
-  if (el === markTarget) return;
-  markTarget = el;
-  const r = el.getBoundingClientRect();
-  $mark.style.top = scrollY + r.top + 'px';
-  $mark.style.left = Math.max(4, scrollX + r.left - 28) + 'px';
-  $mark.hidden = false;
-});
-$blocks.addEventListener('mouseleave', hideMarkSoon);
-addEventListener('scroll', hideMark, { passive: true });
-$mark.addEventListener('mouseover', () => clearTimeout(markHideTimer));
-$mark.addEventListener('mouseleave', hideMarkSoon);
-$mark.addEventListener('click', () => {
-  if (markTarget) openPopover(markTarget, placed.get(markTarget) || []);
-});
-
 // ---- the popover: one conversation, or a fresh comment ----------------------
 
 let $popover = null;
@@ -867,7 +861,7 @@ function closePopover() {
 
 addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopover(); });
 addEventListener('click', (e) => {
-  if ($popover && !$popover.contains(e.target) && e.target !== $mark) closePopover();
+  if ($popover && !$popover.contains(e.target)) closePopover();
 });
 
 // One open thread per bit, usually: the popover leads with the existing

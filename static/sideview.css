@@ -966,45 +966,39 @@ body.sv-rail #sv-outline { display: block; }
   }
 }
 
-/* --- conversation: marks, dots, popover, tail ---------------------------------
+/* --- conversation: bubbles, popover, tail --------------------------------------
    The visibility law (V2.sv): if you can see it without hovering, it's canon.
-   Threads are a faint count-dot until their anchor is hovered; the margin
-   mark appears only on hover; resolved and orphaned conversations live in
-   the one visible place — the tail list — because a page showing its own
-   detached conversation is honest, not noise. */
+   Comment bubbles trail the text they belong to — empty ones exist only
+   under the reader's cursor (or tap), numbered ones persist because a live
+   conversation is worth a quiet tell. Resolved and orphaned conversations
+   live in the one visible place — the tail list — because a page showing
+   its own detached conversation is honest, not noise. */
 
-.sv-cdot {
+/* Both bubbles trail their text inline; the SVG carries the shape, so the
+   button itself is bare. The numbered one (a live conversation) stays put;
+   the empty one exists only under the reader's cursor. */
+.sv-cdot, .sv-cmark {
   display: inline-block;
-  margin-left: 0.45rem;
-  padding: 0 0.35rem;
-  border: 1px solid var(--sv-ink);
-  background: transparent;
-  color: var(--sv-ink);
-  font-family: var(--sv-mono);
-  font-size: 0.7rem;
-  line-height: 1.15rem;
-  vertical-align: 0.1rem;
-  cursor: pointer;
-  opacity: 0.3;
-  transition: opacity 0.12s ease;
-}
-:hover > .sv-cdot, .sv-cdot:hover, .sv-cdot:focus-visible { opacity: 1; }
-
-#sv-mark {
-  position: absolute;
-  width: 1.4rem;
-  height: 1.4rem;
+  margin-left: 0.4rem;
   padding: 0;
-  border: 1px solid var(--bs-border-color);
-  background: var(--bs-body-bg);
-  color: var(--bs-secondary-color);
+  border: 0;
+  background: none;
   font-family: var(--sv-mono);
-  font-size: 0.9rem;
+  vertical-align: -0.12em;
   line-height: 1;
   cursor: pointer;
-  z-index: 40;
+  transition: opacity 0.12s ease;
 }
-#sv-mark:hover { border-color: var(--sv-ink); color: var(--sv-ink); }
+
+.sv-cdot { color: var(--sv-ink); opacity: 0.6; }
+.sv-cdot:hover, .sv-cdot:focus-visible { opacity: 1; }
+
+.sv-cmark { color: var(--bs-secondary-color); opacity: 0; }
+:hover > .sv-cmark { opacity: 0.5; }
+.sv-cmark:hover, .sv-cmark:focus-visible, .sv-cmark.sv-reveal {
+  opacity: 1;
+  color: var(--sv-ink);
+}
 
 #sv-popover {
   position: absolute;
@@ -1121,10 +1115,11 @@ body.sv-rail #sv-tail > * { max-width: 46rem; }
 
 .sv-tail-actions { margin-top: 0.1rem; }
 
-@media (max-width: 48rem) {
-  /* Touch has no hover: the marks stay visible-faint, tap to reveal. The
-     full mobile pass is its own design task (V2.sv). */
-  .sv-cdot { opacity: 0.55; }
+@media (hover: none) {
+  /* Touch has no hover: the numbered bubbles stay (they always do); the
+     empty one appears when its element is tapped (.sv-reveal from app.js). */
+  :hover > .sv-cmark { opacity: 0; }
+  .sv-cmark.sv-reveal { opacity: 1; }
 }
 
 /* In-file annotations (sv-note): canon, so always visible — a margin-note
