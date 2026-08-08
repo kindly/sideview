@@ -6,8 +6,15 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
-**v2 built on branch `v2`, overnight 2026-08-07 (agent, for the author's morning review) —
-unreleased, unmerged.** Everything V2.sv commits to except watched diffs (re-sequenced out by
+**v2 shipped: 0.2.0, 2026-08-09** — merged and published the moment the author ordered the
+release *through a comment on the goal's own release line*, completing the done-when exactly
+as written: resurrection first (ran live, twice counting the e2e), every section heading
+signed off from the browser, each sign-off picked up through watch with the chat silent, and
+this publish. Two days from overnight build to release, every revision in between requested
+and verified through the page itself.
+
+**Historical (the overnight build note, as the review found it):** v2 built on branch `v2`,
+overnight 2026-08-07 (agent, for the author's morning review). Everything V2.sv commits to except watched diffs (re-sequenced out by
 the author) is implemented and green (43 tests): migration v2 (sessions→bindings + the
 threads/comments/outlines tables), `page set/rm/promote` with session aliases, `open <file>`,
 `comment`/`resolve --undo`/`watch --claim` (typed JSON-lines; the whole loop verified live —
