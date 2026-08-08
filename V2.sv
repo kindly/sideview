@@ -49,6 +49,13 @@ in its first two days.
 - For diffs: annotations on frozen content (snapshots) may be canon, versioned beside what they annotate; on moving content (watched diffs, when they arrive) they stay conversation.
 </sv-prose>
 
+<sv-note id="note-annotations-complete" target="annotations">
+**Complete — signed off by the author, 2026-08-09** (thread 1 of the
+post-resurrection store). Both homes shipped and lived in: sv-notes crossed
+into canon all day, context stayed conversation and died in the resurrection
+as designed — and promotion retired itself by experiment on this very page.
+</sv-note>
+
 <sv-prose id="outlines">
 ## Explicit outlines
 
