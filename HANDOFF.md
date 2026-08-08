@@ -407,9 +407,12 @@ vendorable as one file, deep LLM priors) are the candidates — petite-vue is un
 overlaps what SSE already does here. **Update (2026-08-08): the trigger fired** — the feedback
 channel landed and the popover/tail code is exactly the predicted framework-shaped work; a hard
 day of scroll debugging also showed the block-reconciliation bugs belong to a different fix
-(idiomorph-style morphing, on V2.sv's candidates). Leading candidate when adoption is chosen:
-Vue-ESM islands for the conversation UI only, blocks staying vanilla — the author's other tools
-are Vue, and Vapor mode was assessed as no threat to the no-build path (opt-in, build-time, same
+(idiomorph-style morphing, on V2.sv's candidates). **Adopted 2026-08-08**: the comment-bar redesign (V2.sv's placement bullet, third design) was
+the trigger's work arriving, and it shipped as the first Vue island — vue.esm-browser 3.5.41
+vendored, composition API with explicit setup(), inline template, blocks and chrome staying
+vanilla. The same change put Access-Control-Allow-Origin: * on /assets, so html blocks can
+ESM-import the vendored Vue: the islands prize extends to agent-authored blocks. Vapor mode was
+assessed as no threat to the no-build path (opt-in, build-time, same
 authoring model, and a vendored file can't rot). Composition API works fully in the ESM build —
 it's only the `<script setup>` sugar that needs a compiler (write `setup()` + explicit return);
 one real caveat: the runtime template compiler uses `new Function`, so a strict CSP without

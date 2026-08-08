@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08j no-mermaid';
+const CLIENT_STAMP = '2026-08-08k comment-bar';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -691,31 +691,30 @@ function renderAllBlocks() {
   scheduleConversation();
 }
 
-// ---- conversation: comments from the page -----------------------------------
-// The daemon ships each page's threads+comments whole (the `threads` event);
-// this side places them. Placement is Sphinx's headerlink model: hover a
-// heading, paragraph or block and a margin mark appears — click to comment
-// there. Existing threads are a faint count-dot until their anchor is
-// hovered. Resolved OR orphaned threads share the tail list: the same kind
-// of thing, a conversation not attached to a live spot. Orphanhood is
-// computed here (does the anchor still resolve?), never stored — so a
-// returning anchor re-attaches its thread by construction.
+// ---- conversation: the comment bar -------------------------------------------
+// The author's redesign after real use (2026-08-08): a comment on a plan is
+// usually a change-request for the very text it anchors to, so success
+// destroys the anchor — anchored inline display optimized for the rare
+// thread. Conversations now live in one stable place: a right bar, the
+// first Vue island (the adoption point HANDOFF recorded). Inline there is
+// no resting furniture at all — select text and a chip appears; the
+// selection is the quote, the containing element's text the context.
 
-const $tail = document.getElementById('sv-tail');
-let placed = new Map(); // element -> [threads], as of the last render
+const $bar = document.getElementById('sv-comments');
+let vue = null;   // the vendored ESM module, once loaded
+let svc = null;   // reactive conversation store, once mounted
+
+import('/assets/vendor/vue.esm-browser.prod.js')
+  .then((m) => { vue = m; mountCommentBar(); syncConversation(); })
+  .catch((e) => console.warn('sideview: comment bar disabled (vue failed to load)', e));
 
 function conversation() {
   return state.conversations.get(state.selected) || { threads: [], comments: [] };
 }
 
-function commentsFor(threadId) {
-  return conversation().comments.filter((c) => c.thread_id === threadId);
-}
-
 // FNV-1a 64 over the whitespace-normalized text, low 48 bits as 12 hex —
 // the `p:` anchor. Vector: anchorHash('the quick brown fox') = '8115ea47e2c8'.
-// The daemon-side twin arrives with re-resolution (V2.sv); until then this
-// is the only implementation, and the vector above is the contract.
+// The daemon-side twin arrives with re-resolution (V2.sv).
 function anchorHash(text) {
   const s = text.replace(/\s+/g, ' ').trim();
   let h = 0xcbf29ce484222325n;
@@ -726,33 +725,16 @@ function anchorHash(text) {
   return (h & 0xffffffffffffn).toString(16).padStart(12, '0');
 }
 
-// textContent with our own injected UI (comment bubbles) stripped — hashing
-// must see the author's text, not the decoration.
+// Nothing of ours lives inside block content any more (the bar is outside,
+// the chip is body-level) — and it must stay that way, or content hashes
+// would see decoration.
 function textOf(el) {
-  const clone = el.cloneNode(true);
-  for (const d of clone.querySelectorAll('.sv-cdot, .sv-cmark')) d.remove();
-  return clone.textContent;
+  return el.textContent;
 }
 
-// The comment bubble, drawn inline: an empty one (rounded, two text lines)
-// trails every commentable bit, hover-revealed; a numbered one stays put
-// where a thread lives, the count in place of the lines. Filled means the
-// agent had the last word — the user's turn.
-function bubbleSvg(count, filled) {
-  const inner = count == null
-    ? '<path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/>'
-    : `<text x="12" y="10" text-anchor="middle" dominant-baseline="central"
-         font-size="11" font-weight="600" stroke="none"
-         fill="${filled ? 'var(--bs-body-bg)' : 'currentColor'}">${count}</text>`;
-  return `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
-      fill="none" stroke="currentColor" stroke-width="1.8"
-      stroke-linejoin="round" stroke-linecap="round">
-    <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"
-      ${filled ? 'fill="currentColor"' : ''}/>
-    ${inner}</svg>`;
-}
-
-// thread -> the element its anchor names right now, or null (orphaned).
+// thread -> the element its anchor names right now, or null (orphaned —
+// which on a plan usually means the feedback was addressed and the text
+// changed; the bar says so rather than mourning it).
 function resolveAnchor(t) {
   const block = blockEl(t.target);
   if (!block) return null;
@@ -771,8 +753,7 @@ function resolveAnchor(t) {
   return null; // l: — per-line diff placement lands with watched diffs
 }
 
-// element -> the anchor string a new thread there would carry. The p: hash
-// covers list items too — same grammar, same normalization.
+// element -> the anchor string a new thread there would carry.
 function anchorOf(el) {
   const block = el.closest('[data-block]');
   if (!block || el === block) return '';
@@ -781,161 +762,26 @@ function anchorOf(el) {
   return '';
 }
 
+// Recompute which threads still attach, after any block or thread change.
 let conversationScheduled = false;
 function scheduleConversation() {
   if (conversationScheduled) return;
   conversationScheduled = true;
   requestAnimationFrame(() => {
     conversationScheduled = false;
-    renderConversation();
+    syncConversation();
   });
 }
 
-function renderConversation() {
-  keepReading(renderConversationInner);
-}
-
-function renderConversationInner() {
-  for (const d of $blocks.querySelectorAll('.sv-cdot, .sv-cmark')) d.remove();
-  placed = new Map();
-  const tail = [];
-  for (const t of conversation().threads) {
-    const el = resolveAnchor(t);
-    if (t.resolved_at != null) {
-      tail.push({ t, orphan: !el });
-    } else if (!el) {
-      tail.push({ t, orphan: true });
-    } else {
-      if (!placed.has(el)) placed.set(el, []);
-      placed.get(el).push(t);
-    }
-  }
-  for (const [el, threads] of placed) {
-    const dot = document.createElement('button');
-    dot.type = 'button';
-    dot.className = 'sv-cdot';
-    const all = threads.flatMap((t) => commentsFor(t.id));
-    const last = all[all.length - 1];
-    // The agent had the last word: filled bubble, the user's turn.
-    const turn = last && last.author === 'agent';
-    dot.classList.toggle('sv-turn', !!turn);
-    dot.innerHTML = bubbleSvg(all.length, turn);
-    dot.title =
-      all.length + (all.length === 1 ? ' comment' : ' comments') +
-      (turn ? ' — the agent replied' : '');
-    dot.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPopover(el, threads);
-    });
-    el.appendChild(dot);
-  }
-  // Every other commentable bit gets the empty bubble, trailing its text
-  // (floating top-right for code blocks): invisible until its element is
-  // hovered (tapped, on touch screens). Loose list items defer to the
-  // paragraphs inside them; diff and degraded blocks keep their own rules.
-  const spots = [
-    ...$blocks.querySelectorAll(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre'),
-    ...$blocks.querySelectorAll(':scope > [data-block]'),
-  ];
-  for (const el of spots) {
-    if (el.tagName === 'LI' && el.querySelector(':scope > p')) continue;
-    if (el.tagName === 'PRE' && el.closest('.sv-diff, .sv-degraded')) continue;
-    if (el.querySelector(':scope > .sv-cdot')) continue;
-    const mark = document.createElement('button');
-    mark.type = 'button';
-    mark.className = 'sv-cmark';
-    mark.title = 'comment here';
-    mark.innerHTML = bubbleSvg(null);
-    mark.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPopover(el, placed.get(el) || []);
-    });
-    el.appendChild(mark);
-  }
-  renderTail(tail);
-}
-
-// Touch has no hover: the first tap on a commentable bit reveals its bubble
-// (one at a time), the second tap — on the bubble — opens the popover.
-if (matchMedia('(hover: none)').matches) {
-  $blocks.addEventListener('click', (e) => {
-    if (e.target.closest('.sv-cmark, .sv-cdot, a, button, input, textarea')) return;
-    const el = e.target.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre, #sv-blocks > [data-block]');
-    if (!el) return;
-    const mark = el.querySelector(':scope > .sv-cmark');
-    if (!mark) return;
-    for (const r of $blocks.querySelectorAll('.sv-cmark.sv-reveal')) r.classList.remove('sv-reveal');
-    mark.classList.add('sv-reveal');
-  });
-}
-
-// ---- the tail list: resolved OR orphaned, one list --------------------------
-
-function renderTail(entries) {
-  $tail.textContent = '';
-  $tail.hidden = entries.length === 0;
-  if (!entries.length) return;
-  const title = document.createElement('h2');
-  title.id = 'sv-tail-title';
-  title.textContent = 'Conversations off the page';
-  $tail.appendChild(title);
-  for (const { t, orphan } of entries) {
-    const item = document.createElement('article');
-    item.className = 'sv-tail-item' + (t.resolved_at != null ? ' sv-resolved' : '');
-
-    const meta = document.createElement('div');
-    meta.className = 'sv-tail-meta';
-    const status = t.resolved_at != null ? 'resolved' : 'orphaned';
-    meta.textContent = `${status} · ${t.target}${t.anchor ? ' · ' + t.anchor : ''}`;
-    item.appendChild(meta);
-
-    if (t.quote) {
-      const q = document.createElement('blockquote');
-      q.className = 'sv-tail-quote';
-      q.textContent = t.quote;
-      item.appendChild(q);
-    }
-    for (const c of commentsFor(t.id)) {
-      item.appendChild(commentEl(c));
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'sv-tail-actions';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'sv-pop-btn';
-    if (t.resolved_at != null) {
-      btn.textContent = 'reopen';
-      btn.title = orphan
-        ? 'reopen — stays here until its anchor returns'
-        : 'reopen — reattaches to its spot on the page';
-      btn.addEventListener('click', () => setResolution(t.id, true));
-    } else {
-      btn.textContent = 'resolve';
-      btn.addEventListener('click', () => setResolution(t.id, false));
-    }
-    actions.appendChild(btn);
-    item.appendChild(actions);
-    $tail.appendChild(item);
-  }
-}
-
-function commentEl(c) {
-  const el = document.createElement('div');
-  el.className = 'sv-comment';
-  const meta = document.createElement('span');
-  meta.className = 'sv-comment-meta';
-  const when = new Date(c.created_at).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-  // Role before identity: agent or user (pre-role rows read as user).
-  meta.textContent = (c.author || 'user') + ' · ' + when;
-  if (c.author === 'agent') meta.classList.add('sv-agent');
-  const body = document.createElement('div');
-  body.className = 'sv-comment-body';
-  body.textContent = c.body;
-  el.append(meta, body);
-  return el;
+function syncConversation() {
+  if (!svc) return;
+  const conv = conversation();
+  svc.page = state.selected;
+  svc.threads = conv.threads;
+  svc.comments = conv.comments;
+  const attach = {};
+  for (const t of conv.threads) attach[t.id] = !!resolveAnchor(t);
+  svc.attach = attach;
 }
 
 async function postComment(payload) {
@@ -950,119 +796,206 @@ async function postComment(payload) {
 function setResolution(threadId, undo) {
   fetch(`/api/threads/${threadId}/${undo ? 'unresolve' : 'resolve'}`, { method: 'POST' })
     .catch(() => {});
-  // The daemon's snapshot repaints everything within a tick; no local state.
+  // The daemon's snapshot repaints the bar within a tick; no local state.
 }
 
-// ---- the popover: one conversation, or a fresh comment ----------------------
+// ---- the bar itself: the first Vue island ------------------------------------
 
-let $popover = null;
+function mountCommentBar() {
+  const { createApp, reactive, computed, watchEffect, nextTick } = vue;
+  svc = reactive({ page: null, threads: [], comments: [], attach: {}, draft: null });
 
-function closePopover() {
-  if ($popover) { $popover.remove(); $popover = null; }
-}
+  // Layout classes live on body so the CSS grid can breathe around the bar.
+  watchEffect(() => {
+    const has = svc.threads.length > 0 || !!svc.draft;
+    document.body.classList.toggle('sv-cbar', has);
+  });
 
-addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopover(); });
-addEventListener('click', (e) => {
-  if ($popover && !$popover.contains(e.target)) closePopover();
-});
+  createApp({
+    setup() {
+      const open = computed(() => svc.threads.filter((t) => t.resolved_at == null));
+      const resolved = computed(() => svc.threads.filter((t) => t.resolved_at != null));
+      const collapsed = reactive({});
+      const replies = reactive({});
+      const error = reactive({ msg: '' });
 
-// One open thread per bit, usually: the popover leads with the existing
-// conversation and its reply box; "start a new thread" is the smaller
-// affordance. With no threads it opens straight into composing.
-function openPopover(el, threads, forceNew) {
-  closePopover();
-  const target = el.closest('[data-block]')?.dataset.block;
-  if (!target) return;
-  const anchor = anchorOf(el);
+      const commentsFor = (id) => svc.comments.filter((c) => c.thread_id === id);
+      const lastAuthor = (id) => {
+        const cs = commentsFor(id);
+        return cs.length ? (cs[cs.length - 1].author || 'user') : null;
+      };
+      const fmt = (ts) =>
+        new Date(ts).toLocaleString(undefined, {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
 
-  $popover = document.createElement('div');
-  $popover.id = 'sv-popover';
+      const jump = (t) => {
+        const el = resolveAnchor(t);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el.classList.remove('sv-flash');
+        void el.offsetWidth; // restart the animation
+        el.classList.add('sv-flash');
+      };
+      const send = async (payload, after) => {
+        error.msg = '';
+        try { await postComment(payload); after && after(); }
+        catch (e) { error.msg = String(e.message || e); }
+      };
+      const reply = (t) => {
+        const body = (replies[t.id] || '').trim();
+        if (!body) return;
+        send({ thread: t.id, body }, () => { replies[t.id] = ''; });
+      };
+      const sendDraft = () => {
+        const d = svc.draft;
+        if (!d || !d.text.trim()) return;
+        send(
+          { page: svc.page, target: d.target, anchor: d.anchor,
+            quote: d.quote || null, context: d.context || null, body: d.text.trim() },
+          () => { svc.draft = null; }
+        );
+      };
 
-  const open = forceNew ? [] : threads.filter((t) => t.resolved_at == null);
-  for (const t of open) {
-    const wrap = document.createElement('div');
-    wrap.className = 'sv-pop-thread';
-    for (const c of commentsFor(t.id)) wrap.appendChild(commentEl(c));
-    const resolveBtn = document.createElement('button');
-    resolveBtn.type = 'button';
-    resolveBtn.className = 'sv-pop-btn';
-    resolveBtn.textContent = 'resolve';
-    resolveBtn.title = 'resolve — undoable from the list at the page tail';
-    resolveBtn.addEventListener('click', () => {
-      setResolution(t.id, false);
-      closePopover();
-    });
-    wrap.appendChild(resolveBtn);
-    $popover.appendChild(wrap);
-  }
+      return {
+        svc, open, resolved, collapsed, replies, error,
+        commentsFor, lastAuthor, fmt, jump, reply, sendDraft,
+        attach: computed(() => svc.attach),
+        resolve: (t) => setResolution(t.id, false),
+        reopen: (t) => setResolution(t.id, true),
+        toggle: (id) => { collapsed[id] = !collapsed[id]; },
+        cancelDraft: () => { svc.draft = null; },
+      };
+    },
+    template: `
+      <div v-if="svc.threads.length || svc.draft" class="sv-cbar-inner">
+        <div class="sv-cbar-title">Comments</div>
+        <div v-if="error.msg" class="sv-cbar-error">{{ error.msg }}</div>
 
-  const box = document.createElement('textarea');
-  box.className = 'sv-pop-box';
-  box.rows = 2;
-  box.placeholder = open.length ? 'Reply…' : 'Comment…';
-  const send = document.createElement('button');
-  send.type = 'button';
-  send.className = 'sv-pop-btn sv-pop-send';
-  send.textContent = open.length ? 'reply' : 'comment';
-  const err = document.createElement('div');
-  err.className = 'sv-pop-error';
-  send.addEventListener('click', async () => {
-    const body = box.value.trim();
-    if (!body) return;
-    const payload = open.length
-      ? { thread: open[open.length - 1].id, body }
-      : {
-          page: state.selected,
-          target,
-          anchor,
-          quote: anchor && el !== blockEl(target) ? textOf(el).trim().slice(0, 300) : null,
-          body,
-        };
-    try {
-      await postComment(payload);
-      closePopover(); // the snapshot repaints the dots within a tick
-    } catch (e) {
-      err.textContent = String(e.message || e);
+        <div v-if="svc.draft" class="sv-cbar-card sv-cbar-draft">
+          <blockquote v-if="svc.draft.quote">{{ svc.draft.quote }}</blockquote>
+          <textarea v-model="svc.draft.text" rows="3" placeholder="Comment…"
+                    @keydown.meta.enter="sendDraft" @keydown.ctrl.enter="sendDraft"
+                    @keydown.esc="cancelDraft"></textarea>
+          <div class="sv-cbar-actions">
+            <button type="button" @click="sendDraft">comment</button>
+            <button type="button" class="sv-quiet" @click="cancelDraft">cancel</button>
+          </div>
+        </div>
+
+        <div v-for="t in open" :key="t.id"
+             class="sv-cbar-card"
+             :class="{ 'sv-turn': lastAuthor(t.id) === 'agent' }">
+          <div class="sv-cbar-meta">
+            <button v-if="attach[t.id]" type="button" class="sv-jump"
+                    title="jump to the spot" @click="jump(t)">↩ {{ t.target }}</button>
+            <span v-else class="sv-gone"
+                  title="its anchor left the page — likely addressed">§ changed</span>
+            <span v-if="lastAuthor(t.id) === 'agent'" class="sv-turn-tag">agent replied</span>
+            <button type="button" class="sv-twist-btn"
+                    :aria-expanded="String(!collapsed[t.id])"
+                    @click="toggle(t.id)">{{ collapsed[t.id] ? '▸' : '▾' }}</button>
+          </div>
+          <template v-if="!collapsed[t.id]">
+            <blockquote v-if="t.quote">{{ t.quote }}</blockquote>
+            <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
+              <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
+                {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
+              <div class="sv-comment-body">{{ c.body }}</div>
+            </div>
+            <textarea v-model="replies[t.id]" rows="1" placeholder="Reply…"
+                      @keydown.meta.enter="reply(t)" @keydown.ctrl.enter="reply(t)"></textarea>
+            <div class="sv-cbar-actions">
+              <button type="button" @click="reply(t)">reply</button>
+              <button type="button" class="sv-quiet" @click="resolve(t)"
+                      title="resolve — reopenable below">resolve</button>
+            </div>
+          </template>
+        </div>
+
+        <details v-if="resolved.length" class="sv-cbar-resolved">
+          <summary>resolved ({{ resolved.length }})</summary>
+          <div v-for="t in resolved" :key="t.id" class="sv-cbar-card sv-was-resolved">
+            <div class="sv-cbar-meta">
+              <button v-if="attach[t.id]" type="button" class="sv-jump" @click="jump(t)">↩ {{ t.target }}</button>
+              <span v-else class="sv-gone">§ changed</span>
+            </div>
+            <blockquote v-if="t.quote">{{ t.quote }}</blockquote>
+            <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
+              <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
+                {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
+              <div class="sv-comment-body">{{ c.body }}</div>
+            </div>
+            <div class="sv-cbar-actions">
+              <button type="button" class="sv-quiet" @click="reopen(t)">reopen</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    `,
+  }).mount($bar);
+
+  // Focus the draft box whenever a draft begins.
+  watchEffect(() => {
+    if (svc.draft) {
+      nextTick(() => {
+        $bar.querySelector('.sv-cbar-draft textarea')?.focus({ preventScroll: true });
+      });
     }
   });
-  box.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send.click();
-  });
-  $popover.append(box, send, err);
-
-  if (open.length && !forceNew) {
-    const fresh = document.createElement('button');
-    fresh.type = 'button';
-    fresh.className = 'sv-pop-new';
-    fresh.textContent = 'start a new thread here';
-    fresh.addEventListener('click', () => openPopover(el, threads, true));
-    $popover.appendChild(fresh);
-  }
-
-  // Place after measuring: below the anchor when it fits, flipped above
-  // when the room is above, clamped to the viewport with its own scrollbar
-  // otherwise — a popover must never grow the page or drag its scroll.
-  $popover.style.visibility = 'hidden';
-  document.body.appendChild($popover);
-  const r = el.getBoundingClientRect();
-  const margin = 10;
-  const roomBelow = innerHeight - r.bottom - margin;
-  const roomAbove = r.top - margin;
-  let ph = $popover.offsetHeight;
-  let top;
-  if (ph <= roomBelow) {
-    top = scrollY + r.bottom + 6;
-  } else if (ph <= roomAbove) {
-    top = scrollY + r.top - ph - 6;
-  } else {
-    const below = roomBelow >= roomAbove;
-    const room = Math.max(140, (below ? roomBelow : roomAbove) - 6);
-    $popover.style.maxHeight = room + 'px';
-    ph = $popover.offsetHeight;
-    top = below ? scrollY + r.bottom + 6 : scrollY + r.top - ph - 6;
-  }
-  $popover.style.top = top + 'px';
-  $popover.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - 380) + 'px';
-  $popover.style.visibility = '';
-  box.focus({ preventScroll: true });
 }
+
+// ---- the selection chip: the one creation gesture -----------------------------
+// Select any text in a block and a small "comment" chip appears; the selection
+// becomes the quote, the containing element's text the context. Double-click
+// works for free (it selects a word). No resting furniture in the content.
+
+const $chip = document.createElement('button');
+$chip.id = 'sv-cchip';
+$chip.type = 'button';
+$chip.textContent = 'comment';
+$chip.hidden = true;
+document.body.appendChild($chip);
+
+let chipTimer = 0;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(chipTimer);
+  chipTimer = setTimeout(placeChip, 150);
+});
+
+function placeChip() {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) { $chip.hidden = true; return; }
+  const range = sel.getRangeAt(0);
+  const cont = range.commonAncestorContainer;
+  const el = (cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]');
+  if (!el) { $chip.hidden = true; return; }
+  const r = range.getBoundingClientRect();
+  $chip.style.top = Math.max(scrollY + r.top - 34, scrollY + 4) + 'px';
+  $chip.style.left = Math.min(scrollX + r.right + 8, scrollX + innerWidth - 110) + 'px';
+  $chip.hidden = false;
+}
+
+$chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+$chip.addEventListener('click', () => {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !svc) return;
+  const range = sel.getRangeAt(0);
+  const startEl = range.startContainer.nodeType === 1
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  const spot =
+    startEl?.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre') ||
+    startEl?.closest('[data-block]');
+  const block = spot?.closest('[data-block]');
+  if (!block) return;
+  svc.draft = {
+    target: block.dataset.block,
+    anchor: anchorOf(spot),
+    quote: sel.toString().trim().slice(0, 300),
+    context: textOf(spot).trim().slice(0, 500),
+    text: '',
+  };
+  sel.removeAllRanges();
+  $chip.hidden = true;
+});

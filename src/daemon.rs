@@ -717,6 +717,10 @@ async fn asset(path: web::Path<String>) -> impl Responder {
             // Embedded assets change on every binary upgrade with unchanged
             // URLs, and phones cache aggressively: force revalidation.
             .insert_header(("Cache-Control", "no-cache"))
+            // Public static assets, deliberately importable from the
+            // opaque-origin srcdoc iframes: ESM imports are CORS-gated, and
+            // this one header is what lets an html block be a Vue island.
+            .insert_header(("Access-Control-Allow-Origin", "*"))
             .body(f.data.into_owned()),
         None => HttpResponse::NotFound().body(format!("no embedded asset {rel}")),
     }
