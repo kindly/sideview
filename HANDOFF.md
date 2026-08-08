@@ -426,7 +426,13 @@ custom elements plus a small explicit `window.sideview` API, which keeps plugins
 framework-agnostic, gives them shadow-DOM isolation (DESIGN.md's rung-2 note returns here), and
 lets an agent emit `<sv-something>` as ordinary markup. Constraint to hold either way: whatever
 is adopted must vendor as a single static file into rust-embed — no toolchain, per V0.md's
-frontend section.
+frontend section. **Refined by the author (2026-08-08): no-external-origins is a *core*
+principle, not a universal one.** Extensions — the custom-element layer above — may load
+established libraries from CDN (SRI-pinned): an extension is already a trust decision, so its
+external dependencies just make that visible, and offline it degrades visibly while core never
+degrades at all. First intended resident: mermaid, whose weight (3.6MB, 70% of vendor/) and
+stock aesthetics (round-2 verdict: dated; agents draw better SVG by hand) argue it out of
+core — fences would degrade to highlighted code until the extension layer exists.
 
 **React-controlled blocks, a ladder not a decision** (2026-08-04, prompted by wanting a
 Glide-grid table like querier's). React never controls the page — per-block roots or iframes
