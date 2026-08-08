@@ -410,7 +410,10 @@ day of scroll debugging also showed the block-reconciliation bugs belong to a di
 (idiomorph-style morphing, on V2.sv's candidates). Leading candidate when adoption is chosen:
 Vue-ESM islands for the conversation UI only, blocks staying vanilla — the author's other tools
 are Vue, and Vapor mode was assessed as no threat to the no-build path (opt-in, build-time, same
-authoring model, and a vendored file can't rot). Adoption itself remains the author's call;
+authoring model, and a vendored file can't rot). Composition API works fully in the ESM build —
+it's only the `<script setup>` sugar that needs a compiler (write `setup()` + explicit return);
+one real caveat: the runtime template compiler uses `new Function`, so a strict CSP without
+unsafe-eval would block it — remember this if sharing ever grows CSP headers. Adoption itself remains the author's call;
 vanilla currently holds. The *plugin architecture* (blocks getting scoped access to
 parts of the page) should not be answered with a framework at all: the web-native boundary is
 custom elements plus a small explicit `window.sideview` API, which keeps plugins
