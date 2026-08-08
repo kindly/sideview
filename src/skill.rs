@@ -104,8 +104,8 @@ fn targets(agent: Option<&str>) -> Result<Vec<&'static Harness>> {
     }
 }
 
-pub fn install(project: bool, agent: Option<&str>) -> Result<()> {
-    if project {
+pub fn install(repo: bool, agent: Option<&str>) -> Result<()> {
+    if repo {
         // Project-level: one path, and it double-serves — opencode reads a
         // project's .claude/skills natively.
         let path =
@@ -125,8 +125,8 @@ pub fn install(project: bool, agent: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn uninstall(project: bool, agent: Option<&str>) -> Result<()> {
-    if project {
+pub fn uninstall(repo: bool, agent: Option<&str>) -> Result<()> {
+    if repo {
         let path =
             std::env::current_dir()?.join(".claude").join("skills").join("sideview").join("SKILL.md");
         if !path.exists() {

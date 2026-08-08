@@ -1,6 +1,6 @@
 [package]
 name = "sideview"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A visual side channel for CLI agents: pages are .sv files in your project, rendered live in the browser as agents (or you) write them"
 license = "MIT"

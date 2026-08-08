@@ -247,8 +247,10 @@ enum SkillCmd {
     /// (claude, codex, opencode, pi)
     Install {
         /// Write to ./.claude/skills/ instead, for committing to the repo
+        /// (`--repo`, not `--project` — the global `--project <dir>` owns that name,
+        /// and clap can't hold two arg ids of different types; 0.2.0 panicked here)
         #[arg(long)]
-        project: bool,
+        repo: bool,
         /// Only this harness: claude, codex, opencode or pi
         #[arg(long)]
         agent: Option<String>,
@@ -256,7 +258,7 @@ enum SkillCmd {
     /// Remove the installed skill
     Uninstall {
         #[arg(long)]
-        project: bool,
+        repo: bool,
         /// Only this harness: claude, codex, opencode or pi
         #[arg(long)]
         agent: Option<String>,
@@ -328,11 +330,11 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Styles) => cli::styles(),
         Some(Cmd::Reset) => cli::reset(),
-        Some(Cmd::Skill { action: SkillCmd::Install { project, agent } }) => {
-            skill::install(project, agent.as_deref())
+        Some(Cmd::Skill { action: SkillCmd::Install { repo, agent } }) => {
+            skill::install(repo, agent.as_deref())
         }
-        Some(Cmd::Skill { action: SkillCmd::Uninstall { project, agent } }) => {
-            skill::uninstall(project, agent.as_deref())
+        Some(Cmd::Skill { action: SkillCmd::Uninstall { repo, agent } }) => {
+            skill::uninstall(repo, agent.as_deref())
         }
         Some(Cmd::InternalDaemon { open, bind, port }) => {
             let cwd = std::env::current_dir()?;
@@ -342,5 +344,24 @@ fn main() -> anyhow::Result<()> {
                 &daemon::Opts { bind_auto: bind != "loopback", open_browser: open, port },
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 0.2.0 shipped a panic: the global `--project <dir>` and `skill install
+    // --project` (bool) shared the clap id `project`, globals propagate into
+    // every subcommand, and clap dies on the typed access. debug_assert pins
+    // the structural rule for every future arg; the parses pin the exact
+    // invocations that died.
+    #[test]
+    fn no_arg_id_collides_with_a_global() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+        Cli::try_parse_from(["sideview", "skill", "install", "--agent", "claude"]).unwrap();
+        Cli::try_parse_from(["sideview", "skill", "install"]).unwrap();
+        Cli::try_parse_from(["sideview", "--project", "/tmp", "skill", "install", "--repo"]).unwrap();
     }
 }

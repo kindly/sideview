@@ -6,6 +6,13 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**0.2.1, 2026-08-09** — a same-day patch: 0.2.0's new global `--project <dir>` shared a clap
+arg id with `skill install --project` (bool), globals propagate into subcommands, and clap
+panics on the typed access — so every `skill install` died on arrival. The subcommand flag is
+now `--repo` (its help text always said "for committing to the repo"); a `debug_assert` +
+parse test pins the rule for every future arg. Found dogfooding the post-release skill
+re-sync; V3.sv and IDEAS.sv (the v3 curation pool) were opened the same day.
+
 **v2 shipped: 0.2.0, 2026-08-09** — merged and published the moment the author ordered the
 release *through a comment on the goal's own release line*, completing the done-when exactly
 as written: resurrection first (ran live, twice counting the e2e), every section heading
