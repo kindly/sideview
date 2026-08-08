@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08m dblclick';
+const CLIENT_STAMP = '2026-08-08n corner-chip';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -713,6 +713,11 @@ $cbarToggle.type = 'button';
 $cbarToggle.title = 'comments';
 document.body.appendChild($cbarToggle);
 $cbarToggle.addEventListener('click', () => {
+  const sel = getSelection();
+  if (document.body.classList.contains('sv-selecting') && sel && !sel.isCollapsed) {
+    startDraft(spotFrom(sel.getRangeAt(0).startContainer), sel.toString().trim());
+    return;
+  }
   document.body.classList.toggle('sv-cbar-open');
 });
 document.addEventListener('click', (e) => {
@@ -799,8 +804,7 @@ function syncConversation() {
   const attach = {};
   for (const t of conv.threads) attach[t.id] = !!resolveAnchor(t);
   svc.attach = attach;
-  const open = conv.threads.filter((t) => t.resolved_at == null).length;
-  $cbarToggle.textContent = open ? String(open) : '·';
+  if (!document.body.classList.contains('sv-selecting')) syncToggle();
 }
 
 async function postComment(payload) {
@@ -969,16 +973,24 @@ function mountCommentBar() {
 // becomes the quote, the containing element's text the context. Double-click
 // works for free (it selects a word). No resting furniture in the content.
 
+const BUBBLE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.8"
+    stroke-linejoin="round" stroke-linecap="round">
+  <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>
+  <path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/></svg>`;
+
+// Touch screens never get the floating chip: the OS selection toolbar hovers
+// over the selection with no API for where — competing for that airspace is
+// unwinnable (author's report, 2026-08-08). The fixed corner chip takes the
+// job instead, the one spot the native toolbar never covers.
+const TOUCH = matchMedia('(hover: none)').matches;
+
 const $chip = document.createElement('button');
 $chip.id = 'sv-cchip';
 $chip.type = 'button';
 $chip.setAttribute('aria-label', 'comment on the selection');
 $chip.title = 'comment on the selection';
-$chip.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
-    fill="none" stroke="currentColor" stroke-width="1.8"
-    stroke-linejoin="round" stroke-linecap="round">
-  <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>
-  <path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/></svg>`;
+$chip.innerHTML = BUBBLE_SVG;
 $chip.hidden = true;
 document.body.appendChild($chip);
 
@@ -990,18 +1002,39 @@ document.addEventListener('selectionchange', () => {
 
 function placeChip() {
   const sel = getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) { $chip.hidden = true; return; }
+  let inBlocks = false;
+  if (sel && !sel.isCollapsed && sel.rangeCount) {
+    const cont = sel.getRangeAt(0).commonAncestorContainer;
+    inBlocks = !!(cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]');
+  }
+  if (!inBlocks) {
+    $chip.hidden = true;
+    document.body.classList.remove('sv-selecting');
+    syncToggle();
+    return;
+  }
+  if (TOUCH) {
+    // The corner chip morphs into the selection affordance.
+    document.body.classList.add('sv-selecting');
+    $cbarToggle.classList.add('sv-sel');
+    $cbarToggle.innerHTML = BUBBLE_SVG;
+    $cbarToggle.title = 'comment on the selection';
+    return;
+  }
+  // Desktop: just below the selection's last line, at its end.
   const range = sel.getRangeAt(0);
-  const cont = range.commonAncestorContainer;
-  const el = (cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]');
-  if (!el) { $chip.hidden = true; return; }
-  // A predictable spot: just below the selection's last line, at its end —
-  // clear of the text and of the browser's own selection toolbar.
   const rects = range.getClientRects();
   const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
   $chip.style.top = scrollY + r.bottom + 8 + 'px';
   $chip.style.left = Math.min(scrollX + r.right + 4, scrollX + innerWidth - 44) + 'px';
   $chip.hidden = false;
+}
+
+function syncToggle() {
+  $cbarToggle.classList.remove('sv-sel');
+  $cbarToggle.title = 'comments';
+  const open = svc ? svc.threads.filter((t) => t.resolved_at == null).length : 0;
+  $cbarToggle.textContent = open ? String(open) : '·';
 }
 
 function startDraft(spot, quote) {

@@ -1033,6 +1033,8 @@ body.sv-cbar #sv-comments { display: block; }
    conversation. Shows the open-thread count. */
 #sv-cbar-toggle { display: none; }
 @media (max-width: 63.98rem) {
+  body.sv-selecting #sv-cbar-toggle { display: block; }
+  #sv-cbar-toggle.sv-sel { line-height: 0; padding: 0.45rem; }
   body.sv-cbar #sv-cbar-toggle {
     display: block;
     position: fixed;
