@@ -210,6 +210,15 @@ demo page the same hour as this sign-off.
 **Watched diffs and the git machinery** — re-sequenced out of v2 by the author (2026-08-07): proven possible, mechanism settled (gitoxide, never a subprocess — V1.md), consciously not now. Plus the standing candidates: chip ordering (agent `order` key + viewer drag) · mobile rail · `tailscale serve` SSE buffering check · unknown-class logging · tables and app subprocesses (grid candidate when reopened — author, 2026-08-08: VisActor VTable, the pure-JS canvas core, UMD-vendorable, framework-neutral, async data model fitting reference-never-embed; AntV S2 the runner-up; Glide Data Grid is React-only, disqualifying; and embedding a live sqlnow session may beat a native block for the explore case) · sv-tree (author, 2026-08-08, post-mermaid: a nested markdown list *is* a tree — comrak parses it, CSS draws connector elbows, no layout engine, no deps; degrades to a readable indented list on old binaries. Sequence diagrams are the plausible second resident — lanes and rows, no graph layout; real DAG layout stays extension territory) · patch-in-place block rendering (would restore native scroll anchoring; the client-side reading anchor covers the symptom for now) · per-line comments *inside code blocks* (author, 2026-08-07, filed as a comment on the models block itself — the diff `l:` fingerprint machinery generalized to any pre) — deferred twice; reopening them is a deliberate act.
 </sv-prose>
 
+<sv-note id="note-candidates-complete" target="candidates">
+**Complete — signed off by the author, 2026-08-09** (thread 6). Deferral is
+work too, and this section did plenty: it absorbed the day's parked ideas
+(sv-tree, per-line code comments, patch-in-place, the table-grid verdicts),
+released one resident early — mermaid, out of core the moment the extension
+principle existed to receive it — and reopening anything here remains a
+deliberate act, exactly as written.
+</sv-note>
+
 <sv-prose id="goal">
 ## Goal — blessed by the author, 2026-08-07
 
