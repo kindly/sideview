@@ -404,7 +404,14 @@ domains are conflating. The *page chrome* (rail, strip, spy, dot) is our code an
 vanilla holds until the feedback channel lands, whose forms and params are the first genuinely
 framework-shaped work; that's the natural adoption point, and Alpine or Vue-ESM (both no-build,
 vendorable as one file, deep LLM priors) are the candidates — petite-vue is unmaintained, htmx
-overlaps what SSE already does here. The *plugin architecture* (blocks getting scoped access to
+overlaps what SSE already does here. **Update (2026-08-08): the trigger fired** — the feedback
+channel landed and the popover/tail code is exactly the predicted framework-shaped work; a hard
+day of scroll debugging also showed the block-reconciliation bugs belong to a different fix
+(idiomorph-style morphing, on V2.sv's candidates). Leading candidate when adoption is chosen:
+Vue-ESM islands for the conversation UI only, blocks staying vanilla — the author's other tools
+are Vue, and Vapor mode was assessed as no threat to the no-build path (opt-in, build-time, same
+authoring model, and a vendored file can't rot). Adoption itself remains the author's call;
+vanilla currently holds. The *plugin architecture* (blocks getting scoped access to
 parts of the page) should not be answered with a framework at all: the web-native boundary is
 custom elements plus a small explicit `window.sideview` API, which keeps plugins
 framework-agnostic, gives them shadow-DOM isolation (DESIGN.md's rung-2 note returns here), and
