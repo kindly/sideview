@@ -24,6 +24,18 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Diffs take per-line comments (user- or agent-initiated), anchored by **fingerprint, not position** — repriced by live test (2026-08-09, comment-feel page): selection quotes survive verbatim inside diffs today, so agent *comprehension* needs nothing; `l:` buys precise jump-back and churn-following only, which softens its urgency: line text + two lines of context, quoted into the thread at creation so meaning survives churn. Re-resolution when a diff block updates is three-state — exact follows silently, fuzzy follows wearing an "edited since commented" marker, below confidence orphans rather than guesses. Watched-ready for when live diffs arrive.
 </sv-prose>
 
+<sv-note id="note-feedback-complete" target="feedback">
+**Complete — signed off by the author, 2026-08-09** (thread 22, with the
+ritual's own words). No section was reshaped more by its own machinery:
+placement went margin-marks → trailing bubbles → the bar, each revision
+requested through the previous design; creation went hover → double-click →
+selection → the corner chip, chased through the OS's own selection UI;
+author became a role, resolution became etiquette, drafts became plural,
+the bar learned to never close itself, and the silence got its ladder —
+sent, working…, replied, resolved — the final rung landing minutes before
+this sign-off. Every word above was earned on this page.
+</sv-note>
+
 <sv-prose id="watch">
 ## `sideview watch` — the agent's await
 
