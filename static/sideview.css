@@ -264,7 +264,7 @@ body.sv-rail .sv-block > * {
   max-width: 46rem;
 }
 
-body.sv-rail .sv-block > :is(table, pre, figure, .sv-html, .row, .table-responsive, .w-100, .sv-mermaid) {
+body.sv-rail .sv-block > :is(table, pre, figure, .sv-html, .row, .table-responsive, .w-100) {
   max-width: none;
 }
 
@@ -755,15 +755,6 @@ pre.syntax-highlighting .sv-constant {
   border: 0;
 }
 
-/* Rendered mermaid diagrams; the svg scales down, never overflows. */
-.sv-mermaid {
-  margin-bottom: 1.25rem;
-}
-
-.sv-mermaid svg {
-  max-width: 100%;
-  height: auto;
-}
 
 /* --- the contents rail --------------------------------------------------------
    A docked drawer on the left edge: full height under the header, titles

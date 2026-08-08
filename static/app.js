@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08i popover-flip';
+const CLIENT_STAMP = '2026-08-08j no-mermaid';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -67,40 +67,6 @@ $railToggle.addEventListener('click', () => {
   refreshOutline();
 });
 
-// Mermaid renders client-side (it only exists as browser JS), themed into
-// the house style — paper nodes, ink borders, Plex — because its stock look
-// reads dated (round-2 dogfood verdict). startOnLoad off because blocks
-// arrive over SSE, not with the page. Re-initialized on theme toggle, since
-// rendered SVGs bake their colors in.
-function initMermaid() {
-  if (!window.mermaid) return;
-  const dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
-  const v = dark
-    ? { bg: '#16181c', fg: '#dcdad5', soft: '#22252b', line: '#2b2e34' }
-    : { bg: '#faf9f5', fg: '#23272d', soft: '#ece8df', line: '#e4e0d7' };
-  window.mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    themeVariables: {
-      fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-      fontSize: '14px',
-      background: v.bg,
-      primaryColor: v.bg,
-      primaryTextColor: v.fg,
-      primaryBorderColor: v.fg,
-      lineColor: v.fg,
-      secondaryColor: v.soft,
-      tertiaryColor: v.soft,
-      edgeLabelBackground: v.bg,
-      clusterBkg: v.soft,
-      clusterBorder: v.line,
-      noteBkgColor: v.soft,
-      noteTextColor: v.fg,
-      noteBorderColor: v.line,
-    },
-  });
-}
-initMermaid();
 
 // The theme override: OS is the default, the viewer's choice wins and is
 // remembered — cycling auto → light → dark. svTheme() lives in index.html's
@@ -122,31 +88,15 @@ $theme.addEventListener('click', () => {
   else localStorage.removeItem('sv-theme');
   svTheme();
   renderThemeButton();
-  initMermaid();       // mermaid SVGs bake colors in — re-render the page
-  renderAllBlocks();
+  // Class-based highlighting and CSS variables re-theme by stylesheet alone;
+  // only the sandboxed iframes need telling, over the envelope.
+  const mode = document.documentElement.getAttribute('data-bs-theme');
+  for (const f of document.querySelectorAll('iframe.sv-html')) {
+    f.contentWindow?.postMessage({ sv: 1, type: 'theme', mode }, '*');
+  }
 });
 renderThemeButton();
 
-// comrak renders a ```mermaid fence as <pre><code class="language-mermaid">;
-// swap those for holders mermaid can render into, and also accept the direct
-// spellings (<pre class="mermaid">) an agent might write in a markup block.
-// A bad diagram shows mermaid's own error in place — visible beats silent.
-function renderMermaid(el) {
-  if (!window.mermaid) return;
-  const nodes = [];
-  for (const code of el.querySelectorAll('pre > code.language-mermaid')) {
-    const holder = document.createElement('div');
-    holder.className = 'sv-mermaid';
-    holder.textContent = code.textContent;
-    code.closest('pre').replaceWith(holder);
-    nodes.push(holder);
-  }
-  for (const direct of el.querySelectorAll('pre.mermaid, div.mermaid')) {
-    direct.classList.add('sv-mermaid');
-    nodes.push(direct);
-  }
-  if (nodes.length) window.mermaid.run({ nodes }).catch(() => {});
-}
 
 // ---- the iframe envelope --------------------------------------------------
 // html blocks are sandboxed srcdoc iframes; the envelope is their one channel
@@ -685,7 +635,6 @@ function applyBlock(ev) {
     // update: patch in place, compensated so the reading doesn't move
     keepReading(() => existing.replaceWith(el));
     activateScripts(el);
-    renderMermaid(el);
     return;
   }
   keepReading(() => {
@@ -703,7 +652,6 @@ function applyBlock(ev) {
   });
   if (live) el.classList.add('sv-arrive');
   activateScripts(el);
-  renderMermaid(el);
   // Never scroll for new content (the author's rule); when it lands out of
   // view, offer the pill instead.
   if (live && !newBelowEl && el.getBoundingClientRect().top > innerHeight) {
@@ -736,7 +684,6 @@ function renderAllBlocks() {
         applyDiffPref(el);
         $blocks.appendChild(el);
         activateScripts(el);
-        renderMermaid(el);
       }
     }
   }

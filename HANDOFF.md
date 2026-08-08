@@ -430,9 +430,12 @@ frontend section. **Refined by the author (2026-08-08): no-external-origins is a
 principle, not a universal one.** Extensions — the custom-element layer above — may load
 established libraries from CDN (SRI-pinned): an extension is already a trust decision, so its
 external dependencies just make that visible, and offline it degrades visibly while core never
-degrades at all. First intended resident: mermaid, whose weight (3.6MB, 70% of vendor/) and
-stock aesthetics (round-2 verdict: dated; agents draw better SVG by hand) argue it out of
-core — fences would degrade to highlighted code until the extension layer exists.
+degrades at all. First resident: mermaid, **removed from core 2026-08-08** — its weight (3.6MB, 70% of
+vendor/, parsed on every page load) and stock aesthetics (round-2 verdict: dated; agents draw
+better SVG by hand) argued it out; fences degrade to highlighted code (the language- class
+survives for the future extension to key on), the theme toggle became CSS-only in the same
+stroke (the full-page rebuild existed solely because mermaid SVGs bake their colors), and the
+.crate dropped by roughly a megabyte.
 
 **React-controlled blocks, a ladder not a decision** (2026-08-04, prompted by wanting a
 Glide-grid table like querier's). React never controls the page — per-block roots or iframes

@@ -83,9 +83,11 @@ fn markdown_opts(text: &str, header_id_prefix: Option<&str>) -> String {
 /// treatment in sideview.css. Built once: loading the syntax set costs real
 /// milliseconds and the daemon renders on every poll tick.
 ///
-/// A ```mermaid fence passes through unharmed — syntect wraps its text in
-/// spans, but the client reads `textContent` of `code.language-mermaid`, and
-/// comrak keeps that class on the code tag regardless of the highlighter.
+/// Mermaid left core on 2026-08-08 (author's call: agents hand-draw better
+/// SVG, and heavyweight renderers belong to the extension layer, which may
+/// CDN). A ```mermaid fence now renders as ordinary highlighted code — the
+/// language- class survives via comrak, which is what a future extension's
+/// custom element would key on.
 fn highlighter() -> &'static comrak::plugins::syntect::SyntectAdapter {
     static ADAPTER: std::sync::OnceLock<comrak::plugins::syntect::SyntectAdapter> =
         std::sync::OnceLock::new();
@@ -273,14 +275,14 @@ mod tests {
     }
 
     #[test]
-    fn mermaid_fences_keep_their_client_side_contract() {
+    fn mermaid_fences_degrade_to_code_but_keep_the_class_an_extension_needs() {
         let b = parse_one(
             "<sv-prose id=\"b2\">\n```mermaid\ngraph LR\nA --> B\n```\n</sv-prose>",
         );
         let html = block("b2", &b);
         assert!(
             html.contains(r#"class="language-mermaid""#),
-            "the client's selector is `code.language-mermaid`: {html}"
+            "the language- class is what a future extension keys on: {html}"
         );
     }
 

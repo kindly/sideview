@@ -65,10 +65,9 @@ whole page before emitting the first one; an early skeleton that sharpens throug
 
 **Diagrams are optional, and for a working plan usually skippable** — prose and
 tables are faster to write and faster to read; don't let a diagram slow the plan
-down. When a quick picture of a flow or sequence genuinely helps, a ```mermaid
-fence in prose renders themed to the page. Reserve hand-authored inline SVG for
-pages whose *point* is visual presentation — a guide, an overview, a showcase —
-and then do it properly: native shapes and `<text>`, size with `viewBox`, strokes
+down. There is no mermaid: a ```mermaid fence renders as a plain code block
+(heavyweight renderers belong to the extension layer). When a picture genuinely
+helps, hand-author inline SVG in a prose or markup block, and do it properly: native shapes and `<text>`, size with `viewBox`, strokes
 and text in `currentColor` with at most one literal accent on the element that
 carries the meaning, label the arrows (`writes`, `polls every 30s` — an unlabeled
 arrow is just "related somehow"), wrap in `<figure>` with a `<figcaption>` stating
