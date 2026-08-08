@@ -147,6 +147,11 @@ enum Cmd {
         /// Server-side, so a comment merely quoting the pattern survives
         #[arg(long)]
         skip_author: Option<String>,
+        /// Stamp each emitted comment as seen (a delivery receipt the page
+        /// shows as "seen" while the agent works — receipt, not cognition,
+        /// and unlike --claim it never suppresses emission)
+        #[arg(long)]
+        ack: bool,
     },
     /// What's running here, and at which URLs
     Sessions,
@@ -306,8 +311,8 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Resolve { thread, undo, page }) => cli::resolve(thread, undo, page.as_deref()),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
-        Some(Cmd::Watch { timeout, since, claim, skip_author }) => {
-            cli::watch(timeout, since, claim, skip_author.as_deref())
+        Some(Cmd::Watch { timeout, since, claim, skip_author, ack }) => {
+            cli::watch(timeout, since, claim, skip_author.as_deref(), ack)
         }
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),

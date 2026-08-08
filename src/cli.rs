@@ -655,10 +655,11 @@ pub fn watch(
     since: Option<i64>,
     claim: bool,
     skip_author: Option<&str>,
+    ack: bool,
 ) -> Result<()> {
     use std::io::Write as _;
 
-    let store = open_project_store()?;
+    let mut store = open_project_store()?;
     let whoami = format!("watch:{}", std::process::id());
     let deadline = timeout.map(|t| Instant::now() + Duration::from_secs(t));
 
@@ -690,6 +691,9 @@ pub fn watch(
                 }
                 if claim && !store.claim_comment(c.id, &whoami)? {
                     continue; // another watcher got it — exactly-once holds
+                }
+                if ack {
+                    store.ack_comment(c.id, &whoami)?;
                 }
                 let line = serde_json::json!({
                     "type": "comment",

@@ -113,7 +113,7 @@ Readers comment by double-clicking any text bit (its text becomes the quote)
 or selecting exact words and clicking the bubble chip; every conversation
 lives in the right-hand comment bar (open threads as cards, resolved folded
 beneath), never inline. Await their feedback with `sideview watch --since 0 --skip-author
-agent` — typed JSON-lines, one event per comment/resolve, your own echoes
+agent --ack` — typed JSON-lines, one event per comment/resolve, your own echoes
 filtered server-side. Add `--claim` only when several watchers split one
 page's work and each event is acted on the moment it is read: claim couples
 "seen" with "acted", and a claimed event lost in transit is invisible to

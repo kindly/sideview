@@ -512,6 +512,24 @@ impl Store {
         Ok(rows)
     }
 
+    /// The delivery receipt (watch --ack): stamp seen_at as the event flows
+    /// through the pipe — receipt, not cognition, so it costs the agent
+    /// nothing and the page can show "seen" in the silence before a reply.
+    /// Unlike claim it never suppresses emission, and it bumps the counter
+    /// so the stamp reaches open bars live.
+    pub fn ack_comment(&mut self, id: i64, by: &str) -> Result<()> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let n = tx.execute(
+            "UPDATE comments SET seen_at = ?2, seen_by = ?3 WHERE id = ?1 AND seen_at IS NULL",
+            rusqlite::params![id, now_ms(), by],
+        )?;
+        if n > 0 {
+            bump_gen(&tx)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// The supersession pattern: claim if unclaimed. Zero rows means another
     /// watcher got there first — skip the event, exactly-once holds.
     pub fn claim_comment(&self, id: i64, by: &str) -> Result<bool> {

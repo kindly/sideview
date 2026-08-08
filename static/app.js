@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09y toggle-flush';
+const CLIENT_STAMP = '2026-08-09z seen';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -869,6 +869,13 @@ function mountCommentBar() {
         const cs = commentsFor(id);
         return cs.length ? (cs[cs.length - 1].author || 'user') : null;
       };
+      // The silence-filler: last word is the user's and the watch plumbing
+      // has stamped it — an agent's stream has received it, reply pending.
+      const seenPending = (id) => {
+        const cs = commentsFor(id);
+        const last = cs[cs.length - 1];
+        return !!(last && last.author !== 'agent' && last.seen_at);
+      };
       const fmt = (ts) =>
         new Date(ts).toLocaleString(undefined, {
           month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -903,7 +910,7 @@ function mountCommentBar() {
 
       return {
         svc, open, resolved, collapsed, replies, error,
-        commentsFor, lastAuthor, fmt, jump, reply, sendDraft,
+        commentsFor, lastAuthor, seenPending, fmt, jump, reply, sendDraft,
         attach: computed(() => svc.attach),
         resolve: (t) => setResolution(t.id, false),
         reopen: (t) => setResolution(t.id, true),
@@ -942,6 +949,7 @@ function mountCommentBar() {
             <span v-else class="sv-gone"
                   title="its anchor left the page — likely addressed">§ changed</span>
             <span v-if="lastAuthor(t.id) === 'agent'" class="sv-turn-tag">agent replied</span>
+            <span v-else-if="seenPending(t.id)" class="sv-seen" title="delivered to an agent's stream — reply pending">seen</span>
             <button type="button" class="sv-twist-btn"
                     :aria-expanded="String(!collapsed[t.id])"
                     @click="toggle(t.id)">{{ collapsed[t.id] ? '▸' : '▾' }}</button>
