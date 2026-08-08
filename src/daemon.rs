@@ -42,6 +42,11 @@ pub struct Opts {
     /// Open the browser once the row is claimed (the auto-spawn "first use"
     /// path; bare foreground `sideview` also uses it).
     pub open_browser: bool,
+    /// A pinned port (--port / SIDEVIEW_PORT): configuration is where
+    /// address durability belongs — the resurrection test proved the db
+    /// isn't (the remembered port dies with it). Pinned means pinned:
+    /// bind failure is an error, never a silent ephemeral fallback.
+    pub port: Option<u16>,
 }
 
 /// A pre-serialized SSE event, fanned out to every connected page.
@@ -129,9 +134,13 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
         .and_then(|p| p.parse().ok())
         .or(store.daemon()?.map(|d| d.port))
         .unwrap_or(0);
-    let loopback = TcpListener::bind((Ipv4Addr::LOCALHOST, remembered))
-        .or_else(|_| TcpListener::bind((Ipv4Addr::LOCALHOST, 0)))
-        .context("binding loopback")?;
+    let loopback = match opts.port {
+        Some(p) => TcpListener::bind((Ipv4Addr::LOCALHOST, p))
+            .with_context(|| format!("port {p} is pinned (--port/SIDEVIEW_PORT) but not bindable"))?,
+        None => TcpListener::bind((Ipv4Addr::LOCALHOST, remembered))
+            .or_else(|_| TcpListener::bind((Ipv4Addr::LOCALHOST, 0)))
+            .context("binding loopback")?,
+    };
     let port = loopback.local_addr()?.port();
 
     let mut listeners = vec![loopback];

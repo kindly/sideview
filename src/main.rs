@@ -26,6 +26,11 @@ struct Cli {
     /// What to bind: `auto` (loopback + tailnet when there is one) or `loopback`
     #[arg(long, default_value = "auto", env = "SIDEVIEW_BIND")]
     bind: String,
+
+    /// Pin the port (agents: export SIDEVIEW_PORT once and every spawn,
+    /// auto-spawns included, inherits it). Unset: last port, else ephemeral
+    #[arg(long, env = "SIDEVIEW_PORT")]
+    port: Option<u16>,
 }
 
 #[derive(Args)]
@@ -155,6 +160,8 @@ enum Cmd {
         open: bool,
         #[arg(long, default_value = "auto")]
         bind: String,
+        #[arg(long, env = "SIDEVIEW_PORT")]
+        port: Option<u16>,
     },
 }
 
@@ -254,7 +261,7 @@ fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     match args.cmd {
         // A tool that does the useful thing beats one that lectures you.
-        None => cli::open(args.detach, &args.bind),
+        None => cli::open(args.detach, &args.bind, args.port),
         Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref(), &[]),
         Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref(), &[]),
         Some(Cmd::Html { height, author }) => {
@@ -297,12 +304,12 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Skill { action: SkillCmd::Uninstall { project, agent } }) => {
             skill::uninstall(project, agent.as_deref())
         }
-        Some(Cmd::InternalDaemon { open, bind }) => {
+        Some(Cmd::InternalDaemon { open, bind, port }) => {
             let cwd = std::env::current_dir()?;
             let dir = store::find_store_dir(&cwd);
             daemon::run(
                 &dir,
-                &daemon::Opts { bind_auto: bind != "loopback", open_browser: open },
+                &daemon::Opts { bind_auto: bind != "loopback", open_browser: open, port },
             )
         }
     }

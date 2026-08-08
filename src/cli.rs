@@ -287,7 +287,7 @@ fn spawn_detached(store: &Store, open_browser: bool, bind_auto: bool) -> Result<
 
 /// Bare `sideview`: idempotent. A live reachable daemon means open the tab
 /// and exit; otherwise start one (foreground by default) and open on ready.
-pub fn open(detach: bool, bind: &str) -> Result<()> {
+pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
     let bind_auto = parse_bind(bind)?;
     let store = open_project_store()?;
     // Deliberately no session binding here: sessions exist when blocks do.
@@ -355,7 +355,7 @@ pub fn open(detach: bool, bind: &str) -> Result<()> {
     }
     let dir = store.dir.clone();
     drop(store); // the daemon opens its own connections
-    daemon::run(&dir, &daemon::Opts { bind_auto, open_browser: true })
+    daemon::run(&dir, &daemon::Opts { bind_auto, open_browser: true, port })
 }
 
 /// `sideview session set` — page properties now live in the file itself, on
