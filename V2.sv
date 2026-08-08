@@ -200,6 +200,16 @@ v2 is done when its own loop signs it off, on this very page:
 The done-when is the feature: the plan's completion is announced through the machinery the plan describes, the chat's silence is part of the test — and the order matters, since the resurrection test destroys the sign-off's comments.
 </sv-prose>
 
+<sv-note id="note-resurrection-ran" target="goal">
+**Step 1 ran and passed, 2026-08-09** — author-ordered mid-ritual when he
+caught the sequence slipping. Db deleted, daemon restarted: all four pages
+back unprompted (V2.sv by stem, throwaways by their encoded names), zero
+conversation, and the watch section's sign-off plaque survived because it
+was already canon. Two wrinkles for the record: the remembered port dies
+with the db (the page resurrects; its address doesn't), and the stem-derived
+binding id is V2 where the hand-written INSERT had said v2. Steps 2–4 remain.
+</sv-note>
+
 <sv-note id="note-loop-live" target="goal">
 Partially exercised live, 2026-08-08, ahead of the formal ritual: comment → watch → reply → resolve each ran end to end, and two features (code-block bubbles, author-as-role) were requested *through the page* and shipped the same hour. This note is itself the sv-note demonstration — canon, always visible, versioned with the plan.
 </sv-note>
