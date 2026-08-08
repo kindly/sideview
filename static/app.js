@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09s multi-draft';
+const CLIENT_STAMP = '2026-08-09t no-auto-fold';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -801,9 +801,14 @@ function applyCbarPref() {
   document.body.classList.toggle('sv-cbar', !!has);
   if (!has) { document.body.classList.remove('sv-cbar-open'); return; }
   if (svc.drafts.length) { document.body.classList.add('sv-cbar-open'); return; }
+  // Opening is automatic when warranted; closing never is (thread 8's law:
+  // folding is explicit, only the chevron or the chip). So this only ever
+  // adds the class — an open bar stays open through replies, sends, and
+  // snapshot churn.
+  if (document.body.classList.contains('sv-cbar-open')) return;
   const stored = localStorage.getItem('sv-cbar:' + state.selected);
   const wide = matchMedia('(min-width: 64rem)').matches;
-  document.body.classList.toggle('sv-cbar-open', stored ? stored === 'open' : wide);
+  if (stored ? stored === 'open' : wide) document.body.classList.add('sv-cbar-open');
 }
 
 function syncConversation() {
