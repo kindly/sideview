@@ -256,6 +256,16 @@ v2 is done when its own loop signs it off, on this very page:
 The done-when is the feature: the plan's completion is announced through the machinery the plan describes, the chat's silence is part of the test — and the order matters, since the resurrection test destroys the sign-off's comments.
 </sv-prose>
 
+<sv-note id="note-goal-complete" target="goal">
+**The done-when is met — 0.2.0 published, 2026-08-09.** All four items, in
+the order the order demanded: the resurrection ran first and passed; every
+section heading above carries its author's sign-off from the browser; each
+one reached the agent through watch with the chat silent; and the release
+itself was ordered by a comment on this section's own release line — thread
+23, marked working… while cargo ran, retired by the reply announcing it
+done. v2 closed its own loop.
+</sv-note>
+
 <sv-note id="note-resurrection-ran" target="goal">
 **Step 1 ran and passed, 2026-08-09** — author-ordered mid-ritual when he
 caught the sequence slipping. Db deleted, daemon restarted: all four pages
