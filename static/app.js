@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09q foldable-bar';
+const CLIENT_STAMP = '2026-08-09r top-chip';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -726,11 +726,6 @@ $cbarToggle.addEventListener('click', () => {
   document.body.classList.toggle('sv-cbar-open', open);
   localStorage.setItem('sv-cbar:' + state.selected, open ? 'open' : 'closed');
 });
-document.addEventListener('click', (e) => {
-  if (!document.body.classList.contains('sv-cbar-open')) return;
-  if (e.target.closest('#sv-comments, #sv-cbar-toggle, #sv-cchip')) return;
-  document.body.classList.remove('sv-cbar-open');
-});
 
 import('/assets/vendor/vue.esm-browser.prod.js')
   .then((m) => { vue = m; mountCommentBar(); syncConversation(); })
@@ -919,8 +914,8 @@ function mountCommentBar() {
     template: `
       <div v-if="svc.threads.length || svc.draft" class="sv-cbar-inner">
         <div class="sv-cbar-title">Comments
-          <button type="button" class="sv-cbar-fold" title="collapse — the corner bubble brings it back"
-                  @click="fold">×</button></div>
+          <button type="button" class="sv-cbar-fold" aria-label="collapse comments"
+                  title="collapse — the bubble brings it back" @click="fold"></button></div>
         <div v-if="error.msg" class="sv-cbar-error">{{ error.msg }}</div>
 
         <div v-if="svc.draft" class="sv-cbar-card sv-cbar-draft">
