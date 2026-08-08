@@ -1179,3 +1179,9 @@ body.sv-rail #sv-tail > * { max-width: 46rem; }
 #sv-newpill:hover {
   background: color-mix(in srgb, var(--sv-ink) 8%, var(--bs-body-bg));
 }
+
+/* The popover scrolls itself, never the page. */
+#sv-popover {
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+}

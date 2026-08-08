@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08h open-anchor';
+const CLIENT_STAMP = '2026-08-08i popover-flip';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -1092,9 +1092,30 @@ function openPopover(el, threads, forceNew) {
     $popover.appendChild(fresh);
   }
 
-  const r = el.getBoundingClientRect();
-  $popover.style.top = scrollY + r.bottom + 6 + 'px';
-  $popover.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - 380) + 'px';
+  // Place after measuring: below the anchor when it fits, flipped above
+  // when the room is above, clamped to the viewport with its own scrollbar
+  // otherwise — a popover must never grow the page or drag its scroll.
+  $popover.style.visibility = 'hidden';
   document.body.appendChild($popover);
-  box.focus();
+  const r = el.getBoundingClientRect();
+  const margin = 10;
+  const roomBelow = innerHeight - r.bottom - margin;
+  const roomAbove = r.top - margin;
+  let ph = $popover.offsetHeight;
+  let top;
+  if (ph <= roomBelow) {
+    top = scrollY + r.bottom + 6;
+  } else if (ph <= roomAbove) {
+    top = scrollY + r.top - ph - 6;
+  } else {
+    const below = roomBelow >= roomAbove;
+    const room = Math.max(140, (below ? roomBelow : roomAbove) - 6);
+    $popover.style.maxHeight = room + 'px';
+    ph = $popover.offsetHeight;
+    top = below ? scrollY + r.bottom + 6 : scrollY + r.top - ph - 6;
+  }
+  $popover.style.top = top + 'px';
+  $popover.style.left = Math.min(scrollX + r.left, scrollX + innerWidth - 380) + 'px';
+  $popover.style.visibility = '';
+  box.focus({ preventScroll: true });
 }
