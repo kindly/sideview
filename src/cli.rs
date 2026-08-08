@@ -462,7 +462,7 @@ pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()
     if !had_binding && !had_file {
         bail!("no session {target}");
     }
-    eprintln!("removed session {target} ({rel})");
+    eprintln!("removed session {target} ({rel}) → {}", store.root.display());
     Ok(())
 }
 
@@ -550,6 +550,14 @@ pub fn comment(
             if at.is_some() {
                 bail!("--at places a new thread; a reply inherits its thread's anchor");
             }
+            // The guard: watch events hand the agent page+thread together, so
+            // asserting the pair costs nothing and catches the cross-project
+            // id collision the FK can't (same id existing in both stores).
+            if let (Some(p), Some(t)) = (page, store.thread(tid)?) {
+                if t.page != p {
+                    bail!("thread {tid} is on page {:?}, not {p:?} — wrong project?", t.page);
+                }
+            }
             store.reply(tid, body, Some("agent"))?;
             tid
         }
@@ -574,17 +582,23 @@ pub fn comment(
         (None, None) => bail!("name a block to comment on, or --thread to reply"),
     };
     println!("{thread_id}");
+    eprintln!("→ {}", store.root.display());
     Ok(())
 }
 
 /// `sideview resolve <thread>` — the agent's "feedback addressed"; `--undo`
 /// reopens. Never a delete: the thread keeps its conversation and its place
 /// in the page-tail list.
-pub fn resolve(thread: i64, undo: bool) -> Result<()> {
+pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
     let Some(t) = store.thread(thread)? else {
         bail!("no thread {thread}");
     };
+    if let Some(p) = page {
+        if t.page != p {
+            bail!("thread {thread} is on page {:?}, not {p:?} — wrong project?", t.page);
+        }
+    }
     if !store.resolve_thread(thread, Some("agent"), undo)? {
         // The state it's already in, said plainly — not an error worth a
         // nonzero exit, since the desired end state holds.

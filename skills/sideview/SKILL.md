@@ -118,7 +118,11 @@ filtered server-side. Add `--claim` only when several watchers split one
 page's work and each event is acted on the moment it is read: claim couples
 "seen" with "acted", and a claimed event lost in transit is invisible to
 reach-back. Reply on the thread the event names:
-`sideview comment --thread <id>` (body on stdin). Start your own
+`sideview comment --thread <id>` (body on stdin) — and pass `--page <page>`
+from the same event as a guard: it refuses if the thread lives elsewhere,
+which catches the classic agent hazard of a resetting shell resolving the
+wrong project's store. For the same reason, prefer `--project <dir>` (or
+SIDEVIEW_PROJECT) over relying on your cwd in multi-project sessions. Start your own
 thread with `sideview comment <block> [--at <anchor>]`. Your comments carry
 `author: "agent"`; a thread where the agent spoke last shows a filled bubble
 on the page — that is the handoff.

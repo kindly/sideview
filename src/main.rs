@@ -31,6 +31,11 @@ struct Cli {
     /// auto-spawns included, inherits it). Unset: last port, else ephemeral
     #[arg(long, env = "SIDEVIEW_PORT")]
     port: Option<u16>,
+
+    /// Resolve the store from this project directory instead of the cwd
+    /// (agents with resetting shells: this or SIDEVIEW_PROJECT beats cd)
+    #[arg(long, global = true, env = "SIDEVIEW_PROJECT")]
+    project: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]
@@ -111,6 +116,10 @@ enum Cmd {
         /// Reopen instead: clears resolved_at, the thread reattaches
         #[arg(long)]
         undo: bool,
+        /// Guard: refuse unless the thread is on this page (events carry
+        /// both — asserting the pair catches cross-project id collisions)
+        #[arg(long)]
+        page: Option<String>,
     },
     /// Give the rail an explicit outline (JSON entries on stdin); used verbatim
     Outline {
@@ -259,6 +268,12 @@ fn main() -> anyhow::Result<()> {
     }
 
     let args = Cli::parse();
+    if let Some(dir) = &args.project {
+        // The one honest way to make every store-resolution below agree:
+        // become the project. Fails loudly if it isn't a directory.
+        std::env::set_current_dir(dir)
+            .map_err(|e| anyhow::anyhow!("--project {}: {e}", dir.display()))?;
+    }
     match args.cmd {
         // A tool that does the useful thing beats one that lectures you.
         None => cli::open(args.detach, &args.bind, args.port),
@@ -289,7 +304,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Comment { block, at, thread, page }) => {
             cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref())
         }
-        Some(Cmd::Resolve { thread, undo }) => cli::resolve(thread, undo),
+        Some(Cmd::Resolve { thread, undo, page }) => cli::resolve(thread, undo, page.as_deref()),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
         Some(Cmd::Watch { timeout, since, claim, skip_author }) => {
             cli::watch(timeout, since, claim, skip_author.as_deref())
