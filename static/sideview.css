@@ -409,7 +409,7 @@ pre.syntax-highlighting .sv-constant {
   position: absolute;
   /* The path row's own margin collapses out of the figure, so the path text
      sits near the figure's very top — the toggle aligns with it there. */
-  top: 0.3rem;
+  top: 0.05rem;
   right: 0;
   z-index: 2;
 }
