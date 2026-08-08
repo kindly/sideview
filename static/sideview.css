@@ -1034,24 +1034,42 @@ body.sv-cbar #sv-comments { display: block; }
 #sv-cbar-toggle { display: none; }
 @media (max-width: 63.98rem) {
   body.sv-selecting #sv-cbar-toggle { display: block; }
-  #sv-cbar-toggle.sv-sel { line-height: 0; padding: 0.45rem; }
   body.sv-cbar #sv-cbar-toggle {
     display: block;
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 44;
-    min-width: 2.2rem;
-    height: 2.2rem;
-    padding: 0 0.5rem;
-    border: 1px solid var(--sv-ink);
-    background: var(--bs-body-bg);
-    color: var(--sv-ink);
-    font-family: var(--sv-mono);
-    font-size: 0.85rem;
-    cursor: pointer;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
   }
+}
+
+/* Always the comment bubble; the open-thread count rides as a badge and an
+   active selection thickens the ink. */
+#sv-cbar-toggle {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 44;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  line-height: 0;
+  border: 1px solid var(--sv-ink);
+  background: var(--bs-body-bg);
+  color: var(--sv-ink);
+  font-family: var(--sv-mono);
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+}
+#sv-cbar-toggle.sv-sel { border-width: 2px; background: color-mix(in srgb, var(--sv-ink) 10%, var(--bs-body-bg)); }
+#sv-cbar-toggle[data-count]::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -0.45rem;
+  right: -0.45rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  line-height: 1.1rem;
+  font-size: 0.65rem;
+  background: var(--sv-ink);
+  color: var(--bs-body-bg);
+  text-align: center;
 }
 
 .sv-cbar-title {

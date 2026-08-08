@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08n corner-chip';
+const CLIENT_STAMP = '2026-08-08o held-selection';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -712,10 +712,14 @@ $cbarToggle.id = 'sv-cbar-toggle';
 $cbarToggle.type = 'button';
 $cbarToggle.title = 'comments';
 document.body.appendChild($cbarToggle);
+$cbarToggle.addEventListener('mousedown', (e) => e.preventDefault());
 $cbarToggle.addEventListener('click', () => {
-  const sel = getSelection();
-  if (document.body.classList.contains('sv-selecting') && sel && !sel.isCollapsed) {
-    startDraft(spotFrom(sel.getRangeAt(0).startContainer), sel.toString().trim());
+  // Tapping the chip collapses the selection before click lands (mobile),
+  // so the draft comes from the remembered selection, not the live one.
+  if (lastSel) {
+    const held = lastSel;
+    lastSel = null;
+    startDraft(held.spot, held.text);
     return;
   }
   document.body.classList.toggle('sv-cbar-open');
@@ -1000,28 +1004,39 @@ document.addEventListener('selectionchange', () => {
   chipTimer = setTimeout(placeChip, 150);
 });
 
+// The selection, remembered: tapping any affordance collapses the live
+// selection first on touch, so drafts read from here. A grace timer keeps
+// it briefly after collapse — long enough for the in-flight tap.
+let lastSel = null;
+let selClearTimer = 0;
+
 function placeChip() {
   const sel = getSelection();
-  let inBlocks = false;
+  let spot = null;
   if (sel && !sel.isCollapsed && sel.rangeCount) {
     const cont = sel.getRangeAt(0).commonAncestorContainer;
-    inBlocks = !!(cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]');
+    if ((cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]')) {
+      spot = spotFrom(sel.getRangeAt(0).startContainer);
+    }
   }
-  if (!inBlocks) {
+  if (!spot) {
     $chip.hidden = true;
-    document.body.classList.remove('sv-selecting');
-    syncToggle();
+    clearTimeout(selClearTimer);
+    selClearTimer = setTimeout(() => {
+      lastSel = null;
+      document.body.classList.remove('sv-selecting');
+      syncToggle();
+    }, 700);
     return;
   }
+  clearTimeout(selClearTimer);
+  lastSel = { spot, text: sel.toString().trim() };
   if (TOUCH) {
-    // The corner chip morphs into the selection affordance.
     document.body.classList.add('sv-selecting');
     $cbarToggle.classList.add('sv-sel');
-    $cbarToggle.innerHTML = BUBBLE_SVG;
     $cbarToggle.title = 'comment on the selection';
     return;
   }
-  // Desktop: just below the selection's last line, at its end.
   const range = sel.getRangeAt(0);
   const rects = range.getClientRects();
   const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
@@ -1030,12 +1045,18 @@ function placeChip() {
   $chip.hidden = false;
 }
 
+// The corner chip is always the comment bubble (author, 2026-08-08) — the
+// open-thread count rides as a small badge, and an active selection inks
+// the border.
 function syncToggle() {
   $cbarToggle.classList.remove('sv-sel');
   $cbarToggle.title = 'comments';
+  $cbarToggle.innerHTML = BUBBLE_SVG;
   const open = svc ? svc.threads.filter((t) => t.resolved_at == null).length : 0;
-  $cbarToggle.textContent = open ? String(open) : '·';
+  if (open) $cbarToggle.dataset.count = String(open);
+  else delete $cbarToggle.dataset.count;
 }
+syncToggle();
 
 function startDraft(spot, quote) {
   const block = spot?.closest('[data-block]');
@@ -1062,9 +1083,10 @@ function spotFrom(node) {
 
 $chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
 $chip.addEventListener('click', () => {
-  const sel = getSelection();
-  if (!sel || sel.isCollapsed) return;
-  startDraft(spotFrom(sel.getRangeAt(0).startContainer), sel.toString().trim());
+  if (!lastSel) return;
+  const held = lastSel;
+  lastSel = null;
+  startDraft(held.spot, held.text);
 });
 
 // Double-click is the primary gesture (author, 2026-08-08 — the selection
