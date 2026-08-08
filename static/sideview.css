@@ -1019,8 +1019,37 @@ body.sv-cbar #sv-comments { display: block; }
   body.sv-cbar #sv-blocks { max-width: none; padding-right: 21.5rem; }
 }
 @media (max-width: 63.98rem) {
-  /* Small screens: the bar overlays; the mobile pass proper is deferred. */
-  #sv-comments { width: min(19.5rem, 85vw); box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12); }
+  /* Small screens: the bar is an overlay with a way in and a way out — the
+     toggle chip opens it, a tap on the content dismisses it. */
+  body.sv-cbar #sv-comments { display: none; }
+  body.sv-cbar.sv-cbar-open #sv-comments {
+    display: block;
+    width: min(19.5rem, 85vw);
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12);
+  }
+}
+
+/* The bar toggle: only exists on overlay screens, only when there is
+   conversation. Shows the open-thread count. */
+#sv-cbar-toggle { display: none; }
+@media (max-width: 63.98rem) {
+  body.sv-cbar #sv-cbar-toggle {
+    display: block;
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 44;
+    min-width: 2.2rem;
+    height: 2.2rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--sv-ink);
+    background: var(--bs-body-bg);
+    color: var(--sv-ink);
+    font-family: var(--sv-mono);
+    font-size: 0.85rem;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+  }
 }
 
 .sv-cbar-title {

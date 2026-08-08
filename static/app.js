@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08k comment-bar';
+const CLIENT_STAMP = '2026-08-08l bar-toggle';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -704,6 +704,23 @@ const $bar = document.getElementById('sv-comments');
 let vue = null;   // the vendored ESM module, once loaded
 let svc = null;   // reactive conversation store, once mounted
 
+// Small screens: the bar is an overlay, so it needs a way in and a way out —
+// a toggle chip (bottom-right, showing the open-thread count), a tap on the
+// content to dismiss, and auto-open when a draft begins.
+const $cbarToggle = document.createElement('button');
+$cbarToggle.id = 'sv-cbar-toggle';
+$cbarToggle.type = 'button';
+$cbarToggle.title = 'comments';
+document.body.appendChild($cbarToggle);
+$cbarToggle.addEventListener('click', () => {
+  document.body.classList.toggle('sv-cbar-open');
+});
+document.addEventListener('click', (e) => {
+  if (!document.body.classList.contains('sv-cbar-open')) return;
+  if (e.target.closest('#sv-comments, #sv-cbar-toggle, #sv-cchip')) return;
+  document.body.classList.remove('sv-cbar-open');
+});
+
 import('/assets/vendor/vue.esm-browser.prod.js')
   .then((m) => { vue = m; mountCommentBar(); syncConversation(); })
   .catch((e) => console.warn('sideview: comment bar disabled (vue failed to load)', e));
@@ -782,6 +799,8 @@ function syncConversation() {
   const attach = {};
   for (const t of conv.threads) attach[t.id] = !!resolveAnchor(t);
   svc.attach = attach;
+  const open = conv.threads.filter((t) => t.resolved_at == null).length;
+  $cbarToggle.textContent = open ? String(open) : '·';
 }
 
 async function postComment(payload) {
@@ -998,4 +1017,5 @@ $chip.addEventListener('click', () => {
   };
   sel.removeAllRanges();
   $chip.hidden = true;
+  document.body.classList.add('sv-cbar-open'); // overlay screens: show the compose
 });
