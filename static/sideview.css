@@ -1159,7 +1159,8 @@ body.sv-cbar #sv-comments { display: block; }
 #sv-cchip {
   position: absolute;
   z-index: 45;
-  padding: 0.15rem 0.6rem;
+  padding: 0.25rem 0.45rem;
+  line-height: 0;
   border: 1px solid var(--sv-ink);
   background: var(--bs-body-bg);
   color: var(--sv-ink);

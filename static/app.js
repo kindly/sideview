@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08l bar-toggle';
+const CLIENT_STAMP = '2026-08-08m dblclick';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -972,7 +972,13 @@ function mountCommentBar() {
 const $chip = document.createElement('button');
 $chip.id = 'sv-cchip';
 $chip.type = 'button';
-$chip.textContent = 'comment';
+$chip.setAttribute('aria-label', 'comment on the selection');
+$chip.title = 'comment on the selection';
+$chip.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.8"
+    stroke-linejoin="round" stroke-linecap="round">
+  <path d="M21 14a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>
+  <path d="M7.5 8h9M7.5 12h5.5" stroke-width="1.6"/></svg>`;
 $chip.hidden = true;
 document.body.appendChild($chip);
 
@@ -989,33 +995,54 @@ function placeChip() {
   const cont = range.commonAncestorContainer;
   const el = (cont.nodeType === 1 ? cont : cont.parentElement)?.closest('#sv-blocks [data-block]');
   if (!el) { $chip.hidden = true; return; }
-  const r = range.getBoundingClientRect();
-  $chip.style.top = Math.max(scrollY + r.top - 34, scrollY + 4) + 'px';
-  $chip.style.left = Math.min(scrollX + r.right + 8, scrollX + innerWidth - 110) + 'px';
+  // A predictable spot: just below the selection's last line, at its end —
+  // clear of the text and of the browser's own selection toolbar.
+  const rects = range.getClientRects();
+  const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+  $chip.style.top = scrollY + r.bottom + 8 + 'px';
+  $chip.style.left = Math.min(scrollX + r.right + 4, scrollX + innerWidth - 44) + 'px';
   $chip.hidden = false;
+}
+
+function startDraft(spot, quote) {
+  const block = spot?.closest('[data-block]');
+  if (!block || !svc) return;
+  svc.draft = {
+    target: block.dataset.block,
+    anchor: anchorOf(spot),
+    quote: quote.slice(0, 300),
+    context: textOf(spot).trim().slice(0, 500),
+    text: '',
+  };
+  getSelection()?.removeAllRanges();
+  $chip.hidden = true;
+  document.body.classList.add('sv-cbar-open'); // overlay screens: show the compose
+}
+
+function spotFrom(node) {
+  const el = node instanceof Element ? node : node?.parentElement;
+  return (
+    el?.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre') ||
+    el?.closest('#sv-blocks [data-block]')
+  );
 }
 
 $chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
 $chip.addEventListener('click', () => {
   const sel = getSelection();
-  if (!sel || sel.isCollapsed || !svc) return;
-  const range = sel.getRangeAt(0);
-  const startEl = range.startContainer.nodeType === 1
-    ? range.startContainer
-    : range.startContainer.parentElement;
-  const spot =
-    startEl?.closest(':is(h1, h2, h3, h4, h5, h6)[id], p, li, pre') ||
-    startEl?.closest('[data-block]');
-  const block = spot?.closest('[data-block]');
-  if (!block) return;
-  svc.draft = {
-    target: block.dataset.block,
-    anchor: anchorOf(spot),
-    quote: sel.toString().trim().slice(0, 300),
-    context: textOf(spot).trim().slice(0, 500),
-    text: '',
-  };
-  sel.removeAllRanges();
-  $chip.hidden = true;
-  document.body.classList.add('sv-cbar-open'); // overlay screens: show the compose
+  if (!sel || sel.isCollapsed) return;
+  startDraft(spotFrom(sel.getRangeAt(0).startContainer), sel.toString().trim());
+});
+
+// Double-click is the primary gesture (author, 2026-08-08 — the selection
+// chip's position fought the browser's own selection UI): straight to a
+// draft on the clicked bit, its whole text as the quote — unless a larger
+// selection exists, which wins for precision.
+$blocks.addEventListener('dblclick', (e) => {
+  if (e.target.closest('a, button, input, textarea, iframe, #sv-comments')) return;
+  const spot = spotFrom(e.target);
+  if (!spot) return;
+  const sel = getSelection();
+  const selText = sel && !sel.isCollapsed ? sel.toString().trim() : '';
+  startDraft(spot, selText.length > 20 ? selText : textOf(spot).trim());
 });

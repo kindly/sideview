@@ -109,9 +109,10 @@ root, so copy files into the project first (`$TMPDIR` gets cleaned up).
 
 ## The page talks back — comments, and who resolves them
 
-Readers comment by selecting text on the page — a comment chip appears, the
-selection becomes the quote — and every conversation lives in the right-hand
-comment bar (open threads as cards, resolved folded beneath), never inline. Await their feedback with `sideview watch --since 0 --skip-author
+Readers comment by double-clicking any text bit (its text becomes the quote)
+or selecting exact words and clicking the bubble chip; every conversation
+lives in the right-hand comment bar (open threads as cards, resolved folded
+beneath), never inline. Await their feedback with `sideview watch --since 0 --skip-author
 agent` — typed JSON-lines, one event per comment/resolve, your own echoes
 filtered server-side. Add `--claim` only when several watchers split one
 page's work and each event is acted on the moment it is read: claim couples
