@@ -32,6 +32,14 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Gives turn-based agents "present the plan, then wait for the user's reaction". stderr nudges on ordinary commands are garnish; watch is the mechanism.
 </sv-prose>
 
+<sv-note id="note-watch-complete" target="watch">
+**Complete — signed off by the author, 2026-08-09** (thread 21, from the page,
+picked up through watch itself: the section's own mechanism carried its
+sign-off). Built 2026-08-07; the generation counter, the reach-back form,
+--skip-author and the claim-only-what-you-act-on rule were all earned live
+in its first two days.
+</sv-note>
+
 <sv-prose id="annotations">
 ## Annotations: both homes, split by intent
 
