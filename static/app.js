@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09v diff-bar';
+const CLIENT_STAMP = '2026-08-09w tighter-notes';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {

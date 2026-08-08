@@ -407,7 +407,7 @@ pre.syntax-highlighting .sv-constant {
   /* No row of its own (the author read the empty strip as a gap, 2026-08-09):
      the toggle floats over the file-path row's right end instead. */
   position: absolute;
-  top: 0.75rem;
+  top: 1.1rem;   /* seated in the path row's line, clear of the first diff row */
   right: 0;
   z-index: 2;
 }
@@ -416,6 +416,7 @@ pre.syntax-highlighting .sv-constant {
 }
 
 .sv-diff-toggle {
+  background: var(--bs-body-bg);
   font-family: var(--sv-mono);
   font-size: 0.72rem;
   padding: 0.05rem 0.5rem;
@@ -968,6 +969,10 @@ body.sv-rail #sv-outline { display: block; }
 /* In-file annotations (sv-note): canon, so always visible — a margin-note
    voice, quieter than prose, wearing its target as a mono reference line. */
 .sv-note {
+  /* Annotations sit tighter than prose blocks (author, 2026-08-09):
+     pulled toward what they annotate, less air below. */
+  margin-top: -0.75rem;
+  margin-bottom: 1rem;
   padding-left: 0.9rem;
   border-left: 2px solid var(--sv-ink-soft);
   font-size: 0.92rem;
