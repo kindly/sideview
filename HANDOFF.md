@@ -413,7 +413,13 @@ are Vue, and Vapor mode was assessed as no threat to the no-build path (opt-in, 
 authoring model, and a vendored file can't rot). Composition API works fully in the ESM build —
 it's only the `<script setup>` sugar that needs a compiler (write `setup()` + explicit return);
 one real caveat: the runtime template compiler uses `new Function`, so a strict CSP without
-unsafe-eval would block it — remember this if sharing ever grows CSP headers. Adoption itself remains the author's call;
+unsafe-eval would block it — remember this if sharing ever grows CSP headers. **The author's
+reframe (2026-08-08): the main prize is html blocks as Vue islands** — a vendored
+vue at /assets/vendor/ is importable by any srcdoc block, giving artifact-grade interactive
+blocks with no CDN, no in-browser JSX transpile, files-in-repo persistence, and the envelope
+already sizing/theming them. This benefit arrives from vendoring alone, before any migration
+of our own UI. Mechanics: opaque-origin iframes need Access-Control-Allow-Origin: * on
+/assets for ESM imports (one safe line), or blocks use the global build via script src. Adoption itself remains the author's call;
 vanilla currently holds. The *plugin architecture* (blocks getting scoped access to
 parts of the page) should not be answered with a framework at all: the web-native boundary is
 custom elements plus a small explicit `window.sideview` API, which keeps plugins
