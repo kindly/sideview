@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08o held-selection';
+const CLIENT_STAMP = '2026-08-08p resolved-order';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -841,7 +841,11 @@ function mountCommentBar() {
   createApp({
     setup() {
       const open = computed(() => svc.threads.filter((t) => t.resolved_at == null));
-      const resolved = computed(() => svc.threads.filter((t) => t.resolved_at != null));
+      const resolved = computed(() =>
+        svc.threads
+          .filter((t) => t.resolved_at != null)
+          .sort((a, b) => b.resolved_at - a.resolved_at) // freshest fold first
+      );
       const collapsed = reactive({});
       const replies = reactive({});
       const error = reactive({ msg: '' });

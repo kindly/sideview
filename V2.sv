@@ -48,14 +48,6 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - Prose derivation stays the default — a `##` in the canonical file is structure, not inference. Markup and html contribute nothing without an explicit outline (true since late v1).
 </sv-prose>
 
-<sv-note id="note-promotion-retired" target="outlines">
-Placed here by request (thread 19) as the experiment that retired "promotion":
-the author asked for an annotation after a specific bullet and it appeared
-within seconds — which is the whole lifecycle. A conversation that earns
-keeping doesn't need machinery to cross into canon; it needs an agent told
-"write that down", and the loop already provides one.
-</sv-note>
-
 <sv-prose id="pages">
 ## Document pages, properly — and the words get fixed
 
