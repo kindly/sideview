@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09z seen';
+const CLIENT_STAMP = '2026-08-09A sent-working';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -869,9 +869,10 @@ function mountCommentBar() {
         const cs = commentsFor(id);
         return cs.length ? (cs[cs.length - 1].author || 'user') : null;
       };
-      // The silence-filler: last word is the user's and the watch plumbing
-      // has stamped it — an agent's stream has received it, reply pending.
-      const seenPending = (id) => {
+      // The silence-fillers. sent: the plumbing's delivery receipt (the
+      // server has it; says nothing about the agent). working: the agent's
+      // own declaration for long tasks, retired by its reply.
+      const sentPending = (id) => {
         const cs = commentsFor(id);
         const last = cs[cs.length - 1];
         return !!(last && last.author !== 'agent' && last.seen_at);
@@ -910,7 +911,7 @@ function mountCommentBar() {
 
       return {
         svc, open, resolved, collapsed, replies, error,
-        commentsFor, lastAuthor, seenPending, fmt, jump, reply, sendDraft,
+        commentsFor, lastAuthor, sentPending, fmt, jump, reply, sendDraft,
         attach: computed(() => svc.attach),
         resolve: (t) => setResolution(t.id, false),
         reopen: (t) => setResolution(t.id, true),
@@ -949,7 +950,8 @@ function mountCommentBar() {
             <span v-else class="sv-gone"
                   title="its anchor left the page — likely addressed">§ changed</span>
             <span v-if="lastAuthor(t.id) === 'agent'" class="sv-turn-tag">agent replied</span>
-            <span v-else-if="seenPending(t.id)" class="sv-seen" title="delivered to an agent's stream — reply pending">seen</span>
+            <span v-else-if="t.working_at" class="sv-seen" title="the agent marked this as in progress">working…</span>
+            <span v-else-if="sentPending(t.id)" class="sv-sent" title="delivered — the server has it; an agent hasn't necessarily read it yet">sent</span>
             <button type="button" class="sv-twist-btn"
                     :aria-expanded="String(!collapsed[t.id])"
                     @click="toggle(t.id)">{{ collapsed[t.id] ? '▸' : '▾' }}</button>

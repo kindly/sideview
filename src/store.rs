@@ -98,6 +98,14 @@ const MIGRATIONS: &[&str] = &[
         updated_at INTEGER NOT NULL
     );
     "#,
+    // v3: the working marker (author, 2026-08-09) — the agent's explicit
+    // "this will take a while", shown by the bar between the plumbing's
+    // 'sent' receipt and the eventual reply. Cleared by that reply (or a
+    // resolve), never by hand.
+    r#"
+    ALTER TABLE threads ADD COLUMN working_at INTEGER;
+    ALTER TABLE threads ADD COLUMN working_by TEXT;
+    "#,
 ];
 
 pub fn now_ms() -> i64 {
@@ -184,6 +192,10 @@ pub struct Thread {
     pub created_at: i64,
     pub resolved_at: Option<i64>,
     pub resolved_by: Option<String>,
+    /// The agent's explicit "on it, will take a while" — cleared by its
+    /// next reply or a resolve.
+    pub working_at: Option<i64>,
+    pub working_by: Option<String>,
 }
 
 /// One utterance within a thread.
@@ -212,7 +224,8 @@ fn bump_gen(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
 }
 
 const THREAD_COLS: &str = "threads.id, threads.page, threads.target, threads.anchor, \
-     threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by";
+     threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by, \
+     threads.working_at, threads.working_by";
 const COMMENT_COLS: &str = "comments.id, comments.thread_id, comments.body, comments.author, \
      comments.created_at, comments.seen_at, comments.seen_by";
 
@@ -231,6 +244,8 @@ fn thread_row_at(r: &rusqlite::Row, base: usize) -> rusqlite::Result<Thread> {
         created_at: r.get(base + 6)?,
         resolved_at: r.get(base + 7)?,
         resolved_by: r.get(base + 8)?,
+        working_at: r.get(base + 9)?,
+        working_by: r.get(base + 10)?,
     })
 }
 
@@ -417,6 +432,10 @@ impl Store {
         )
         .with_context(|| format!("no thread {thread_id}?"))?;
         let id = tx.last_insert_rowid();
+        // An agent's reply is the work arriving: the working marker retires.
+        if author == Some("agent") {
+            tx.execute("UPDATE threads SET working_at = NULL, working_by = NULL WHERE id = ?1", [thread_id])?;
+        }
         bump_gen(&tx)?;
         tx.commit()?;
         Ok(id)
@@ -439,6 +458,22 @@ impl Store {
                 rusqlite::params![id, now_ms(), by],
             )?
         };
+        if n > 0 {
+            tx.execute("UPDATE threads SET working_at = NULL, working_by = NULL WHERE id = ?1", [id])?;
+            bump_gen(&tx)?;
+        }
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
+    /// The agent's "this will take a while" — between the plumbing's sent
+    /// receipt and the eventual reply, the bar shows working.
+    pub fn set_working(&mut self, id: i64, by: Option<&str>) -> Result<bool> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let n = tx.execute(
+            "UPDATE threads SET working_at = ?2, working_by = ?3 WHERE id = ?1 AND resolved_at IS NULL",
+            rusqlite::params![id, now_ms(), by],
+        )?;
         if n > 0 {
             bump_gen(&tx)?;
         }

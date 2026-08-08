@@ -121,6 +121,15 @@ enum Cmd {
         #[arg(long)]
         page: Option<String>,
     },
+    /// Mark a thread as being worked on (for tasks that will take a while;
+    /// quick replies don't need it). Cleared by your next reply or a resolve
+    Working {
+        /// The thread id (watch events carry it)
+        thread: i64,
+        /// Guard: refuse unless the thread is on this page
+        #[arg(long)]
+        page: Option<String>,
+    },
     /// Give the rail an explicit outline (JSON entries on stdin); used verbatim
     Outline {
         /// Remove the explicit outline; the rail returns to prose derivation
@@ -310,6 +319,7 @@ fn main() -> anyhow::Result<()> {
             cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref())
         }
         Some(Cmd::Resolve { thread, undo, page }) => cli::resolve(thread, undo, page.as_deref()),
+        Some(Cmd::Working { thread, page }) => cli::working(thread, page.as_deref()),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
         Some(Cmd::Watch { timeout, since, claim, skip_author, ack }) => {
             cli::watch(timeout, since, claim, skip_author.as_deref(), ack)

@@ -1142,6 +1142,7 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 .sv-gone { color: var(--bs-secondary-color); }
 .sv-turn-tag { color: var(--sv-ink); }
 .sv-seen { color: var(--sv-ink); animation: sv-pulse 2s ease-in-out infinite; }
+.sv-sent { color: var(--bs-secondary-color); }
 .sv-twist-btn {
   margin-left: auto; border: 0; background: none; padding: 0 0.2rem;
   color: var(--bs-secondary-color); cursor: pointer; font-size: 0.75rem;

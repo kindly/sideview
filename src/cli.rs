@@ -617,6 +617,27 @@ pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// `sideview working <thread>` — the agent's "this will take a while".
+/// Between the plumbing's sent receipt and the eventual reply, the bar shows
+/// working; the reply (or a resolve) retires it automatically.
+pub fn working(thread: i64, page: Option<&str>) -> Result<()> {
+    let mut store = open_project_store()?;
+    let Some(t) = store.thread(thread)? else {
+        bail!("no thread {thread}");
+    };
+    if let Some(p) = page {
+        if t.page != p {
+            bail!("thread {thread} is on page {:?}, not {p:?} — wrong project?", t.page);
+        }
+    }
+    if !store.set_working(thread, Some("agent"))? {
+        eprintln!("thread {thread} is resolved — nothing to work on");
+        return Ok(());
+    }
+    eprintln!("working on thread {thread} → {}", store.root.display());
+    Ok(())
+}
+
 /// `sideview outline` — the agent's ordered list for the rail, used verbatim
 /// when present (inference off). Entries arrive as JSON on stdin:
 /// [{"title": "Overview", "anchor": "h:b2-overview", "children": […]}].
