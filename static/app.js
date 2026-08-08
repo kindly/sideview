@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-08p resolved-order';
+const CLIENT_STAMP = '2026-08-09q foldable-bar';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -722,7 +722,9 @@ $cbarToggle.addEventListener('click', () => {
     startDraft(held.spot, held.text);
     return;
   }
-  document.body.classList.toggle('sv-cbar-open');
+  const open = !document.body.classList.contains('sv-cbar-open');
+  document.body.classList.toggle('sv-cbar-open', open);
+  localStorage.setItem('sv-cbar:' + state.selected, open ? 'open' : 'closed');
 });
 document.addEventListener('click', (e) => {
   if (!document.body.classList.contains('sv-cbar-open')) return;
@@ -799,6 +801,16 @@ function scheduleConversation() {
   });
 }
 
+function applyCbarPref() {
+  const has = svc && (svc.threads.length > 0 || !!svc.draft);
+  document.body.classList.toggle('sv-cbar', !!has);
+  if (!has) { document.body.classList.remove('sv-cbar-open'); return; }
+  if (svc.draft) { document.body.classList.add('sv-cbar-open'); return; }
+  const stored = localStorage.getItem('sv-cbar:' + state.selected);
+  const wide = matchMedia('(min-width: 64rem)').matches;
+  document.body.classList.toggle('sv-cbar-open', stored ? stored === 'open' : wide);
+}
+
 function syncConversation() {
   if (!svc) return;
   const conv = conversation();
@@ -833,9 +845,11 @@ function mountCommentBar() {
   svc = reactive({ page: null, threads: [], comments: [], attach: {}, draft: null });
 
   // Layout classes live on body so the CSS grid can breathe around the bar.
+  // Open/closed mirrors the rail: the viewer's fold is remembered per page;
+  // defaults are open on wide screens, folded to the chip on small ones.
   watchEffect(() => {
-    const has = svc.threads.length > 0 || !!svc.draft;
-    document.body.classList.toggle('sv-cbar', has);
+    void svc.threads.length; void svc.draft; void svc.page;
+    applyCbarPref();
   });
 
   createApp({
@@ -896,11 +910,17 @@ function mountCommentBar() {
         reopen: (t) => setResolution(t.id, true),
         toggle: (id) => { collapsed[id] = !collapsed[id]; },
         cancelDraft: () => { svc.draft = null; },
+        fold: () => {
+          document.body.classList.remove('sv-cbar-open');
+          localStorage.setItem('sv-cbar:' + svc.page, 'closed');
+        },
       };
     },
     template: `
       <div v-if="svc.threads.length || svc.draft" class="sv-cbar-inner">
-        <div class="sv-cbar-title">Comments</div>
+        <div class="sv-cbar-title">Comments
+          <button type="button" class="sv-cbar-fold" title="collapse — the corner bubble brings it back"
+                  @click="fold">×</button></div>
         <div v-if="error.msg" class="sv-cbar-error">{{ error.msg }}</div>
 
         <div v-if="svc.draft" class="sv-cbar-card sv-cbar-draft">
@@ -1056,9 +1076,15 @@ function syncToggle() {
   $cbarToggle.classList.remove('sv-sel');
   $cbarToggle.title = 'comments';
   $cbarToggle.innerHTML = BUBBLE_SVG;
-  const open = svc ? svc.threads.filter((t) => t.resolved_at == null).length : 0;
-  if (open) $cbarToggle.dataset.count = String(open);
+  const openThreads = svc ? svc.threads.filter((t) => t.resolved_at == null) : [];
+  if (openThreads.length) $cbarToggle.dataset.count = String(openThreads.length);
   else delete $cbarToggle.dataset.count;
+  // Filled means the agent spoke last somewhere — the user's turn.
+  const turn = openThreads.some((t) => {
+    const cs = svc.comments.filter((c) => c.thread_id === t.id);
+    return cs.length && cs[cs.length - 1].author === 'agent';
+  });
+  $cbarToggle.classList.toggle('sv-cbar-turn', turn);
 }
 syncToggle();
 

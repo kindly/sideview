@@ -1013,17 +1013,14 @@ body.sv-rail #sv-outline { display: block; }
   display: none;
   z-index: 5;
 }
-body.sv-cbar #sv-comments { display: block; }
+body.sv-cbar.sv-cbar-open #sv-comments { display: block; }
 
 @media (min-width: 64rem) {
-  body.sv-cbar #sv-blocks { max-width: none; padding-right: 21.5rem; }
+  body.sv-cbar.sv-cbar-open #sv-blocks { max-width: none; padding-right: 21.5rem; }
 }
 @media (max-width: 63.98rem) {
-  /* Small screens: the bar is an overlay with a way in and a way out — the
-     toggle chip opens it, a tap on the content dismisses it. */
-  body.sv-cbar #sv-comments { display: none; }
+  /* Small screens: the open bar is an overlay; a tap on the content folds it. */
   body.sv-cbar.sv-cbar-open #sv-comments {
-    display: block;
     width: min(19.5rem, 85vw);
     box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12);
   }
@@ -1032,12 +1029,9 @@ body.sv-cbar #sv-comments { display: block; }
 /* The bar toggle: only exists on overlay screens, only when there is
    conversation. Shows the open-thread count. */
 #sv-cbar-toggle { display: none; }
-@media (max-width: 63.98rem) {
-  body.sv-selecting #sv-cbar-toggle { display: block; }
-  body.sv-cbar #sv-cbar-toggle {
-    display: block;
-  }
-}
+/* The chip is the folded bar, on every screen size. */
+body.sv-selecting #sv-cbar-toggle { display: block; }
+body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 
 /* Always the comment bubble; the open-thread count rides as a badge and an
    active selection thickens the ink. */
@@ -1058,6 +1052,8 @@ body.sv-cbar #sv-comments { display: block; }
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
 }
 #sv-cbar-toggle.sv-sel { border-width: 2px; background: color-mix(in srgb, var(--sv-ink) 10%, var(--bs-body-bg)); }
+/* Filled: the agent spoke last somewhere — the user's turn. */
+#sv-cbar-toggle.sv-cbar-turn { background: var(--sv-ink); color: var(--bs-body-bg); }
 #sv-cbar-toggle[data-count]::after {
   content: attr(data-count);
   position: absolute;
@@ -1073,6 +1069,9 @@ body.sv-cbar #sv-comments { display: block; }
 }
 
 .sv-cbar-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-family: var(--sv-mono);
   font-size: 0.72rem;
   letter-spacing: 0.14em;
@@ -1080,6 +1079,15 @@ body.sv-cbar #sv-comments { display: block; }
   color: var(--bs-secondary-color);
   margin-bottom: 0.9rem;
 }
+.sv-cbar-fold {
+  border: 0;
+  background: none;
+  padding: 0 0.2rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.sv-cbar-fold:hover { color: var(--sv-ink); }
 
 .sv-cbar-card {
   border: 1px solid var(--bs-border-color);
