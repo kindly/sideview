@@ -109,6 +109,12 @@ root, so copy files into the project first (`$TMPDIR` gets cleaned up).
 
 ## The page talks back — comments, and who resolves them
 
+**If the user asked for the page, watching is part of the ask.** Don't end at
+the last block: their reply arrives *on* the page, so present, then run `watch`
+and act on what comes back. A page delivered without a watcher is a question
+with nobody listening for the answer. (`--timeout N` and re-arm if your
+harness can't block open-endedly.)
+
 Readers comment by double-clicking any text bit (its text becomes the quote)
 or selecting exact words and clicking the bubble chip; every conversation
 lives in the right-hand comment bar (open threads as cards, resolved folded
