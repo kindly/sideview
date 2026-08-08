@@ -63,6 +63,13 @@ as designed — and promotion retired itself by experiment on this very page.
 - Prose derivation stays the default — a `##` in the canonical file is structure, not inference. Markup and html contribute nothing without an explicit outline (true since late v1).
 </sv-prose>
 
+<sv-note id="note-outlines-complete" target="outlines">
+**Complete — signed off by the author, 2026-08-09** (thread 2). Demoed live
+on 2026-08-08: a curated, regrouped rail pushed onto this very page — which
+then died in the resurrection with the rest of the db, prose derivation
+resuming unasked. Even the demo obeyed the placement principle.
+</sv-note>
+
 <sv-prose id="pages">
 ## Document pages, properly — and the words get fixed
 
