@@ -37,7 +37,7 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 
 - One shape, two homes. `sv-note` blocks in the file are document content — written by the page's one author, versioned with the plan, always visible (margin-note styling). Context notes go to the db — the *same* threads-and-comments tables as user feedback, written via `sideview comment`, hover-revealed, gone when the db goes.
 - **Visibility communicates status: if you can see it without hovering, it's canon.**
-- Promotion bridges them, the system's recurring lifecycle: a context note that earns keeping is rewritten into the file as an `sv-note`.
+- **Promotion retired (author, 2026-08-08, by experiment on this very page):** the planned comment→sv-note promotion mechanism has no job — an agent asked to "write that down" places a note at the named spot in seconds, and that *is* the lifecycle. What remains is the norm, not machinery: notes worth keeping get asked for; the conversation that produced them dies with the db, as conversation should.
 - For diffs: annotations on frozen content (snapshots) may be canon, versioned beside what they annotate; on moving content (watched diffs, when they arrive) they stay conversation.
 </sv-prose>
 
@@ -47,6 +47,14 @@ v1 made pages files and shipped 0.1.0. v2 makes the page talk back: the user com
 - `sideview outline` reads the agent's ordered list (title + anchor, ids and sub-ids) into the db; when present the rail uses it verbatim, inference off.
 - Prose derivation stays the default — a `##` in the canonical file is structure, not inference. Markup and html contribute nothing without an explicit outline (true since late v1).
 </sv-prose>
+
+<sv-note id="note-promotion-retired" target="outlines">
+Placed here by request (thread 19) as the experiment that retired "promotion":
+the author asked for an annotation after a specific bullet and it appeared
+within seconds — which is the whole lifecycle. A conversation that earns
+keeping doesn't need machinery to cross into canon; it needs an agent told
+"write that down", and the loop already provides one.
+</sv-note>
 
 <sv-prose id="pages">
 ## Document pages, properly — and the words get fixed
