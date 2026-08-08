@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09r top-chip';
+const CLIENT_STAMP = '2026-08-09s multi-draft';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -797,10 +797,10 @@ function scheduleConversation() {
 }
 
 function applyCbarPref() {
-  const has = svc && (svc.threads.length > 0 || !!svc.draft);
+  const has = svc && (svc.threads.length > 0 || svc.drafts.length > 0);
   document.body.classList.toggle('sv-cbar', !!has);
   if (!has) { document.body.classList.remove('sv-cbar-open'); return; }
-  if (svc.draft) { document.body.classList.add('sv-cbar-open'); return; }
+  if (svc.drafts.length) { document.body.classList.add('sv-cbar-open'); return; }
   const stored = localStorage.getItem('sv-cbar:' + state.selected);
   const wide = matchMedia('(min-width: 64rem)').matches;
   document.body.classList.toggle('sv-cbar-open', stored ? stored === 'open' : wide);
@@ -837,13 +837,13 @@ function setResolution(threadId, undo) {
 
 function mountCommentBar() {
   const { createApp, reactive, computed, watchEffect, nextTick } = vue;
-  svc = reactive({ page: null, threads: [], comments: [], attach: {}, draft: null });
+  svc = reactive({ page: null, threads: [], comments: [], attach: {}, drafts: [] });
 
   // Layout classes live on body so the CSS grid can breathe around the bar.
   // Open/closed mirrors the rail: the viewer's fold is remembered per page;
   // defaults are open on wide screens, folded to the chip on small ones.
   watchEffect(() => {
-    void svc.threads.length; void svc.draft; void svc.page;
+    void svc.threads.length; void svc.drafts.length; void svc.page;
     applyCbarPref();
   });
 
@@ -887,13 +887,12 @@ function mountCommentBar() {
         if (!body) return;
         send({ thread: t.id, body }, () => { replies[t.id] = ''; });
       };
-      const sendDraft = () => {
-        const d = svc.draft;
-        if (!d || !d.text.trim()) return;
+      const sendDraft = (d) => {
+        if (!d.text.trim()) return;
         send(
           { page: svc.page, target: d.target, anchor: d.anchor,
             quote: d.quote || null, context: d.context || null, body: d.text.trim() },
-          () => { svc.draft = null; }
+          () => { svc.drafts = svc.drafts.filter((x) => x !== d); }
         );
       };
 
@@ -904,7 +903,7 @@ function mountCommentBar() {
         resolve: (t) => setResolution(t.id, false),
         reopen: (t) => setResolution(t.id, true),
         toggle: (id) => { collapsed[id] = !collapsed[id]; },
-        cancelDraft: () => { svc.draft = null; },
+        cancelDraft: (d) => { svc.drafts = svc.drafts.filter((x) => x !== d); },
         fold: () => {
           document.body.classList.remove('sv-cbar-open');
           localStorage.setItem('sv-cbar:' + svc.page, 'closed');
@@ -918,14 +917,14 @@ function mountCommentBar() {
                   title="collapse — the bubble brings it back" @click="fold"></button></div>
         <div v-if="error.msg" class="sv-cbar-error">{{ error.msg }}</div>
 
-        <div v-if="svc.draft" class="sv-cbar-card sv-cbar-draft">
-          <blockquote v-if="svc.draft.quote">{{ svc.draft.quote }}</blockquote>
-          <textarea v-model="svc.draft.text" rows="3" placeholder="Comment…"
-                    @keydown.meta.enter="sendDraft" @keydown.ctrl.enter="sendDraft"
-                    @keydown.esc="cancelDraft"></textarea>
+        <div v-for="d in svc.drafts" :key="d.key" class="sv-cbar-card sv-cbar-draft">
+          <blockquote v-if="d.quote">{{ d.quote }}</blockquote>
+          <textarea v-model="d.text" rows="3" placeholder="Comment…" :data-draft="d.key"
+                    @keydown.meta.enter="sendDraft(d)" @keydown.ctrl.enter="sendDraft(d)"
+                    @keydown.esc="cancelDraft(d)"></textarea>
           <div class="sv-cbar-actions">
-            <button type="button" @click="sendDraft">comment</button>
-            <button type="button" class="sv-quiet" @click="cancelDraft">cancel</button>
+            <button type="button" @click="sendDraft(d)">comment</button>
+            <button type="button" class="sv-quiet" @click="cancelDraft(d)">cancel</button>
           </div>
         </div>
 
@@ -981,14 +980,6 @@ function mountCommentBar() {
     `,
   }).mount($bar);
 
-  // Focus the draft box whenever a draft begins.
-  watchEffect(() => {
-    if (svc.draft) {
-      nextTick(() => {
-        $bar.querySelector('.sv-cbar-draft textarea')?.focus({ preventScroll: true });
-      });
-    }
-  });
 }
 
 // ---- the selection chip: the one creation gesture -----------------------------
@@ -1083,19 +1074,34 @@ function syncToggle() {
 }
 syncToggle();
 
+// Drafts are plural (author, 2026-08-09): a second gesture must never
+// destroy an unfinished comment — it starts its own card, bound for its own
+// thread. The one exception: the exact same spot refocuses the existing
+// draft instead of duplicating it.
+let draftSeq = 0;
 function startDraft(spot, quote) {
   const block = spot?.closest('[data-block]');
   if (!block || !svc) return;
-  svc.draft = {
-    target: block.dataset.block,
-    anchor: anchorOf(spot),
-    quote: quote.slice(0, 300),
-    context: textOf(spot).trim().slice(0, 500),
-    text: '',
-  };
+  const target = block.dataset.block;
+  const anchor = anchorOf(spot);
+  const existing = svc.drafts.find((d) => d.target === target && d.anchor === anchor);
+  const key = existing ? existing.key : ++draftSeq;
+  if (!existing) {
+    svc.drafts.push({
+      key,
+      target,
+      anchor,
+      quote: quote.slice(0, 300),
+      context: textOf(spot).trim().slice(0, 500),
+      text: '',
+    });
+  }
   getSelection()?.removeAllRanges();
   $chip.hidden = true;
-  document.body.classList.add('sv-cbar-open'); // overlay screens: show the compose
+  document.body.classList.add('sv-cbar-open');
+  vue.nextTick(() => {
+    $bar.querySelector(`textarea[data-draft="${key}"]`)?.focus({ preventScroll: true });
+  });
 }
 
 function spotFrom(node) {
