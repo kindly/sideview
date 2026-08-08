@@ -81,6 +81,17 @@ resuming unasked. Even the demo obeyed the placement principle.
 - **Scroll (author, 2026-08-08 — the standing v0 question, decided on a day of real use): the reading position is sacred.** No auto-follow, ever — genuinely-new content that lands below the fold gets a floating "new content below" pill, offered not imposed. Changes above the viewport are counter-scrolled so the text under the eye stays put (wholesale block replacement defeats the browser's native scroll anchoring, so the client keeps its own reading anchor) — this covers block edits, comment decoration, and iframe sizing, whose last-known heights are also remembered per block so rebuilds start at the right size. Reconnects remember the block being read and restore it once the replay burst goes quiet — and refreshes ride the same machinery through sessionStorage, with the browser's own restoration set to manual (it races the SSE stream and clamps early; observed 2026-08-08). Diagnosis that led here lives on the scroll-feel page.
 </sv-prose>
 
+<sv-note id="note-pages-complete" target="pages">
+**Complete — signed off by the author, 2026-08-09** (thread 7). The rename
+shipped first and everything after was built on the right noun; `open` ended
+the hand-written INSERT era for this very file; promote was verified live
+the hour it was questioned; rediscovery carried the resurrection test; the
+envelope has a demo page; and the scroll decision this section came to hold
+was earned across seven live takes. The one as-built delta: the page's own
+address proved mortal with the db, and --port/SIDEVIEW_PORT (2026-08-09)
+now pins it in configuration, where durability belongs.
+</sv-note>
+
 <sv-prose id="models">
 ## The v2 models — for review before a line is written
 
