@@ -398,13 +398,21 @@ pre.syntax-highlighting .sv-constant {
 .sv-diff {
   margin: 0;
 }
+.sv-diff-path { padding-right: 5.5rem; } /* room for the floating toggle */
 
 .sv-diff[data-view='unified'] .sv-view-split { display: none; }
 .sv-diff[data-view='split'] .sv-view-unified { display: none; }
 
 .sv-diff-bar {
-  display: flex;
-  justify-content: flex-end;
+  /* No row of its own (the author read the empty strip as a gap, 2026-08-09):
+     the toggle floats over the file-path row's right end instead. */
+  position: absolute;
+  top: 0.75rem;
+  right: 0;
+  z-index: 2;
+}
+.sv-diff {
+  position: relative;
 }
 
 .sv-diff-toggle {
