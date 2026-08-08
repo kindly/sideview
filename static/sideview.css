@@ -1140,9 +1140,15 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 }
 .sv-jump:hover { text-decoration: underline; }
 .sv-gone { color: var(--bs-secondary-color); }
-.sv-turn-tag { color: var(--sv-ink); }
-.sv-seen { color: var(--sv-ink); animation: sv-pulse 2s ease-in-out infinite; }
-.sv-sent { color: var(--bs-secondary-color); }
+/* Status sits after the last comment, where the eye already is; the blue
+   left strip alone says "agent spoke last" (the tag was redundant). */
+.sv-status {
+  font-family: var(--sv-mono);
+  font-size: 0.68rem;
+  color: var(--bs-secondary-color);
+  margin: -0.2rem 0 0.35rem;
+}
+.sv-status.sv-working { color: var(--sv-ink); animation: sv-pulse 2s ease-in-out infinite; }
 .sv-twist-btn {
   margin-left: auto; border: 0; background: none; padding: 0 0.2rem;
   color: var(--bs-secondary-color); cursor: pointer; font-size: 0.75rem;

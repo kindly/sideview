@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-09A sent-working';
+const CLIENT_STAMP = '2026-08-09B status-at-tail';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -949,9 +949,6 @@ function mountCommentBar() {
                     title="jump to the spot" @click="jump(t)">↩ {{ t.target }}</button>
             <span v-else class="sv-gone"
                   title="its anchor left the page — likely addressed">§ changed</span>
-            <span v-if="lastAuthor(t.id) === 'agent'" class="sv-turn-tag">agent replied</span>
-            <span v-else-if="t.working_at" class="sv-seen" title="the agent marked this as in progress">working…</span>
-            <span v-else-if="sentPending(t.id)" class="sv-sent" title="delivered — the server has it; an agent hasn't necessarily read it yet">sent</span>
             <button type="button" class="sv-twist-btn"
                     :aria-expanded="String(!collapsed[t.id])"
                     @click="toggle(t.id)">{{ collapsed[t.id] ? '▸' : '▾' }}</button>
@@ -963,6 +960,10 @@ function mountCommentBar() {
                 {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
               <div class="sv-comment-body">{{ c.body }}</div>
             </div>
+            <div v-if="t.working_at" class="sv-status sv-working"
+                 title="the agent marked this as in progress">working…</div>
+            <div v-else-if="sentPending(t.id)" class="sv-status"
+                 title="delivered — the server has it; an agent hasn't necessarily read it yet">sent</div>
             <textarea v-model="replies[t.id]" rows="1" placeholder="Reply…"
                       @keydown.meta.enter="reply(t)" @keydown.ctrl.enter="reply(t)"></textarea>
             <div class="sv-cbar-actions">
