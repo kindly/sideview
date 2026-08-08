@@ -172,7 +172,7 @@ POST /api/threads/7/resolve                                  and …/unresolve; 
 sideview comment <block> [--at <anchor>] [--page <id>]   # body on stdin; creates a thread
 sideview comment --thread <id>                           # reply to an existing thread
 sideview resolve <thread> [--undo]                       # the agent's "feedback addressed"
-sideview watch [--timeout N] [--since ID] [--claim]
+sideview watch [--timeout N] [--since ID] [--claim] [--skip-author <role>]
 sideview outline [--clear] [--page <id>]                 # entries on stdin
 sideview open <file>                                     # bind a committed page
 sideview page set|rm|promote                             # session set/rm live as aliases one release
@@ -192,6 +192,15 @@ sideview page set|rm|promote                             # session set/rm live a
 {"sv": 1, "type": "theme", "mode": "dark"}
 ```
 </sv-prose>
+
+<sv-note id="note-models-complete" target="models">
+**Complete — signed off by the author, 2026-08-09** (thread 5). Every model
+here shipped and was then hardened by use: the comments/threads split held
+through six days-worth of conversation in two; the anchor grammar grew list
+items and code blocks without new syntax; watch's payloads gained roles and
+its surface --skip-author (folded in above); and the envelope got its live
+demo page the same hour as this sign-off.
+</sv-note>
 
 <sv-prose id="candidates">
 ## Pushed to later, deliberately
