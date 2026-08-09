@@ -1298,7 +1298,12 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
      purpose: it overrides at equal specificity, so order is the mechanism
      (being defined earlier cost the × an afternoon — thread 35). */
   body.sv-cbar.sv-cbar-open #sv-comments {
-    top: 0; /* over the header too — the sheet is the page, chip menu included */
+    /* Pinned to the VISUAL viewport (JS keeps the vars fresh): with the iOS
+       keyboard up, the sheet ends above it, so a long thread can reach both
+       its top and its bottom while composing. */
+    top: var(--sv-vvt, 0);
+    height: var(--sv-vvh, 100dvh);
+    bottom: auto;
     left: 0;
     width: auto;
     border-left: none;

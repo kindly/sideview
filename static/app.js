@@ -854,6 +854,52 @@ function setResolution(threadId, undo) {
   // The daemon's snapshot repaints the bar within a tick; no local state.
 }
 
+// ---- the mobile sheet vs the iOS keyboard --------------------------------------
+// Two iOS truths (thread 35, live): body overflow:hidden does not stop touch
+// scroll, and position:fixed elements keep layout-viewport size while the
+// keyboard shrinks the visual viewport — so the sheet's bottom hides behind
+// the keyboard and the page wanders underneath. The fixes are the classic
+// pair: pin the sheet to the *visual* viewport, and lock the body by making
+// it fixed (remembering the scroll to give back on close).
+
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const applyVV = () => {
+    const s = document.documentElement.style;
+    s.setProperty('--sv-vvh', vv.height + 'px');
+    s.setProperty('--sv-vvt', vv.offsetTop + 'px');
+  };
+  vv.addEventListener('resize', applyVV);
+  vv.addEventListener('scroll', applyVV);
+  applyVV();
+}
+
+let sheetLockY = -1;
+function syncSheetLock() {
+  const sheet =
+    matchMedia('(max-width: 63.98rem)').matches &&
+    document.body.classList.contains('sv-cbar') &&
+    document.body.classList.contains('sv-cbar-open');
+  if (sheet && sheetLockY < 0) {
+    sheetLockY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = -sheetLockY + 'px';
+    document.body.style.width = '100%';
+  } else if (!sheet && sheetLockY >= 0) {
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.width = '';
+    window.scrollTo(0, sheetLockY);
+    sheetLockY = -1;
+  }
+}
+// Every open/close path is a body-class change — observe rather than chase.
+new MutationObserver(syncSheetLock).observe(document.body, {
+  attributes: true,
+  attributeFilter: ['class'],
+});
+matchMedia('(max-width: 63.98rem)').addEventListener('change', syncSheetLock);
+
 // ---- the bar itself: the first Vue island ------------------------------------
 
 function mountCommentBar() {
