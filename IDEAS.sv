@@ -58,7 +58,8 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 
 - **Chip ordering** — `order` on `<sv-page>` (canon) + viewer drag (localStorage); the standard precedence stack. *(V2.sv candidates; V1.md)*
 - **Resizable side rails** — drag-to-resize the contents rail and the comment bar, widths remembered as viewer preference; filed for v3 from the desktop pass. *(V2.sv candidates, 2026-08-09)* **→ v3**
-- **Mobile rail** — carried since v0. *(V2.sv candidates)*
+- **Mobile rail** — carried since v0; also the agreed trigger for moving the contents rail's rendering to Vue (2026-08-10 — reasoning in HANDOFF). *(V2.sv candidates)*
+- **Chip strip: armed delete survives a repaint** — the two-step ✕ keeps its armed state in a closure, so a sessions snapshot landing mid-arm silently disarms it. Three lines, no framework. *(found 2026-08-10 while measuring the Vue question)*
 - **Editing prose blocks from the page** — raw markdown in a plain textarea (top-right action; double-click is spoken for), saved as a whole-block splice under the existing file lock; a from-hash guard 409s instead of clobbering the agent's newer text; an `edit` event kind keeps watch honest. The page's first *authoring* power — the trust expansion V1.md said to make on purpose; stripped server-side under any future read-only share. Prose only. *(chat, 2026-08-09)*
 - **Outline tabs × explicit outline spec** — explicit outlines assume scrollspy; tabs+spec currently degrades to all-visible. *(HANDOFF gaps)*
 - **The `sv-` class layer** — metric/delta, option cards, decision matrix; derive from real plans, keep it guessable. *(V0.md design system)*

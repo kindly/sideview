@@ -468,7 +468,17 @@ blocks with no CDN, no in-browser JSX transpile, files-in-repo persistence, and 
 already sizing/theming them. This benefit arrives from vendoring alone, before any migration
 of our own UI. Mechanics: opaque-origin iframes need Access-Control-Allow-Origin: * on
 /assets for ESM imports (one safe line), or blocks use the global build via script src. Adoption itself remains the author's call;
-vanilla currently holds. The *plugin architecture* (blocks getting scoped access to
+vanilla currently holds. **Asked directly on 2026-08-10 (should the chip strip or the contents
+rail move to Vue?) and answered "neither now, the rail eventually"**, on the shape-not-size
+principle this section already argues: the strip is 43 lines that *already* rebuild wholesale
+on every snapshot, so a framework replaces nothing (its one latent bug — a chip's armed delete
+state lives in a closure, so a snapshot arriving mid-arm silently disarms it — is a three-line
+vanilla fix); the rail is ~113 lines and does keep a hand-rolled `railRefs` reconciliation map,
+but half of it is scrollspy, which measures element positions and stays imperative under any
+framework. **The trigger to migrate the rail is the mobile rail feature**, which adds a drawer
+state machine — the point where its state stops being derived from scroll and starts being
+state we manage. Migrating sooner would be a rewrite with regression risk in the spy and no
+user-visible gain. The *plugin architecture* (blocks getting scoped access to
 parts of the page) should not be answered with a framework at all: the web-native boundary is
 custom elements plus a small explicit `window.sideview` API, which keeps plugins
 framework-agnostic, gives them shadow-DOM isolation (DESIGN.md's rung-2 note returns here), and
