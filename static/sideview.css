@@ -832,8 +832,9 @@ body {
 }
 body.sv-rail {
   padding-left: var(--sv-rail-w);
-  transition: padding-left 0.18s ease;
 }
+/* Only deliberate changes ease; the first arrangement lands instantly. */
+body.sv-anim { transition: padding-left 0.18s ease; }
 
 body.sv-rail.sv-rail-collapsed {
   padding-left: var(--sv-rail-collapsed-w);
@@ -852,8 +853,9 @@ body.sv-rail.sv-rail-collapsed {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  transition: width 0.18s ease, padding 0.18s ease;
 }
+/* Folding eases; appearing does not — same rule as the content column. */
+body.sv-anim #sv-outline { transition: width 0.18s ease, padding 0.18s ease; }
 
 body.sv-rail #sv-outline { display: block; }
 
