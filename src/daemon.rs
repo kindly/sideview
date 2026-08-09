@@ -846,9 +846,19 @@ fn to_sse(o: Outgoing) -> sse::Event {
 
 async fn page() -> impl Responder {
     match Assets::get("index.html") {
-        Some(f) => HttpResponse::Ok()
-            .content_type("text/html; charset=utf-8")
-            .body(f.data.into_owned()),
+        Some(f) => {
+            // no-cache asks politely; iOS sometimes pairs a fresh script with
+            // stale CSS anyway (bit live twice — HANDOFF's mobile saga, then
+            // thread 35). A per-daemon-start stamp on the asset URLs makes
+            // every restart a hard bust, and a restart is already how a new
+            // binary arrives.
+            static STAMP: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+            let v = STAMP.get_or_init(crate::store::now_ms);
+            let html = String::from_utf8_lossy(&f.data)
+                .replace("/assets/sideview.css", &format!("/assets/sideview.css?v={v}"))
+                .replace("/assets/app.js", &format!("/assets/app.js?v={v}"));
+            HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
+        }
         None => HttpResponse::InternalServerError().body("index.html missing from binary"),
     }
 }
