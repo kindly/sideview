@@ -1343,6 +1343,11 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
   body.sv-cbar.sv-cbar-open #sv-header {
     visibility: hidden;
   }
+  /* 16px exactly: below it iOS zooms the page on focus, and the zoom was
+     just enough to push the close cross off-screen (thread 35). Declared on
+     the element, per the mobile saga's other rule — inherited sizes get
+     inflated by WebKit's autosizing, own declarations don't. */
+  .sv-cbar-card textarea { font-size: 16px; }
   /* The sheet closes with a cross, and a thumb-sized one — a chevron reads
      as "fold aside", which isn't what leaving a full page feels like. */
   .sv-cbar-fold { width: 2rem; height: 2rem; }
