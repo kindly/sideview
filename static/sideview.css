@@ -1320,7 +1320,12 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
     left: 0;
     width: auto;
     border-left: none;
-    z-index: 46; /* above the header (10) and the corner chip (44): covering
+    z-index: 46;
+    /* Belt: paint the whole layout viewport even though the scrolling box
+       ends at the visual one, so the strip of screen the keyboard's
+       translucent accessory bar sits over has our background behind it and
+       not the document. */
+    box-shadow: 0 100vh 0 100vh var(--bs-body-bg); /* above the header (10) and the corner chip (44): covering
                     the chrome means out-layering it, not just out-positioning
                     it — the strip hid behind the header without this */
   }
@@ -1328,6 +1333,15 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
      also scroll the reading position you'll fold back to. */
   body.sv-cbar.sv-cbar-open {
     overflow: hidden;
+  }
+  /* And braces: with the sheet open the document is not merely covered, it
+     is not drawn — nothing can leak through translucent system chrome if
+     there is nothing behind. visibility, not display, so the reading
+     position survives to be restored on close. */
+  body.sv-cbar.sv-cbar-open #sv-blocks,
+  body.sv-cbar.sv-cbar-open #sv-outline,
+  body.sv-cbar.sv-cbar-open #sv-header {
+    visibility: hidden;
   }
   /* The sheet closes with a cross, and a thumb-sized one — a chevron reads
      as "fold aside", which isn't what leaving a full page feels like. */
