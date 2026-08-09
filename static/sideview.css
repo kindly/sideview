@@ -1034,10 +1034,15 @@ body.sv-cbar.sv-cbar-open #sv-comments { display: block; }
   body.sv-cbar.sv-cbar-open #sv-blocks { max-width: none; padding-right: 21.5rem; }
 }
 @media (max-width: 63.98rem) {
-  /* Small screens: the open bar is an overlay; a tap on the content folds it. */
+  /* Small screens: the open bar IS the page (author, 2026-08-09, from the
+     phone — it was already as wide as it could realistically be, so stop
+     pretending). Two states only: folded to the chip, or a full-viewport
+     sheet below the header; the chevron folds back to the reading. */
   body.sv-cbar.sv-cbar-open #sv-comments {
-    width: min(19.5rem, 85vw);
-    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12);
+    left: 0;
+    width: auto;
+    border-left: none;
+    padding: 1rem 1.25rem 3rem;
   }
 }
 
@@ -1186,6 +1191,41 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
   resize: vertical;
 }
 .sv-cbar-card textarea:focus-visible { outline: 2px solid var(--sv-ink); outline-offset: -1px; }
+
+/* Attachments in cards: image tokens render where they sit, everything else
+   wears a file chip; pending uploads line up under the compose box. */
+.sv-att-img {
+  display: block;
+  max-width: 100%;
+  max-height: 16rem;
+  margin: 0.35rem 0;
+  border: 1px solid var(--bs-border-color);
+}
+.sv-att-chip,
+.sv-att-pending {
+  display: inline-block;
+  margin: 0.25rem 0.35rem 0 0;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--bs-border-color);
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: var(--sv-ink);
+  text-decoration: none;
+  word-break: break-all;
+}
+.sv-att-chip span { color: var(--bs-secondary-color); }
+.sv-att-chip:hover { border-color: var(--sv-ink); }
+.sv-att-pending button {
+  border: none;
+  background: none;
+  padding: 0 0 0 0.2rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+}
+.sv-att-pending button:hover { color: var(--sv-ink); }
+.sv-att-row { margin-top: 0.15rem; }
 
 .sv-cbar-actions { margin-top: 0.35rem; display: flex; gap: 0.5rem; }
 .sv-cbar-actions button {

@@ -57,6 +57,13 @@ CREATE INDEX attachments_by_sha    ON attachments(sha256);
 -- Watch events carry the whole row (path, name, mime, bytes), not just a path.
 ```
 
+## The comment UI around attachments
+
+- **Mobile: the open bar is the page** (author, 2026-08-09, from the phone: the bar is already as wide as it can realistically be — so stop pretending). On narrow screens the bar has two states, folded-to-chip and full-viewport sheet; the chevron folds back to the reading. Desktop keeps the side bar, and drag-to-resize arrives with it.
+- **Compose**: paste or drop into any compose box — draft or reply — uploads immediately and inserts the token at the cursor (`![name](att:<sha8>)`); a chip row under the box shows what rides the comment, with remove. Every upload attaches whether or not its token survives editing; tokens control *placement*, not membership.
+- **Cards**: image tokens render as thumbnails where they sit, tap for full size through `/f/`; non-image attachments wear a file chip — name, size — tap to open. Attachments without a token trail the body.
+- Bodies stay plain text otherwise — the token is the one markup the card interprets (markdown-shaped so bodies can graduate later).
+
 ## Goal — blessed by the author, 2026-08-09 (thread 33)
 
 v3 is done when every item on the In list above is accepted by the author — through this page's own machinery — and **0.3.0 is on crates.io**.

@@ -294,7 +294,11 @@ es.addEventListener('block', (e) => {
 
 es.addEventListener('threads', (e) => {
   const ev = JSON.parse(e.data);
-  state.conversations.set(ev.page, { threads: ev.threads, comments: ev.comments });
+  state.conversations.set(ev.page, {
+    threads: ev.threads,
+    comments: ev.comments,
+    attachments: ev.attachments || [],
+  });
   if (ev.page === state.selected) scheduleConversation();
 });
 
@@ -738,7 +742,9 @@ import('/assets/vendor/vue.esm-browser.prod.js')
   .catch((e) => console.warn('sideview: comment bar disabled (vue failed to load)', e));
 
 function conversation() {
-  return state.conversations.get(state.selected) || { threads: [], comments: [] };
+  return (
+    state.conversations.get(state.selected) || { threads: [], comments: [], attachments: [] }
+  );
 }
 
 // FNV-1a 64 over the whitespace-normalized text, low 48 bits as 12 hex —
@@ -826,6 +832,7 @@ function syncConversation() {
   svc.page = state.selected;
   svc.threads = conv.threads;
   svc.comments = conv.comments;
+  svc.attachments = conv.attachments || [];
   const attach = {};
   for (const t of conv.threads) attach[t.id] = !!resolveAnchor(t);
   svc.attach = attach;
@@ -851,7 +858,7 @@ function setResolution(threadId, undo) {
 
 function mountCommentBar() {
   const { createApp, reactive, computed, watchEffect, nextTick } = vue;
-  svc = reactive({ page: null, threads: [], comments: [], attach: {}, drafts: [] });
+  svc = reactive({ page: null, threads: [], comments: [], attachments: [], attach: {}, drafts: [] });
 
   // Layout classes live on body so the CSS grid can breathe around the bar.
   // Open/closed mirrors the rail: the viewer's fold is remembered per page;
@@ -904,16 +911,104 @@ function mountCommentBar() {
         try { await postComment(payload); after && after(); }
         catch (e) { error.msg = String(e.message || e); }
       };
+      // ---- attachments: paste/drop into any compose box (V3.sv's plan) ----
+      // Uploads happen immediately; the token controls placement, membership
+      // is the chip row. Every upload attaches whether or not its token
+      // survives editing.
+      const replyAtts = reactive({});
+      const rAtts = (id) => (replyAtts[id] || (replyAtts[id] = []));
+      const attToken = (a) => `![${a.name}](att:${a.sha256.slice(0, 8)})`;
+      const uploadOne = async (file) => {
+        const res = await fetch(
+          '/api/attachments?name=' + encodeURIComponent(file.name || 'pasted'),
+          { method: 'POST', body: file }
+        );
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      };
+      const composeFiles = async (e, bucket, get, set) => {
+        const files = [...((e.clipboardData || e.dataTransfer)?.files || [])];
+        if (!files.length) return; // plain text paste stays native
+        e.preventDefault();
+        const el = e.target;
+        for (const f of files) {
+          try {
+            const a = await uploadOne(f);
+            bucket.push(a);
+            const text = get() || '';
+            const pos =
+              el && typeof el.selectionStart === 'number' ? el.selectionStart : text.length;
+            set(text.slice(0, pos) + attToken(a) + text.slice(pos));
+          } catch (err) {
+            error.msg = String(err.message || err);
+          }
+        }
+      };
+      const draftFiles = (e, d) => composeFiles(e, d.atts, () => d.text, (v) => { d.text = v; });
+      const replyFiles = (e, t) =>
+        composeFiles(e, rAtts(t.id), () => replies[t.id], (v) => { replies[t.id] = v; });
+      // The mobile road in: no clipboard image, no drag — the native picker.
+      const filePick = (kind, obj) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.onchange = () => {
+          const fake = { clipboardData: { files: input.files }, preventDefault() {}, target: null };
+          if (kind === 'd') draftFiles(fake, obj);
+          else replyFiles(fake, obj);
+        };
+        input.click();
+      };
+      const dropAtt = (bucket, a, get, set) => {
+        bucket.splice(bucket.indexOf(a), 1);
+        set((get() || '').replaceAll(attToken(a), ''));
+      };
+      const kb = (n) => (n < 1024 ? n + ' B' : Math.max(1, Math.round(n / 1024)) + ' KB');
+
+      // Body rendering: plain text except the one token the card interprets.
+      // Tokenize the raw body first, escape the text between, so names and
+      // bodies can hold anything; attachments whose token was edited away
+      // trail the body.
+      const esc = (s) =>
+        s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+      const fUrl = (p) => '/f/' + p.split('/').map(encodeURIComponent).join('/');
+      const attHtml = (a) =>
+        a.mime.startsWith('image/')
+          ? `<a class="sv-att-link" href="${fUrl(a.path)}" target="_blank" rel="noopener">` +
+            `<img class="sv-att-img" src="${fUrl(a.path)}" alt="${esc(a.name)}" loading="lazy"></a>`
+          : `<a class="sv-att-chip" href="${fUrl(a.path)}" target="_blank" rel="noopener">` +
+            `${esc(a.name)} <span>${kb(a.bytes)}</span></a>`;
+      const bodyHtml = (c) => {
+        const atts = svc.attachments.filter((a) => a.comment_id === c.id);
+        const re = /!\[([^\]\n]*)\]\(att:([0-9a-f]{8})\)/g;
+        const used = new Set();
+        let out = '', last = 0, m;
+        while ((m = re.exec(c.body))) {
+          out += esc(c.body.slice(last, m.index));
+          const a = atts.find((x) => x.sha256.startsWith(m[2]) && !used.has(x.id));
+          if (a) { used.add(a.id); out += attHtml(a); } else { out += esc(m[0]); }
+          last = m.index + m[0].length;
+        }
+        out += esc(c.body.slice(last));
+        for (const a of atts) if (!used.has(a.id)) out += attHtml(a);
+        return out;
+      };
+
       const reply = (t) => {
         const body = (replies[t.id] || '').trim();
-        if (!body) return;
-        send({ thread: t.id, body }, () => { replies[t.id] = ''; });
+        const atts = rAtts(t.id);
+        if (!body && !atts.length) return;
+        send({ thread: t.id, body: body || '(attachment)', attachments: atts }, () => {
+          replies[t.id] = '';
+          replyAtts[t.id] = [];
+        });
       };
       const sendDraft = (d) => {
-        if (!d.text.trim()) return;
+        if (!d.text.trim() && !d.atts.length) return;
         send(
           { page: d.page, target: d.target, anchor: d.anchor,
-            quote: d.quote || null, context: d.context || null, body: d.text.trim() },
+            quote: d.quote || null, context: d.context || null,
+            body: d.text.trim() || '(attachment)', attachments: d.atts },
           () => { svc.drafts = svc.drafts.filter((x) => x !== d); }
         );
       };
@@ -923,6 +1018,10 @@ function mountCommentBar() {
       return {
         svc, draftsHere, open, resolved, collapsed, replies, error,
         commentsFor, lastAuthor, sentPending, fmt, jump, reply, sendDraft,
+        rAtts, draftFiles, replyFiles, bodyHtml,
+        removeDraftAtt: (d, a) => dropAtt(d.atts, a, () => d.text, (v) => { d.text = v; }),
+        removeReplyAtt: (t, a) =>
+          dropAtt(rAtts(t.id), a, () => replies[t.id], (v) => { replies[t.id] = v; }),
         attach: computed(() => svc.attach),
         resolve: (t) => setResolution(t.id, false),
         reopen: (t) => setResolution(t.id, true),
@@ -943,11 +1042,21 @@ function mountCommentBar() {
 
         <div v-for="d in draftsHere" :key="d.key" class="sv-cbar-card sv-cbar-draft">
           <blockquote v-if="d.quote">{{ d.quote }}</blockquote>
-          <textarea v-model="d.text" rows="3" placeholder="Comment…" :data-draft="d.key"
+          <textarea v-model="d.text" rows="3" placeholder="Comment… (paste or drop files)"
+                    :data-draft="d.key"
+                    @paste="draftFiles($event, d)"
+                    @drop.prevent="draftFiles($event, d)" @dragover.prevent
                     @keydown.meta.enter="sendDraft(d)" @keydown.ctrl.enter="sendDraft(d)"
                     @keydown.esc="cancelDraft(d)"></textarea>
+          <div v-if="d.atts.length" class="sv-att-row">
+            <span v-for="a in d.atts" :key="a.sha256 + a.name" class="sv-att-pending">{{ a.name }}
+              <button type="button" aria-label="remove attachment"
+                      @click="removeDraftAtt(d, a)">×</button></span>
+          </div>
           <div class="sv-cbar-actions">
             <button type="button" @click="sendDraft(d)">comment</button>
+            <button type="button" class="sv-quiet" @click="filePick('d', d)"
+                    title="attach files — paste and drop work too">attach</button>
             <button type="button" class="sv-quiet" @click="cancelDraft(d)">cancel</button>
           </div>
         </div>
@@ -969,16 +1078,25 @@ function mountCommentBar() {
             <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
               <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
                 {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
-              <div class="sv-comment-body">{{ c.body }}</div>
+              <div class="sv-comment-body" v-html="bodyHtml(c)"></div>
             </div>
             <div v-if="t.working_at" class="sv-status sv-working"
                  title="the agent marked this as in progress">working…</div>
             <div v-else-if="sentPending(t.id)" class="sv-status"
                  title="delivered — the server has it; an agent hasn't necessarily read it yet">sent</div>
-            <textarea v-model="replies[t.id]" rows="1" placeholder="Reply…"
+            <textarea v-model="replies[t.id]" rows="1" placeholder="Reply… (paste or drop files)"
+                      @paste="replyFiles($event, t)"
+                      @drop.prevent="replyFiles($event, t)" @dragover.prevent
                       @keydown.meta.enter="reply(t)" @keydown.ctrl.enter="reply(t)"></textarea>
+            <div v-if="rAtts(t.id).length" class="sv-att-row">
+              <span v-for="a in rAtts(t.id)" :key="a.sha256 + a.name" class="sv-att-pending">{{ a.name }}
+                <button type="button" aria-label="remove attachment"
+                        @click="removeReplyAtt(t, a)">×</button></span>
+            </div>
             <div class="sv-cbar-actions">
               <button type="button" @click="reply(t)">reply</button>
+              <button type="button" class="sv-quiet" @click="filePick('r', t)"
+                      title="attach files — paste and drop work too">attach</button>
               <button type="button" class="sv-quiet" @click="resolve(t)"
                       title="resolve — reopenable below">resolve</button>
             </div>
@@ -996,7 +1114,7 @@ function mountCommentBar() {
             <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
               <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
                 {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
-              <div class="sv-comment-body">{{ c.body }}</div>
+              <div class="sv-comment-body" v-html="bodyHtml(c)"></div>
             </div>
             <div class="sv-cbar-actions">
               <button type="button" class="sv-quiet" @click="reopen(t)">reopen</button>
@@ -1128,6 +1246,7 @@ function startDraft(spot, quote) {
       quote: quote.slice(0, 300),
       context: textOf(spot).trim().slice(0, 500),
       text: '',
+      atts: [],
     });
   }
   getSelection()?.removeAllRanges();
