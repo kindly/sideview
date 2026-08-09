@@ -966,10 +966,10 @@ function mountCommentBar() {
       };
       const kb = (n) => (n < 1024 ? n + ' B' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
-      // Body rendering: plain text except the one token the card interprets.
-      // Tokenize the raw body first, escape the text between, so names and
-      // bodies can hold anything; attachments whose token was edited away
-      // trail the body.
+      // Bodies are markdown, rendered server-side (comrak, safe mode) and
+      // delivered as body_html; the one client job left is resolving att:
+      // image URLs against the comment's own rows. Attachments whose token
+      // was edited away trail the body.
       const esc = (s) =>
         s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
       const fUrl = (p) => '/f/' + p.split('/').map(encodeURIComponent).join('/');
@@ -981,18 +981,16 @@ function mountCommentBar() {
             `${esc(a.name)} <span>${kb(a.bytes)}</span></a>`;
       const bodyHtml = (c) => {
         const atts = svc.attachments.filter((a) => a.comment_id === c.id);
-        const re = /!\[([^\]\n]*)\]\(att:([0-9a-f]{8})\)/g;
         const used = new Set();
-        let out = '', last = 0, m;
-        while ((m = re.exec(c.body))) {
-          out += esc(c.body.slice(last, m.index));
-          const a = atts.find((x) => x.sha256.startsWith(m[2]) && !used.has(x.id));
-          if (a) { used.add(a.id); out += attHtml(a); } else { out += esc(m[0]); }
-          last = m.index + m[0].length;
-        }
-        out += esc(c.body.slice(last));
-        for (const a of atts) if (!used.has(a.id)) out += attHtml(a);
-        return out;
+        let html = c.body_html != null ? c.body_html : esc(c.body); // older-daemon fallback
+        html = html.replace(/<img[^>]*\bsrc="att:([0-9a-f]{8})"[^>]*\/?>/g, (m, sha) => {
+          const a = atts.find((x) => x.sha256.startsWith(sha) && !used.has(x.id));
+          if (!a) return m;
+          used.add(a.id);
+          return attHtml(a);
+        });
+        for (const a of atts) if (!used.has(a.id)) html += attHtml(a);
+        return html;
       };
 
       const reply = (t) => {

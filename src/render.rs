@@ -98,6 +98,20 @@ fn highlighter() -> &'static comrak::plugins::syntect::SyntectAdapter {
     })
 }
 
+/// Comment bodies graduated to markdown (author, 2026-08-09 — the att:
+/// token stopped being private syntax the moment bodies rendered). Safe
+/// mode, unlike prose: a comment comes from whoever can see the page, so
+/// raw HTML is escaped (never omitted — old comments talk *about* tags).
+/// No heading ids: a comment is an utterance, not structure.
+pub fn comment_body(text: &str) -> String {
+    let mut options = comrak_options();
+    options.render.r#unsafe = false;
+    options.render.escape = true;
+    let mut plugins = comrak::options::Plugins::default();
+    plugins.render.codefence_syntax_highlighter = Some(highlighter());
+    comrak::markdown_to_html_with_plugins(text, &options, &plugins)
+}
+
 fn comrak_options() -> comrak::Options<'static> {
     let mut options = comrak::Options::default();
     options.extension.table = true;
@@ -258,6 +272,19 @@ mod tests {
         let page = format::parse(src);
         assert_eq!(page.blocks.len(), 1, "test fixture must be one block");
         page.blocks.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn comment_bodies_render_markdown_safely() {
+        let html = comment_body(
+            "**bold** `code`\n\n<script>alert(1)</script>\n\n![shot](att:aaaaaaaa)",
+        );
+        assert!(html.contains("<strong>bold</strong>"));
+        assert!(html.contains("&lt;script&gt;"), "raw HTML escaped, never omitted");
+        assert!(
+            html.contains(r#"src="att:aaaaaaaa""#),
+            "att: URLs survive safe mode for the client to resolve"
+        );
     }
 
     #[test]

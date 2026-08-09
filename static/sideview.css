@@ -1192,6 +1192,18 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 }
 .sv-cbar-card textarea:focus-visible { outline: 2px solid var(--sv-ink); outline-offset: -1px; }
 
+/* Comment bodies are rendered markdown now — keep its furniture card-sized. */
+.sv-comment-body p { margin: 0 0 0.35rem; }
+.sv-comment-body > :last-child { margin-bottom: 0; }
+.sv-comment-body pre {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.72rem;
+  overflow-x: auto;
+}
+.sv-comment-body ul,
+.sv-comment-body ol { margin: 0 0 0.35rem; padding-left: 1.2rem; }
+.sv-comment-body blockquote { margin: 0.25rem 0; }
+
 /* Attachments in cards: image tokens render where they sit, everything else
    wears a file chip; pending uploads line up under the compose box. */
 .sv-att-img {

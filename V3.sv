@@ -62,7 +62,7 @@ CREATE INDEX attachments_by_sha    ON attachments(sha256);
 - **Mobile: the open bar is the page** (author, 2026-08-09, from the phone: the bar is already as wide as it can realistically be — so stop pretending). On narrow screens the bar has two states, folded-to-chip and full-viewport sheet; the chevron folds back to the reading. Desktop keeps the side bar, and drag-to-resize arrives with it.
 - **Compose**: paste or drop into any compose box — draft or reply — uploads immediately and inserts the token at the cursor (`![name](att:<sha8>)`); a chip row under the box shows what rides the comment, with remove. Every upload attaches whether or not its token survives editing; tokens control *placement*, not membership.
 - **Cards**: image tokens render as thumbnails where they sit, tap for full size through `/f/`; non-image attachments wear a file chip — name, size — tap to open. Attachments without a token trail the body.
-- Bodies stay plain text otherwise — the token is the one markup the card interprets (markdown-shaped so bodies can graduate later).
+- **Bodies graduated to markdown on day one** (author, 2026-08-09 — raw tokens sitting in sent cards made the case the plan predicted): rendered server-side by the same comrak pass as everything, in *safe* mode — raw HTML escaped, never omitted, because a comment comes from whoever can see the page — with `att:` images resolving against the comment's own rows. The compose box stays raw text, preview-on-send; inline WYSIWYG remains the CodeMirror question, decided at the end of this pass.
 
 ## Goal — blessed by the author, 2026-08-09 (thread 33)
 

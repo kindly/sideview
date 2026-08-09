@@ -535,10 +535,21 @@ fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
 /// One page's conversation, serialized for the `threads` SSE event. Sent
 /// whole on every change — page-scale, same reasoning as block replay.
 fn conversation_json(store: &Store, page: &str) -> Result<String> {
+    // Comments travel rendered (body_html) beside their source: the card
+    // shows comrak's safe-mode markdown, agents keep reading raw bodies.
+    let comments: Vec<serde_json::Value> = store
+        .comments_for_page(page)?
+        .into_iter()
+        .map(|c| {
+            let mut v = serde_json::to_value(&c).expect("comment serializes");
+            v["body_html"] = serde_json::Value::String(crate::render::comment_body(&c.body));
+            v
+        })
+        .collect();
     Ok(serde_json::json!({
         "page": page,
         "threads": store.threads_for_page(page)?,
-        "comments": store.comments_for_page(page)?,
+        "comments": comments,
         "attachments": store.attachments_for_page(page)?,
     })
     .to_string())
@@ -1234,6 +1245,7 @@ mod tests {
             assert_eq!(atts[0].path, rel);
             let json = conversation_json(&store, "v3").unwrap();
             assert!(json.contains("\"attachments\""), "snapshot carries the third list");
+            assert!(json.contains("\"body_html\""), "comments travel rendered beside their source");
         }
 
         // A fabricated path — a real project file — is refused before it can
