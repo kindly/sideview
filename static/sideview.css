@@ -128,10 +128,8 @@ body.sv-resizing .sv-grip::before { background: var(--sv-ink); }
 }
 /* A collapsed rail has no width to drag. */
 #sv-outline.collapsed ~ #sv-rail-grip { display: none; }
-/* While dragging: no text selection. (The transition suppression lives with
-   the sv-anim rules further down — at equal specificity the later rule wins,
-   and putting it here let the animation beat it. Second time this file has
-   taught that lesson; see thread 35 in HANDOFF.) */
+/* While dragging: no text selection. (Nothing to suppress beyond that —
+   layout no longer eases at all; see the note by the content column.) */
 body.sv-resizing { user-select: none; }
 
 /* Mobile browsers inflate text they judge too small (WebKit/Chrome text
@@ -835,12 +833,11 @@ body {
 body.sv-rail {
   padding-left: var(--sv-rail-w);
 }
-/* Only deliberate changes ease; the first arrangement lands instantly. */
-body.sv-anim { transition: padding-left 0.18s ease; }
-/* …and a drag is not an animation: the column tracks the handle exactly.
-   These must stay AFTER the sv-anim rules to win. */
-body.sv-resizing.sv-anim,
-body.sv-resizing { transition: none; }
+/* No layout easing anywhere (author, thread 37: the bar collapsed instantly
+   while the rail eased — either is fine, consistent is not optional). Both
+   panels now appear, fold and resize instantly, which also retires three
+   bugs at once: the first-paint slide, the drag lag, and the ordering trap
+   that let an ease beat its own suppression. */
 
 body.sv-rail.sv-rail-collapsed {
   padding-left: var(--sv-rail-collapsed-w);
@@ -860,11 +857,7 @@ body.sv-rail.sv-rail-collapsed {
   overflow-x: hidden;
   scrollbar-width: thin;
 }
-/* Folding eases; appearing does not — same rule as the content column. */
-body.sv-anim #sv-outline { transition: width 0.18s ease, padding 0.18s ease; }
-/* After it, so a drag beats the ease: the rail's edge follows the handle. */
-body.sv-resizing.sv-anim #sv-outline,
-body.sv-resizing #sv-outline { transition: none; }
+/* The rail folds instantly too — see the note by the content column. */
 
 body.sv-rail #sv-outline { display: block; }
 

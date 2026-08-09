@@ -481,15 +481,6 @@ function refreshOutline() {
   }
 
   document.body.classList.toggle('sv-rail', hasRail);
-  // The rail's existence is only known once blocks arrive, so the column's
-  // first shift is layout settling, not a change worth animating — easing it
-  // reads as the page sliding out from under you (author, thread 37).
-  // Transitions turn on one frame after the first arrangement.
-  if (!document.body.classList.contains('sv-anim')) {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => document.body.classList.add('sv-anim'))
-    );
-  }
   const open = railOpen();
   document.body.classList.toggle('sv-rail-collapsed', hasRail && !open);
   $outline.classList.toggle('collapsed', !open);
