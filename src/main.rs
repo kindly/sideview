@@ -175,6 +175,11 @@ enum Cmd {
         #[command(subcommand)]
         action: SkillCmd,
     },
+    /// Comment-attachment housekeeping
+    Attachments {
+        #[command(subcommand)]
+        action: AttachmentsCmd,
+    },
     /// Run the daemon in this process (internal; used by auto-start)
     #[command(name = "__daemon", hide = true)]
     InternalDaemon {
@@ -238,6 +243,20 @@ enum SessionCmd {
         id: Option<String>,
         #[command(flatten)]
         author: AuthorArgs,
+    },
+}
+
+#[derive(Subcommand)]
+enum AttachmentsCmd {
+    /// Collect attachment files nothing references — checked against live
+    /// conversation and every current page's content. Deliberate, never a
+    /// daemon habit; its writ never leaves .sideview/attachments/
+    Gc {
+        /// Also collect attachments held only by resolved threads (their
+        /// rows go with the files). Never the default: resolved
+        /// conversation is folded, not gone
+        #[arg(long)]
+        resolved: bool,
     },
 }
 
@@ -330,6 +349,9 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Styles) => cli::styles(),
         Some(Cmd::Reset) => cli::reset(),
+        Some(Cmd::Attachments { action: AttachmentsCmd::Gc { resolved } }) => {
+            cli::attachments_gc(resolved)
+        }
         Some(Cmd::Skill { action: SkillCmd::Install { repo, agent } }) => {
             skill::install(repo, agent.as_deref())
         }

@@ -106,6 +106,26 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE threads ADD COLUMN working_at INTEGER;
     ALTER TABLE threads ADD COLUMN working_by TEXT;
     "#,
+    // v4: comment attachments — metadata in the db, bytes on disk (V3.sv's
+    // model, author 2026-08-09). Rows are born when the comment is sent,
+    // never at upload: a canceled draft leaves only an unreferenced file for
+    // gc, not a dangling row. The FK cascade clears rows when conversation
+    // goes; the daemon deletes the files it queried first — SQL cannot
+    // unlink from disk, and `attachments gc` backstops it.
+    r#"
+    CREATE TABLE attachments(
+        id         INTEGER PRIMARY KEY,
+        comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+        path       TEXT NOT NULL,     -- project-relative: .sideview/attachments/<sha8>/<name>
+        name       TEXT NOT NULL,     -- original filename, sanitized; kept for the agent's sake
+        mime       TEXT NOT NULL,     -- sniffed at upload, never trusted from the client
+        bytes      INTEGER NOT NULL,  -- the cap is enforced at upload, recorded here
+        sha256     TEXT NOT NULL,     -- integrity and the dedupe key: same bytes, one file
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX attachments_by_comment ON attachments(comment_id);
+    CREATE INDEX attachments_by_sha ON attachments(sha256);
+    "#,
 ];
 
 pub fn now_ms() -> i64 {
@@ -210,6 +230,42 @@ pub struct Comment {
     pub seen_by: Option<String>,
 }
 
+/// A file riding a comment: metadata here, bytes on disk (V3.sv). The
+/// serialized shape doubles as the watch-event and snapshot JSON.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Attachment {
+    pub id: i64,
+    pub comment_id: i64,
+    pub path: String,
+    pub name: String,
+    pub mime: String,
+    pub bytes: i64,
+    pub sha256: String,
+    pub created_at: i64,
+}
+
+/// What the upload endpoint hands back and the comment send binds: the row
+/// minus the identities the insert assigns.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct NewAttachment {
+    pub path: String,
+    pub name: String,
+    pub mime: String,
+    pub bytes: i64,
+    pub sha256: String,
+}
+
+/// The confinement check every consumer of a stored attachment path shares:
+/// gc's writ, page rm's unlink and the comment binding all refuse anything
+/// outside `.sideview/attachments/` — a row naming `src/main.rs` must never
+/// become a deletion of `src/main.rs`.
+pub fn is_attachment_path(rel: &str) -> bool {
+    rel.starts_with(ATTACHMENTS_PREFIX)
+        && !rel.split('/').any(|seg| seg == ".." || seg.is_empty())
+}
+pub const ATTACHMENTS_DIR: &str = "attachments";
+pub const ATTACHMENTS_PREFIX: &str = ".sideview/attachments/";
+
 const GEN_KEY: &str = "conversation_gen";
 
 /// The bump half of the atomicity contract: only ever called inside the
@@ -259,6 +315,45 @@ fn comment_row(r: &rusqlite::Row) -> rusqlite::Result<Comment> {
         seen_at: r.get(5)?,
         seen_by: r.get(6)?,
     })
+}
+
+const ATTACHMENT_COLS: &str = "attachments.id, attachments.comment_id, attachments.path, \
+     attachments.name, attachments.mime, attachments.bytes, attachments.sha256, attachments.created_at";
+
+fn attachment_row(r: &rusqlite::Row) -> rusqlite::Result<Attachment> {
+    Ok(Attachment {
+        id: r.get(0)?,
+        comment_id: r.get(1)?,
+        path: r.get(2)?,
+        name: r.get(3)?,
+        mime: r.get(4)?,
+        bytes: r.get(5)?,
+        sha256: r.get(6)?,
+        created_at: r.get(7)?,
+    })
+}
+
+/// Rows are born with the comment, inside its transaction — never at upload.
+/// The confinement check here is load-bearing: a stored path later becomes a
+/// deletion (page rm, gc), so nothing outside the attachments home may ever
+/// be recorded as one.
+fn insert_attachments(
+    tx: &rusqlite::Transaction,
+    comment_id: i64,
+    items: &[NewAttachment],
+    now: i64,
+) -> Result<()> {
+    for a in items {
+        if !is_attachment_path(&a.path) {
+            anyhow::bail!("attachment path {:?} is outside {}", a.path, ATTACHMENTS_PREFIX);
+        }
+        tx.execute(
+            "INSERT INTO attachments(comment_id, path, name, mime, bytes, sha256, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![comment_id, a.path, a.name, a.mime, a.bytes, a.sha256, now],
+        )?;
+    }
+    Ok(())
 }
 
 pub struct Store {
@@ -360,18 +455,61 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// Drop a binding and its conversation — threads cascade their comments,
-    /// and `page rm` is the one place conversation is destroyed on purpose.
-    /// Returns whether a binding existed; deleting the file is the caller's
-    /// job (the binding is bookkeeping; the file is the content).
+    /// Drop a binding and its conversation — threads cascade their comments
+    /// and those cascade their attachment rows; `page rm` is the one place
+    /// conversation is destroyed on purpose. Attachment *files* the cascade
+    /// orphaned are unlinked afterwards (deduped files shared with another
+    /// page's conversation survive — a remaining row protects its bytes).
+    /// Returns whether a binding existed; deleting the page file is the
+    /// caller's job (the binding is bookkeeping; the file is the content).
     pub fn delete_binding(&mut self, id: &str) -> Result<bool> {
+        let paths: Vec<String> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT DISTINCT attachments.path FROM attachments
+                 JOIN comments ON comments.id = attachments.comment_id
+                 JOIN threads ON threads.id = comments.thread_id
+                 WHERE threads.page = ?1",
+            )?;
+            let rows = stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            rows
+        };
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute("DELETE FROM threads WHERE page = ?1", [id])?;
         tx.execute("DELETE FROM outlines WHERE page = ?1", [id])?;
         let n = tx.execute("DELETE FROM bindings WHERE id = ?1", [id])?;
         bump_gen(&tx)?;
         tx.commit()?;
+        for p in paths {
+            if !self.attachment_path_in_use(&p)? {
+                self.unlink_attachment(&p);
+            }
+        }
         Ok(n > 0)
+    }
+
+    /// Does any remaining row reference this attachment path?
+    pub fn attachment_path_in_use(&self, path: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM attachments WHERE path = ?1",
+            [path],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Unlink an attachment file and prune its hash directory if emptied.
+    /// Confinement first — this is the only place the store deletes a file
+    /// it was merely *told* about. Best-effort: a missing file is not an
+    /// error (gc backstops the other direction).
+    pub fn unlink_attachment(&self, rel: &str) {
+        if !is_attachment_path(rel) {
+            return;
+        }
+        let abs = self.root.join(rel);
+        let _ = std::fs::remove_file(&abs);
+        if let Some(dir) = abs.parent() {
+            let _ = std::fs::remove_dir(dir); // only succeeds when empty
+        }
     }
 
     /// Move a binding's page file path — `page promote` is the only caller;
@@ -403,6 +541,7 @@ impl Store {
         context: Option<&str>,
         body: &str,
         author: Option<&str>,
+        attachments: &[NewAttachment],
     ) -> Result<(i64, i64)> {
         let now = now_ms();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -417,6 +556,7 @@ impl Store {
             rusqlite::params![thread_id, body, author, now],
         )?;
         let comment_id = tx.last_insert_rowid();
+        insert_attachments(&tx, comment_id, attachments, now)?;
         bump_gen(&tx)?;
         tx.commit()?;
         Ok((thread_id, comment_id))
@@ -424,14 +564,22 @@ impl Store {
 
     /// Add a comment to an existing thread. The foreign key makes a reply to
     /// a nonexistent thread an error, not a silent orphan row.
-    pub fn reply(&mut self, thread_id: i64, body: &str, author: Option<&str>) -> Result<i64> {
+    pub fn reply(
+        &mut self,
+        thread_id: i64,
+        body: &str,
+        author: Option<&str>,
+        attachments: &[NewAttachment],
+    ) -> Result<i64> {
+        let now = now_ms();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
             "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![thread_id, body, author, now_ms()],
+            rusqlite::params![thread_id, body, author, now],
         )
         .with_context(|| format!("no thread {thread_id}?"))?;
         let id = tx.last_insert_rowid();
+        insert_attachments(&tx, id, attachments, now)?;
         // An agent's reply is the work arriving: the working marker retires.
         if author == Some("agent") {
             tx.execute("UPDATE threads SET working_at = NULL, working_by = NULL WHERE id = ?1", [thread_id])?;
@@ -508,6 +656,59 @@ impl Store {
         ))?;
         let rows = stmt.query_map([page], comment_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+
+    /// All attachments riding a page's conversation — the snapshot's third
+    /// list, keyed client-side by comment_id.
+    pub fn attachments_for_page(&self, page: &str) -> Result<Vec<Attachment>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {ATTACHMENT_COLS} FROM attachments
+             JOIN comments ON comments.id = attachments.comment_id
+             JOIN threads ON threads.id = comments.thread_id
+             WHERE threads.page = ?1 ORDER BY attachments.id ASC"
+        ))?;
+        let rows = stmt.query_map([page], attachment_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn attachments_for_comment(&self, comment_id: i64) -> Result<Vec<Attachment>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {ATTACHMENT_COLS} FROM attachments WHERE comment_id = ?1 ORDER BY id ASC"
+        ))?;
+        let rows =
+            stmt.query_map([comment_id], attachment_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// gc's view: every referenced path, and whether *any* reference hangs
+    /// off an open thread. A path referenced only by resolved threads is
+    /// what --resolved widens to.
+    pub fn attachment_refs(&self) -> Result<Vec<(String, bool)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT attachments.path,
+                    MAX(CASE WHEN threads.resolved_at IS NULL THEN 1 ELSE 0 END)
+             FROM attachments
+             JOIN comments ON comments.id = attachments.comment_id
+             JOIN threads ON threads.id = comments.thread_id
+             GROUP BY attachments.path",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? > 0)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Drop every attachment row on this path (the --resolved half of gc:
+    /// the file goes, so the rows must not dangle). Bumps the counter — open
+    /// bars lose the thumbnails live.
+    pub fn delete_attachment_rows(&mut self, path: &str) -> Result<usize> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let n = tx.execute("DELETE FROM attachments WHERE path = ?1", [path])?;
+        if n > 0 {
+            bump_gen(&tx)?;
+        }
+        tx.commit()?;
+        Ok(n)
     }
 
     // ---- the watch queries: cursors, claims, and resolve transitions -------
@@ -844,26 +1045,26 @@ mod tests {
     fn threads_carry_placement_and_comments_are_utterances() {
         let mut store = test_store();
         let (t1, c1) = store
-            .create_thread("v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None)
+            .create_thread("v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None, &[])
             .unwrap();
-        let c2 = store.reply(t1, "second thoughts", None).unwrap();
+        let c2 = store.reply(t1, "second thoughts", None, &[]).unwrap();
         assert!(c2 > c1);
         let threads = store.threads_for_page("v2").unwrap();
         assert_eq!(threads.len(), 1);
         assert_eq!(threads[0].quote.as_deref(), Some("the paragraph…"));
         let comments = store.comments_for_page("v2").unwrap();
         assert_eq!(comments.len(), 2, "replies join their thread, not a new one");
-        assert!(store.reply(999, "into the void", None).is_err(), "FK: no orphan utterances");
+        assert!(store.reply(999, "into the void", None, &[]).is_err(), "FK: no orphan utterances");
     }
 
     #[test]
     fn threads_succeed_each_other_at_an_anchor_and_resolve_is_undoable() {
         let mut store = test_store();
-        let (t1, _) = store.create_thread("v2", "b3", "", None, None, "first concern", None).unwrap();
+        let (t1, _) = store.create_thread("v2", "b3", "", None, None, "first concern", None, &[]).unwrap();
         assert!(store.resolve_thread(t1, None, false).unwrap());
         assert!(!store.resolve_thread(t1, None, false).unwrap(), "already resolved: no-op");
         // A fresh thread at the same spot — no uniqueness in the way…
-        let (t2, _) = store.create_thread("v2", "b3", "", None, None, "new concern", None).unwrap();
+        let (t2, _) = store.create_thread("v2", "b3", "", None, None, "new concern", None, &[]).unwrap();
         assert_ne!(t1, t2);
         // …and unresolving the first can never fail on an index.
         assert!(store.resolve_thread(t1, None, true).unwrap());
@@ -874,6 +1075,83 @@ mod tests {
             .filter(|t| t.resolved_at.is_none())
             .collect();
         assert_eq!(open.len(), 2);
+    }
+
+    #[test]
+    fn attachments_ride_comments_and_files_die_with_their_last_reference() {
+        let mut store = test_store();
+        store.bind_session("v3", "V3.sv", "/tmp", "test").unwrap();
+        store.bind_session("other", "O.sv", "/tmp", "test").unwrap();
+        let rel = format!("{ATTACHMENTS_PREFIX}aaaaaaaa/shot.png");
+        let abs = store.root.join(&rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, b"png-bytes").unwrap();
+        let a = NewAttachment {
+            path: rel.clone(),
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            bytes: 9,
+            sha256: "aa".into(),
+        };
+        let (_, c1) =
+            store.create_thread("v3", "b1", "", None, None, "see", None, &[a.clone()]).unwrap();
+        assert_eq!(store.attachments_for_comment(c1).unwrap().len(), 1);
+        assert_eq!(store.attachments_for_page("v3").unwrap().len(), 1);
+
+        // Deduped file shared with another page's conversation: the first
+        // page's death must not take bytes a remaining row still protects.
+        store.create_thread("other", "b1", "", None, None, "also", None, &[a.clone()]).unwrap();
+        store.delete_binding("v3").unwrap();
+        assert!(abs.exists(), "a remaining row protects its bytes");
+        store.delete_binding("other").unwrap();
+        assert!(!abs.exists(), "last reference gone: the file goes with the conversation");
+
+        // Confinement: a row is a future deletion, so nothing outside the
+        // attachments home may ever be recorded as one.
+        let evil = NewAttachment { path: "src/main.rs".into(), ..a };
+        assert!(store.create_thread("v3", "b1", "", None, None, "x", None, &[evil]).is_err());
+    }
+
+    #[test]
+    fn attachment_paths_are_confined_and_unlink_refuses_to_leave_home() {
+        assert!(is_attachment_path(".sideview/attachments/ab12cd34/x.png"));
+        assert!(!is_attachment_path(".sideview/attachments/../../etc/passwd"));
+        assert!(!is_attachment_path("src/main.rs"));
+        assert!(!is_attachment_path("/etc/passwd"));
+        let store = test_store();
+        let outside = store.root.join("keep.txt");
+        std::fs::write(&outside, "canon").unwrap();
+        store.unlink_attachment("keep.txt");
+        assert!(outside.exists(), "unlink never leaves .sideview/attachments/");
+    }
+
+    #[test]
+    fn attachment_refs_tell_open_holders_from_resolved_only() {
+        let mut store = test_store();
+        let rel = format!("{ATTACHMENTS_PREFIX}bbbbbbbb/data.csv");
+        let a = NewAttachment {
+            path: rel.clone(),
+            name: "data.csv".into(),
+            mime: "text/csv".into(),
+            bytes: 4,
+            sha256: "bb".into(),
+        };
+        let (t1, _) =
+            store.create_thread("v3", "b1", "", None, None, "csv", None, &[a.clone()]).unwrap();
+        store.resolve_thread(t1, None, false).unwrap();
+        assert_eq!(
+            store.attachment_refs().unwrap(),
+            vec![(rel.clone(), false)],
+            "held only by a resolved thread — what --resolved widens to"
+        );
+        store.create_thread("v3", "b2", "", None, None, "again", None, &[a]).unwrap();
+        assert_eq!(
+            store.attachment_refs().unwrap(),
+            vec![(rel.clone(), true)],
+            "any open holder protects the path outright"
+        );
+        assert_eq!(store.delete_attachment_rows(&rel).unwrap(), 2);
+        assert!(store.attachment_refs().unwrap().is_empty());
     }
 
     #[test]
@@ -889,9 +1167,9 @@ mod tests {
             }
             last = g;
         };
-        let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None).unwrap();
+        let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None, &[]).unwrap();
         step(&store, "create_thread", true);
-        store.reply(t, "again", None).unwrap();
+        store.reply(t, "again", None, &[]).unwrap();
         step(&store, "reply", true);
         store.resolve_thread(t, None, false).unwrap();
         step(&store, "resolve", true);
@@ -910,7 +1188,7 @@ mod tests {
     fn claims_are_exactly_once_and_page_rm_cascades_conversation() {
         let mut store = test_store();
         store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
-        let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None).unwrap();
+        let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None, &[]).unwrap();
         assert!(store.claim_comment(c1, "watch:1").unwrap());
         assert!(!store.claim_comment(c1, "watch:2").unwrap(), "second watcher sees zero rows");
         assert_eq!(store.comments_after(0).unwrap().len(), 1);

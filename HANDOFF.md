@@ -6,6 +6,16 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v3 underway, 2026-08-09 — the attachments backend is in** (same day the author curated
+V3.sv through the page and blessed its goal). Migration v4 (the `attachments` table —
+metadata in db, bytes on disk, V3.sv's model verbatim), the raw-bytes upload endpoint
+(sniffed mime, sha-addressed dedupe, 20MB cap), rows born at comment-send with a
+confinement check that keeps every stored path inside `.sideview/attachments/` (a row is a
+future deletion), watch events and the threads snapshot carrying whole rows, `page rm`
+cascading files with a shared-file guard, and `sideview attachments gc [--resolved]` per
+the lifecycle law. 50 tests; the loop smoke-tested live end to end. UI half (compose
+tokens, card redesign, resizable bar) is next.
+
 **0.2.1, 2026-08-09** — a same-day patch: 0.2.0's new global `--project <dir>` shared a clap
 arg id with `skill install --project` (bool), globals propagate into subcommands, and clap
 panics on the typed access — so every `skill install` died on arrival. The subcommand flag is

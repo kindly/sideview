@@ -558,7 +558,7 @@ pub fn comment(
                     bail!("thread {tid} is on page {:?}, not {p:?} — wrong project?", t.page);
                 }
             }
-            store.reply(tid, body, Some("agent"))?;
+            store.reply(tid, body, Some("agent"), &[])?;
             tid
         }
         (None, Some(target)) => {
@@ -576,6 +576,7 @@ pub fn comment(
                 None,
                 body,
                 Some("agent"),
+                &[],
             )?;
             tid
         }
@@ -727,6 +728,10 @@ pub fn watch(
                     "body": c.body,
                     "author": c.author,
                     "created_at": c.created_at,
+                    // The whole rows (path, name, mime, bytes), so an agent
+                    // can decide whether to pull a 2KB csv or leave a 200MB
+                    // parquet unread without touching either.
+                    "attachments": store.attachments_for_comment(c.id)?,
                 });
                 writeln!(out, "{line}")?;
                 out.flush()?;
@@ -761,6 +766,84 @@ pub fn watch(
         }
         std::thread::sleep(Duration::from_millis(250));
     }
+}
+
+/// `sideview attachments gc` — the deliberate cleanup verb (V3.sv's
+/// lifecycle law; a startup auto-sweep was considered and dropped, because
+/// after the resurrection test it would silently take everything). Default:
+/// delete only files referenced by no row *and* no current page's content.
+/// --resolved widens to files held only by resolved threads. Its writ never
+/// leaves `.sideview/attachments/`.
+pub fn attachments_gc(resolved: bool) -> Result<()> {
+    let mut store = open_project_store()?;
+    let home = store.dir.join(store::ATTACHMENTS_DIR);
+
+    let mut on_disk: Vec<String> = Vec::new();
+    let mut stack = vec![home.clone()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if let Ok(rel) = p.strip_prefix(&store.root) {
+                on_disk.push(rel.to_string_lossy().to_string());
+            }
+        }
+    }
+    if on_disk.is_empty() {
+        println!("nothing in {}", home.display());
+        return Ok(());
+    }
+    on_disk.sort();
+
+    let refs: std::collections::HashMap<String, bool> =
+        store.attachment_refs()?.into_iter().collect();
+    // Every current page's raw content — the backstop that protects a file a
+    // page references directly, and names it as mis-homed while doing so.
+    let pages: Vec<(String, String)> = store
+        .bindings()?
+        .into_iter()
+        .filter_map(|b| std::fs::read_to_string(store.root.join(&b.path)).ok().map(|s| (b.id, s)))
+        .collect();
+
+    let (mut collected, mut freed) = (0u64, 0u64);
+    let (mut open_held, mut resolved_held) = (0u64, 0u64);
+    for rel in on_disk {
+        let in_page = pages.iter().find(|(_, src)| src.contains(&rel)).map(|(id, _)| id.clone());
+        let take = match (refs.get(&rel), &in_page) {
+            (_, Some(page)) => {
+                println!("kept: {rel} — referenced by page {page:?} but owned by conversation; promote it into the page's own home");
+                false
+            }
+            (Some(true), None) => {
+                open_held += 1;
+                false
+            }
+            (Some(false), None) => {
+                if resolved {
+                    store.delete_attachment_rows(&rel)?;
+                    true
+                } else {
+                    resolved_held += 1;
+                    false
+                }
+            }
+            (None, None) => true, // nothing anywhere: a canceled draft, or conversation that died
+        };
+        if take {
+            freed += std::fs::metadata(store.root.join(&rel)).map(|m| m.len()).unwrap_or(0);
+            store.unlink_attachment(&rel);
+            collected += 1;
+            println!("collected {rel}");
+        }
+    }
+    println!(
+        "{collected} file(s) collected ({} KB freed); {open_held} held by open threads; {resolved_held} held only by resolved threads{}",
+        freed / 1024,
+        if resolved_held > 0 { " (widen with --resolved)" } else { "" }
+    );
+    Ok(())
 }
 
 pub fn sessions() -> Result<()> {

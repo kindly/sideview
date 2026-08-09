@@ -221,6 +221,9 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
         let mut server = HttpServer::new(move || {
             App::new()
                 .app_data(server_state.clone())
+                // The Bytes extractor's ceiling — this is the attachment
+                // size cap (413 past it), and nothing else reads raw bodies.
+                .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
                 .route("/", web::get().to(page))
                 .route("/s/{session}", web::get().to(page))
                 .route("/events", web::get().to(events))
@@ -228,6 +231,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 // The old noun, one release of grace — same handler.
                 .route("/api/sessions/{session}", web::delete().to(delete_session))
                 .route("/api/comments", web::post().to(post_comment))
+                .route("/api/attachments", web::post().to(upload_attachment))
                 .route("/api/threads/{id}/resolve", web::post().to(resolve_thread))
                 .route("/api/threads/{id}/unresolve", web::post().to(unresolve_thread))
                 .route("/f/{path:.*}", web::get().to(project_file))
@@ -343,9 +347,117 @@ fn rediscover_pages(store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// 20MB: a phone screenshot is 5, a parquet sample can be more; past it the
+/// Bytes extractor answers 413 before the handler runs.
+const ATTACHMENT_CAP: usize = 20 * 1024 * 1024;
+
+#[derive(serde::Deserialize)]
+struct UploadQuery {
+    name: String,
+}
+
+/// The upload half of the attachment channel (V3.sv): raw bytes in, the file
+/// written under `.sideview/attachments/<sha8>/<name>`, the would-be row
+/// handed back. No row is born here — that happens when the comment is sent,
+/// so a canceled draft leaves only an unreferenced file for gc.
+async fn upload_attachment(
+    q: web::Query<UploadQuery>,
+    body: web::Bytes,
+    state: Data<AppState>,
+) -> impl Responder {
+    use sha2::Digest as _;
+
+    if body.is_empty() {
+        return HttpResponse::BadRequest().body("empty attachment");
+    }
+    let name = sanitize_filename(&q.name);
+    let sha256 = {
+        let mut h = sha2::Sha256::new();
+        h.update(&body);
+        format!("{:x}", h.finalize())
+    };
+    // Content sniffed, never trusted: the types the card renders inline are
+    // identified by magic bytes; everything else falls back to the extension
+    // and then to honest octet-stream.
+    let mime = sniff_mime(&body, &name);
+
+    let attachments_root = state.store.lock().unwrap().dir.join(crate::store::ATTACHMENTS_DIR);
+    // <sha8> is the dedupe address; on the astronomical prefix collision
+    // (same 8 hex chars, different content, same filename) fall back to the
+    // full hash as the directory rather than overwrite.
+    let mut dir_name = sha256[..8].to_string();
+    let mut abs = attachments_root.join(&dir_name).join(&name);
+    if abs.exists() {
+        let same = std::fs::read(&abs)
+            .map(|existing| {
+                let mut h = sha2::Sha256::new();
+                h.update(&existing);
+                format!("{:x}", h.finalize()) == sha256
+            })
+            .unwrap_or(false);
+        if same {
+            return HttpResponse::Ok().json(serde_json::json!({
+                "path": format!("{}{}/{}", crate::store::ATTACHMENTS_PREFIX, dir_name, name),
+                "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
+            }));
+        }
+        dir_name = sha256.clone();
+        abs = attachments_root.join(&dir_name).join(&name);
+    }
+    if let Err(e) = std::fs::create_dir_all(abs.parent().unwrap()) {
+        return HttpResponse::InternalServerError().body(format!("{e}"));
+    }
+    // Write-then-rename so a torn upload never leaves a half file at the
+    // address a row might later point at.
+    let tmp = abs.with_extension("part");
+    if let Err(e) = std::fs::write(&tmp, &body).and_then(|_| std::fs::rename(&tmp, &abs)) {
+        let _ = std::fs::remove_file(&tmp);
+        return HttpResponse::InternalServerError().body(format!("{e}"));
+    }
+    HttpResponse::Ok().json(serde_json::json!({
+        "path": format!("{}{}/{}", crate::store::ATTACHMENTS_PREFIX, dir_name, name),
+        "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
+    }))
+}
+
+/// Keep the original filename recognizable but never navigable: the last
+/// path segment only, path-active and control characters replaced, length
+/// bounded, and never empty or a dotfile.
+fn sanitize_filename(raw: &str) -> String {
+    let last = raw.rsplit(['/', '\\']).next().unwrap_or(raw);
+    let mut name: String = last
+        .chars()
+        .map(|c| if c.is_control() || matches!(c, '/' | '\\' | ':' | '\0') { '_' } else { c })
+        .take(120)
+        .collect();
+    while name.starts_with('.') {
+        name.remove(0);
+    }
+    if name.is_empty() { "file".to_string() } else { name }
+}
+
+/// Magic bytes for what the card renders inline; extension for the rest.
+fn sniff_mime(bytes: &[u8], name: &str) -> String {
+    let sniffed = match bytes {
+        [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
+        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("image/webp"),
+        [b'%', b'P', b'D', b'F', ..] => Some("application/pdf"),
+        _ if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") => Some("image/svg+xml"),
+        _ => None,
+    };
+    match sniffed {
+        Some(m) => m.to_string(),
+        None => mime_guess::from_path(name).first_raw().unwrap_or("application/octet-stream").to_string(),
+    }
+}
+
 /// The browser's write path for conversation: the page talks *about* the
 /// document, never *as* it. A `thread` field replies; page+target starts a
 /// fresh thread at the anchor (threads succeed each other — see V2.sv).
+/// Attachments arrive as the rows the upload endpoint handed back — bound
+/// here, inside the comment's own transaction.
 #[derive(serde::Deserialize)]
 struct CommentBody {
     thread: Option<i64>,
@@ -356,6 +468,8 @@ struct CommentBody {
     quote: Option<String>,
     context: Option<String>,
     body: String,
+    #[serde(default)]
+    attachments: Vec<crate::store::NewAttachment>,
 }
 
 async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> impl Responder {
@@ -364,8 +478,18 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         return HttpResponse::BadRequest().body("empty comment body");
     }
     let mut store = state.store.lock().unwrap();
+    // A row is a future deletion (page rm, gc), so verify each claimed
+    // attachment is a real file in the attachments home before binding it.
+    for a in &b.attachments {
+        if !crate::store::is_attachment_path(&a.path) || !store.root.join(&a.path).is_file() {
+            return HttpResponse::BadRequest()
+                .body(format!("attachment {:?} is not an uploaded file", a.path));
+        }
+    }
     let result = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
-        (Some(tid), _, _) => store.reply(tid, &b.body, Some("user")).map(|cid| (tid, cid)),
+        (Some(tid), _, _) => {
+            store.reply(tid, &b.body, Some("user"), &b.attachments).map(|cid| (tid, cid))
+        }
         (None, Some(page), Some(target)) => store.create_thread(
             page,
             target,
@@ -374,6 +498,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
             b.context.as_deref(),
             &b.body,
             Some("user"),
+            &b.attachments,
         ),
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
@@ -414,6 +539,7 @@ fn conversation_json(store: &Store, page: &str) -> Result<String> {
         "page": page,
         "threads": store.threads_for_page(page)?,
         "comments": store.comments_for_page(page)?,
+        "attachments": store.attachments_for_page(page)?,
     })
     .to_string())
 }
@@ -551,7 +677,7 @@ fn poll_loop(
                     if !keep {
                         events.push(threads_event(
                             serde_json::json!({
-                                "page": page, "threads": [], "comments": [],
+                                "page": page, "threads": [], "comments": [], "attachments": [],
                             })
                             .to_string(),
                         ));
@@ -1048,6 +1174,81 @@ mod tests {
         let store = state.store.lock().unwrap();
         assert_eq!(store.comments_for_page("v2").unwrap().len(), 2);
         assert!(store.threads_for_page("v2").unwrap()[0].resolved_at.is_none());
+    }
+
+    #[actix_web::test]
+    async fn attachments_upload_dedupe_bind_and_refuse_impostors() {
+        let dir = std::env::temp_dir().join(format!("sv-at-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/api/attachments", web::post().to(upload_attachment))
+                .route("/api/comments", web::post().to(post_comment)),
+        )
+        .await;
+
+        // Upload writes the file, sniffs the type, hands back the row-to-be.
+        let png = b"\x89PNG\r\n\x1a\nrest".to_vec();
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/attachments?name=../evil/sh%20ot.png")
+            .set_payload(png.clone())
+            .to_request();
+        let a: serde_json::Value = actix_web::test::call_and_read_body_json(&app, req).await;
+        assert_eq!(a["name"], "sh ot.png", "last path segment only — traversal shed at the door");
+        assert_eq!(a["mime"], "image/png", "magic bytes, not the claimed extension's word");
+        let rel = a["path"].as_str().unwrap().to_string();
+        assert!(rel.starts_with(crate::store::ATTACHMENTS_PREFIX));
+        let abs = state.store.lock().unwrap().root.join(&rel);
+        assert!(abs.is_file());
+
+        // Same bytes again: the same address comes back, nothing rewritten.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/attachments?name=../evil/sh%20ot.png")
+            .set_payload(png)
+            .to_request();
+        let b: serde_json::Value = actix_web::test::call_and_read_body_json(&app, req).await;
+        assert_eq!(b["path"], rel, "dedupe: same bytes, one file");
+
+        // The comment binds the row; the snapshot carries it.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({
+                "page": "v3", "target": "b1", "body": "see attached",
+                "attachments": [a],
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert!(res.status().is_success());
+        {
+            let store = state.store.lock().unwrap();
+            let atts = store.attachments_for_page("v3").unwrap();
+            assert_eq!(atts.len(), 1);
+            assert_eq!(atts[0].path, rel);
+            let json = conversation_json(&store, "v3").unwrap();
+            assert!(json.contains("\"attachments\""), "snapshot carries the third list");
+        }
+
+        // A fabricated path — a real project file — is refused before it can
+        // become a row that page rm would one day unlink.
+        std::fs::write(state.store.lock().unwrap().root.join("canon.rs"), "keep").unwrap();
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({
+                "page": "v3", "target": "b1", "body": "impostor",
+                "attachments": [{"path": "canon.rs", "name": "canon.rs",
+                                  "mime": "text/plain", "bytes": 4, "sha256": "cc"}],
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status().as_u16(), 400);
     }
 
     /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed
