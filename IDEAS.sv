@@ -13,8 +13,7 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 - **Per-line comments inside any code block** — the `l:` machinery generalized to any pre. Deferred twice. *(V2.sv candidates)*
 - **Rust twin of `anchorHash`** — paragraph hashing is JS-only (FNV-1a 64/48, vector pinned in app.js); the daemon side belongs with diff re-resolution. *(HANDOFF gaps)*
 - **sv-note placed physically at its anchor** — today it renders in place with a reference line. *(HANDOFF gaps)*
-- **Comment image attachments** — paste/drop into the compose card → daemon writes a project file, the comment stores the path; thumbnail in the card, watch names the path, the agent reads it with its file tool. Reference-never-embed extended to conversation; genuine vision, pull not push. *(V2.sv candidates, 2026-08-09)*
-- **Mobile comment pass** — touch has no hover: marks faintly visible, tap-to-reveal; a small design pass of its own. *(V1.md)*
+- **Comment image attachments** — paste/drop into the compose card → daemon writes a project file, the comment stores the path; thumbnail in the card, watch names the path, the agent reads it with its file tool. Reference-never-embed extended to conversation; genuine vision, pull not push. *(V2.sv candidates, 2026-08-09)* **→ v3**
 </sv-prose>
 
 <sv-prose id="live-content">
@@ -29,7 +28,7 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 <sv-prose id="blocks">
 ## New block types
 
-- **Tables** — `{sql}` finally exercises reference-never-embed; DuckDB as the engine (parquet/CSV/SQL, 100k+ rows). Grid verdicts recorded 2026-08-08: VisActor VTable first (pure-JS canvas, UMD-vendorable, framework-neutral, async data model), AntV S2 runner-up, Glide disqualified (React-only) — and embedding a live sqlnow session may beat a native block for the explore case. *(V2.sv candidates; DESIGN.md; HANDOFF)*
+- **Tables** — `{sql}` finally exercises reference-never-embed; DuckDB as the engine (parquet/CSV/SQL, 100k+ rows). Grid verdicts recorded 2026-08-08: VisActor VTable first (pure-JS canvas, UMD-vendorable, framework-neutral, async data model), AntV S2 runner-up, Glide disqualified (React-only) — and embedding a live sqlnow session may beat a native block for the explore case. *(V2.sv candidates; DESIGN.md; HANDOFF)* **→ v3 (the plan)**
 - **sv-tree** — a nested markdown list *is* a tree: comrak parses it, CSS draws connector elbows, no layout engine; degrades to an indented list on old binaries. Sequence diagrams the plausible second resident; real DAG layout stays extension territory. *(V2.sv candidates)*
 - **Chart, params form, choose-between-options, query-plan viewer** — the tier-2 wishlist, never scoped. *(DESIGN.md blocks)*
 - **An image/figure block returning** — styled `<figure>` + alt handling; re-read V0's `show` front-door argument before reinventing the command. *(V0.md Out)*
@@ -41,8 +40,8 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 
 - **Service blocks** — supervise → endpoint: the founding thesis and the gap nothing surveyed occupies; a command, its streams, an optional port, files on disk. The **one-afternoon spike** (start a dev server, proxy, iframe, kill cleanly) has still never been run. *(DESIGN.md; V0.md spike; PRIOR-ART.md)*
 - **The React ladder** — rung 0: iframe a Vite `dist/` via `/f/` (works today) → precompiled custom elements, vendored → pane takeover (a props flag) → artifacts parity via SWC embedded in the daemon. Climb only as far as proves necessary. *(HANDOFF)*
-- **html blocks as Vue islands** — the author's reframe (2026-08-08): vendored Vue at `/assets/vendor/` is importable by any srcdoc block — artifact-grade interactive blocks, no CDN, files-in-repo persistence, envelope already sizing/theming. Vendoring + CORS shipped; what remains is leaning in (skill guidance, worked examples). *(HANDOFF)*
-- **Plugin architecture** — custom elements + a small explicit `window.sideview` API; shadow-DOM isolation; framework-agnostic; the point where "code you didn't write" starts existing. *(HANDOFF; DESIGN.md isolation)*
+- **html blocks as Vue islands** — the author's reframe (2026-08-08): vendored Vue at `/assets/vendor/` is importable by any srcdoc block — artifact-grade interactive blocks, no CDN, files-in-repo persistence, envelope already sizing/theming. Vendoring + CORS shipped; what remains is leaning in (skill guidance, worked examples). *(HANDOFF)* **→ v3**
+- **Plugin architecture** — custom elements + a small explicit `window.sideview` API; shadow-DOM isolation; framework-agnostic; the point where "code you didn't write" starts existing. *(HANDOFF; DESIGN.md isolation)* **→ v3 (the design)**
 - **The extension layer's first residents** — established libraries from CDN, SRI-pinned; extensions may degrade offline, core never does. Mermaid was removed from core to become the first. *(HANDOFF, 2026-08-08)*
 - **Pane takeover** — one block filling the viewport below the header; just a session prop. *(HANDOFF ladder)*
 </sv-prose>
@@ -58,8 +57,9 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 ## Viewer and chrome
 
 - **Chip ordering** — `order` on `<sv-page>` (canon) + viewer drag (localStorage); the standard precedence stack. *(V2.sv candidates; V1.md)*
-- **Resizable side rails** — drag-to-resize the contents rail and the comment bar, widths remembered as viewer preference; filed for v3 from the desktop pass. *(V2.sv candidates, 2026-08-09)*
+- **Resizable side rails** — drag-to-resize the contents rail and the comment bar, widths remembered as viewer preference; filed for v3 from the desktop pass. *(V2.sv candidates, 2026-08-09)* **→ v3**
 - **Mobile rail** — carried since v0. *(V2.sv candidates)*
+- **Editing prose blocks from the page** — raw markdown in a plain textarea (top-right action; double-click is spoken for), saved as a whole-block splice under the existing file lock; a from-hash guard 409s instead of clobbering the agent's newer text; an `edit` event kind keeps watch honest. The page's first *authoring* power — the trust expansion V1.md said to make on purpose; stripped server-side under any future read-only share. Prose only. *(chat, 2026-08-09)*
 - **Outline tabs × explicit outline spec** — explicit outlines assume scrollspy; tabs+spec currently degrades to all-visible. *(HANDOFF gaps)*
 - **The `sv-` class layer** — metric/delta, option cards, decision matrix; derive from real plans, keep it guessable. *(V0.md design system)*
 - **Unknown-class / `style=` logging** — the measurement of where the vocabulary fails; scraper is in the tree, the TODO sits in render.rs. *(V0.md; HANDOFF)*
@@ -69,7 +69,8 @@ Every idea and piece of upcoming work from V0/V1/V2, DESIGN, SHARING, PRIOR-ART 
 <sv-prose id="trust-sharing">
 ## Trust, sharing, provenance
 
-- **T0 — share the snapshot** — frozen HTML, every block as its last output; must be *loud*: a disclosure report of what's embedded, exclude-from-snapshot marks. *(SHARING.md)*
+- **`sideview snapshot <file.sv> -o out.html`** — code-driven .sv → one self-contained HTML file: format.rs parse → the existing render pass → static shell, CSS and fonts inlined. All four current types qualify; repriced cheap 2026-08-09 (thread 27) because rendering is already server-side and nothing computes yet. What it drops: liveness, conversation, scrollspy. *(the concrete first step of T0)*
+- **T0 — share the snapshot** — frozen HTML, every block as its last output; must be *loud* once blocks compute: a disclosure report of what's embedded, exclude-from-snapshot marks. *(SHARING.md)*
 - **T1 — pack and ship** — page files + db + referenced data (`git clone` is the simplest pack); recipient's machine, recipient's authority; with provenance it becomes verification, not just transfer. *(SHARING.md)*
 - **T2 — live read-only over the tailnet** — `tailscale serve`, `Tailscale-User-Login` gives comments real authors; read-only enforced server-side by role (Voila's rule). *(SHARING.md)*
 - **T3 — constrained interactive** — author-enumerated params, bound never interpolated, read-only handles on scratch copies, caps, audited runs. A different product from a plan; deliberately last. *(SHARING.md)*
