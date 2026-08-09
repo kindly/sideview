@@ -1304,6 +1304,9 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
     border-left: none;
     padding: 1rem 1.1rem 3rem; /* matches the title strip's negative margins */
     overscroll-behavior-y: contain; /* reaching the end never rubber-bands the page */
+    z-index: 46; /* above the header (10) and the corner chip (44): covering
+                    the chrome means out-layering it, not just out-positioning
+                    it — the strip hid behind the header without this */
   }
   /* The page under the sheet holds still: scrolling conversation must never
      also scroll the reading position you'll fold back to. */
