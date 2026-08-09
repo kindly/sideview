@@ -129,7 +129,7 @@ body.sv-resizing .sv-grip::before { background: var(--sv-ink); }
 /* A collapsed rail has no width to drag. */
 #sv-outline.collapsed ~ #sv-rail-grip { display: none; }
 /* While dragging: no text selection, and no width transition to chase. */
-body.sv-resizing { user-select: none; }
+body.sv-resizing { user-select: none; transition: none; }
 body.sv-resizing #sv-outline { transition: none; }
 
 /* Mobile browsers inflate text they judge too small (WebKit/Chrome text
@@ -142,9 +142,15 @@ html {
   text-size-adjust: none;
 }
 
+/* Fixed across the whole viewport, not sticky inside the padded body: the
+   brand belongs in the top-left corner and the rule under it belongs to the
+   window, not to the content column. It also stops the rule chasing the
+   rail during a drag, since it no longer moves at all (author, thread 37). */
 #sv-header {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 10;
   display: flex;
   align-items: center;
@@ -820,6 +826,10 @@ pre.syntax-highlighting .sv-constant {
    strip. The content column shifts over via body padding. Only exists when
    the page has sections; below ~992px it bows out entirely (mobile deferred). */
 
+body {
+  /* the header is fixed, so the flow needs its height back */
+  padding-top: var(--sv-header-h);
+}
 body.sv-rail {
   padding-left: var(--sv-rail-w);
   transition: padding-left 0.18s ease;
