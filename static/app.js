@@ -265,7 +265,13 @@ es.addEventListener('sessions', (e) => {
     state.pinned = false;
     history.replaceState(null, '', '/');
     switchSession(mostActive?.id ?? null);
-  } else if (!state.pinned && mostActive && mostActive.id !== state.selected) {
+  } else if (
+    !state.pinned && mostActive && mostActive.id !== state.selected &&
+    !(svc && svc.drafts.length)
+  ) {
+    // Composing holds the tab: auto-follow yanking the page out from under
+    // an open draft is how thread 28 got misfiled. Same law as the reading
+    // position — attention is never stolen.
     switchSession(mostActive.id);
   }
   renderSessionStrip();
@@ -797,10 +803,13 @@ function scheduleConversation() {
 }
 
 function applyCbarPref() {
-  const has = svc && (svc.threads.length > 0 || svc.drafts.length > 0);
+  // Only this page's drafts count: one written elsewhere waits on its own
+  // page rather than propping the bar open everywhere.
+  const draftsHere = svc ? svc.drafts.filter((d) => d.page === state.selected) : [];
+  const has = svc && (svc.threads.length > 0 || draftsHere.length > 0);
   document.body.classList.toggle('sv-cbar', !!has);
   if (!has) { document.body.classList.remove('sv-cbar-open'); return; }
-  if (svc.drafts.length) { document.body.classList.add('sv-cbar-open'); return; }
+  if (draftsHere.length) { document.body.classList.add('sv-cbar-open'); return; }
   // Opening is automatic when warranted; closing never is (thread 8's law:
   // folding is explicit, only the chevron or the chip). So this only ever
   // adds the class — an open bar stays open through replies, sends, and
@@ -903,14 +912,16 @@ function mountCommentBar() {
       const sendDraft = (d) => {
         if (!d.text.trim()) return;
         send(
-          { page: svc.page, target: d.target, anchor: d.anchor,
+          { page: d.page, target: d.target, anchor: d.anchor,
             quote: d.quote || null, context: d.context || null, body: d.text.trim() },
           () => { svc.drafts = svc.drafts.filter((x) => x !== d); }
         );
       };
 
+      const draftsHere = computed(() => svc.drafts.filter((d) => d.page === svc.page));
+
       return {
-        svc, open, resolved, collapsed, replies, error,
+        svc, draftsHere, open, resolved, collapsed, replies, error,
         commentsFor, lastAuthor, sentPending, fmt, jump, reply, sendDraft,
         attach: computed(() => svc.attach),
         resolve: (t) => setResolution(t.id, false),
@@ -924,13 +935,13 @@ function mountCommentBar() {
       };
     },
     template: `
-      <div v-if="svc.threads.length || svc.drafts.length" class="sv-cbar-inner">
+      <div v-if="svc.threads.length || draftsHere.length" class="sv-cbar-inner">
         <div class="sv-cbar-title">Comments
           <button type="button" class="sv-cbar-fold" aria-label="collapse comments"
                   title="collapse — the bubble brings it back" @click="fold"></button></div>
         <div v-if="error.msg" class="sv-cbar-error">{{ error.msg }}</div>
 
-        <div v-for="d in svc.drafts" :key="d.key" class="sv-cbar-card sv-cbar-draft">
+        <div v-for="d in draftsHere" :key="d.key" class="sv-cbar-card sv-cbar-draft">
           <blockquote v-if="d.quote">{{ d.quote }}</blockquote>
           <textarea v-model="d.text" rows="3" placeholder="Comment…" :data-draft="d.key"
                     @keydown.meta.enter="sendDraft(d)" @keydown.ctrl.enter="sendDraft(d)"
@@ -1100,11 +1111,18 @@ function startDraft(spot, quote) {
   if (!block || !svc) return;
   const target = block.dataset.block;
   const anchor = anchorOf(spot);
-  const existing = svc.drafts.find((d) => d.target === target && d.anchor === anchor);
+  const existing = svc.drafts.find(
+    (d) => d.page === state.selected && d.target === target && d.anchor === anchor
+  );
   const key = existing ? existing.key : ++draftSeq;
   if (!existing) {
     svc.drafts.push({
       key,
+      // The page is captured now, not at send: an unpinned tab can follow
+      // activity elsewhere while the draft sits open, and a comment belongs
+      // to the page it was written on (thread 28 was filed cross-page by
+      // exactly that gap).
+      page: state.selected,
       target,
       anchor,
       quote: quote.slice(0, 300),
