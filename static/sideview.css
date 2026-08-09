@@ -95,6 +95,9 @@
 /* Drag handles on both rails' inner edges (desktop only): widths are a
    viewer preference like the folds, remembered in localStorage, and
    double-click restores the default. */
+/* The hit area stays generous (11px — a thin target is a bad target); only
+   the *ink* is thin: a 1px line drawn by a pseudo-element, replacing the
+   rail's own border while it shows. */
 .sv-grip {
   display: none;
   position: fixed;
@@ -105,8 +108,18 @@
   cursor: col-resize;
   touch-action: none;
 }
-.sv-grip:hover,
-body.sv-resizing .sv-grip { background: color-mix(in srgb, var(--sv-ink) 22%, transparent); }
+.sv-grip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.sv-grip:hover::before,
+body.sv-resizing .sv-grip::before { background: var(--sv-ink); }
 #sv-rail-grip { left: calc(var(--sv-rail-w) - 5px); }
 #sv-cbar-grip { right: calc(var(--sv-cbar-w) - 5px); }
 @media (min-width: 64rem) {
