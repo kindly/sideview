@@ -1033,29 +1033,10 @@ body.sv-cbar.sv-cbar-open #sv-comments { display: block; }
 @media (min-width: 64rem) {
   body.sv-cbar.sv-cbar-open #sv-blocks { max-width: none; padding-right: 21.5rem; }
 }
-@media (max-width: 63.98rem) {
-  /* Small screens: the open bar IS the page (author, 2026-08-09, from the
-     phone — it was already as wide as it could realistically be, so stop
-     pretending). Two states only: folded to the chip, or a full-viewport
-     sheet below the header; the chevron folds back to the reading. */
-  body.sv-cbar.sv-cbar-open #sv-comments {
-    left: 0;
-    width: auto;
-    border-left: none;
-    padding: 1rem 1.1rem 3rem; /* matches the title strip's negative margins */
-  }
-  /* The sheet closes with a cross, and a thumb-sized one — a chevron reads
-     as "fold aside", which isn't what leaving a full page feels like. */
-  .sv-cbar-fold { width: 2rem; height: 2rem; }
-  .sv-cbar-fold::before {
-    content: "×";
-    border: 0;
-    width: auto;
-    height: auto;
-    font-size: 1.4rem;
-    line-height: 1;
-  }
-}
+/* The small-screen sheet rules live at the END of the cbar section: they
+   override same-specificity base rules (the fold chevron most of all), and
+   in CSS the later rule wins — being defined before the base cost the × an
+   afternoon (thread 35). */
 
 /* The bar toggle: only exists on overlay screens, only when there is
    conversation. Shows the open-thread count. */
@@ -1307,6 +1288,32 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
   font-size: 0.72rem;
   color: #b3423e;
   margin-bottom: 0.5rem;
+}
+
+@media (max-width: 63.98rem) {
+  /* Small screens: the open bar IS the page (author, 2026-08-09, from the
+     phone — it was already as wide as it could realistically be, so stop
+     pretending). Two states only: folded to the chip, or a full-viewport
+     sheet below the header. This block sits AFTER every base cbar rule on
+     purpose: it overrides at equal specificity, so order is the mechanism
+     (being defined earlier cost the × an afternoon — thread 35). */
+  body.sv-cbar.sv-cbar-open #sv-comments {
+    left: 0;
+    width: auto;
+    border-left: none;
+    padding: 1rem 1.1rem 3rem; /* matches the title strip's negative margins */
+  }
+  /* The sheet closes with a cross, and a thumb-sized one — a chevron reads
+     as "fold aside", which isn't what leaving a full page feels like. */
+  .sv-cbar-fold { width: 2rem; height: 2rem; }
+  .sv-cbar-fold::before {
+    content: "×";
+    border: 0;
+    width: auto;
+    height: auto;
+    font-size: 1.4rem;
+    line-height: 1;
+  }
 }
 
 /* The selection chip: appears beside selected text, the one way to start a
