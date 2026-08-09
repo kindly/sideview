@@ -128,9 +128,11 @@ body.sv-resizing .sv-grip::before { background: var(--sv-ink); }
 }
 /* A collapsed rail has no width to drag. */
 #sv-outline.collapsed ~ #sv-rail-grip { display: none; }
-/* While dragging: no text selection, and no width transition to chase. */
-body.sv-resizing { user-select: none; transition: none; }
-body.sv-resizing #sv-outline { transition: none; }
+/* While dragging: no text selection. (The transition suppression lives with
+   the sv-anim rules further down — at equal specificity the later rule wins,
+   and putting it here let the animation beat it. Second time this file has
+   taught that lesson; see thread 35 in HANDOFF.) */
+body.sv-resizing { user-select: none; }
 
 /* Mobile browsers inflate text they judge too small (WebKit/Chrome text
    autosizing), which silently undoes deliberate small type like diff
@@ -835,6 +837,10 @@ body.sv-rail {
 }
 /* Only deliberate changes ease; the first arrangement lands instantly. */
 body.sv-anim { transition: padding-left 0.18s ease; }
+/* …and a drag is not an animation: the column tracks the handle exactly.
+   These must stay AFTER the sv-anim rules to win. */
+body.sv-resizing.sv-anim,
+body.sv-resizing { transition: none; }
 
 body.sv-rail.sv-rail-collapsed {
   padding-left: var(--sv-rail-collapsed-w);
@@ -856,6 +862,9 @@ body.sv-rail.sv-rail-collapsed {
 }
 /* Folding eases; appearing does not — same rule as the content column. */
 body.sv-anim #sv-outline { transition: width 0.18s ease, padding 0.18s ease; }
+/* After it, so a drag beats the ease: the rail's edge follows the handle. */
+body.sv-resizing.sv-anim #sv-outline,
+body.sv-resizing #sv-outline { transition: none; }
 
 body.sv-rail #sv-outline { display: block; }
 
