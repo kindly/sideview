@@ -1014,12 +1014,20 @@ function mountCommentBar() {
         );
       };
 
+      // Compose boxes grow with their text (field-sizing isn't in Safari
+      // yet); capped so a long paste never swallows the sheet.
+      const grow = (e) => {
+        const el = e.target;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight + 2, 320) + 'px';
+      };
+
       const draftsHere = computed(() => svc.drafts.filter((d) => d.page === svc.page));
 
       return {
         svc, draftsHere, open, resolved, collapsed, replies, error,
         commentsFor, lastAuthor, sentPending, fmt, jump, reply, sendDraft,
-        rAtts, draftFiles, replyFiles, bodyHtml, pickChange,
+        rAtts, draftFiles, replyFiles, bodyHtml, pickChange, grow,
         removeDraftAtt: (d, a) => dropAtt(d.atts, a, () => d.text, (v) => { d.text = v; }),
         removeReplyAtt: (t, a) =>
           dropAtt(rAtts(t.id), a, () => replies[t.id], (v) => { replies[t.id] = v; }),
@@ -1043,8 +1051,8 @@ function mountCommentBar() {
 
         <div v-for="d in draftsHere" :key="d.key" class="sv-cbar-card sv-cbar-draft">
           <blockquote v-if="d.quote">{{ d.quote }}</blockquote>
-          <textarea v-model="d.text" rows="3" placeholder="Comment… (paste or drop files)"
-                    :data-draft="d.key"
+          <textarea v-model="d.text" rows="4" placeholder="Comment… (paste or drop files)"
+                    :data-draft="d.key" @input="grow"
                     @paste="draftFiles($event, d)"
                     @drop.prevent="draftFiles($event, d)" @dragover.prevent
                     @keydown.meta.enter="sendDraft(d)" @keydown.ctrl.enter="sendDraft(d)"
@@ -1085,7 +1093,8 @@ function mountCommentBar() {
                  title="the agent marked this as in progress">working…</div>
             <div v-else-if="sentPending(t.id)" class="sv-status"
                  title="delivered — the server has it; an agent hasn't necessarily read it yet">sent</div>
-            <textarea v-model="replies[t.id]" rows="1" placeholder="Reply… (paste or drop files)"
+            <textarea v-model="replies[t.id]" rows="3" placeholder="Reply… (paste or drop files)"
+                      @input="grow"
                       @paste="replyFiles($event, t)"
                       @drop.prevent="replyFiles($event, t)" @dragover.prevent
                       @keydown.meta.enter="reply(t)" @keydown.ctrl.enter="reply(t)"></textarea>
