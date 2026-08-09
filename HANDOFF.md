@@ -6,6 +6,27 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**The mobile comment-sheet saga (2026-08-09, thread 35 on V3.sv) — seven causes, and the
+lesson is the same one the v1 diff saga taught.** The author was phone-only for the session, so
+every fix was made blind and verified by screenshot; each of these looked like the previous fix
+"not working": (1) the fold control stayed a chevron because the mobile rules were written
+*earlier in the stylesheet* than the base rule they override — equal specificity, later wins, so
+they never applied on any device; (2) iOS paired fresh JS with stale CSS despite
+`Cache-Control: no-cache`, so asset URLs now carry a per-daemon-start `?v=` stamp (a restart is
+already how a new binary arrives); (3) the sheet reached `top: 0` but sat *under* the header in
+stacking order (z-index 5 vs 10) — covering chrome means out-layering it; (4) `overflow: hidden`
+on body does not stop touch scrolling on iOS — the real lock is `position: fixed` with the scroll
+offset remembered and restored; (5) `position: fixed` elements keep *layout*-viewport size while
+the keyboard shrinks the *visual* one, so the sheet is pinned to `visualViewport` height/offset
+and the focused textarea is scrolled back into view on resize; (6) a `position: sticky` title
+inside the scroller drew mid-thread and left a transparent gap conversation showed through —
+replaced by structure (flex column: title row, then a scrolling sibling), which cannot fail that
+way; (7) iOS zooms on focus for any field under **16px**, and the zoom pushed the close cross
+off-screen. The two rules worth carrying: **measure on the device instead of theorizing from
+screenshots** (a `#svdebug` probe now reports visual viewport, lock state and element rects live
+— add it to the URL hash), and **prefer structure over override** when a layout keeps needing
+another patch.
+
 **v3 underway, 2026-08-09 — the attachments backend is in** (same day the author curated
 V3.sv through the page and blessed its goal). Migration v4 (the `attachments` table —
 metadata in db, bytes on disk, V3.sv's model verbatim), the raw-bytes upload endpoint
