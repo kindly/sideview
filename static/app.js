@@ -854,6 +854,62 @@ function setResolution(threadId, undo) {
   // The daemon's snapshot repaints the bar within a tick; no local state.
 }
 
+// ---- resizable rails ----------------------------------------------------------
+// Both side rails drag from their inner edge; the width is the viewer's, not
+// the agent's, so it is remembered in localStorage — same law as their folds
+// (V3.sv). Double-click restores the default. Desktop only: on a narrow
+// screen the rail is a drawer and the bar is the whole page.
+
+function mountGrips() {
+  const wide = () => matchMedia('(min-width: 64rem)').matches;
+  const grip = (id, side, cssVar, key, min, max) => {
+    const g = document.createElement('div');
+    g.id = id;
+    g.className = 'sv-grip';
+    g.setAttribute('aria-hidden', 'true');
+    g.title = 'drag to resize — double-click to reset';
+    document.body.appendChild(g);
+
+    const stored = parseFloat(localStorage.getItem(key) || '');
+    if (stored > 0) document.documentElement.style.setProperty(cssVar, stored + 'px');
+
+    g.addEventListener('pointerdown', (e) => {
+      if (!wide()) return;
+      e.preventDefault();
+      g.setPointerCapture(e.pointerId);
+      document.body.classList.add('sv-resizing');
+      const move = (ev) => {
+        const px = side === 'left' ? ev.clientX : window.innerWidth - ev.clientX;
+        document.documentElement.style.setProperty(
+          cssVar,
+          Math.max(min, Math.min(max, px)) + 'px'
+        );
+      };
+      const up = () => {
+        document.body.classList.remove('sv-resizing');
+        g.removeEventListener('pointermove', move);
+        g.removeEventListener('pointerup', up);
+        g.removeEventListener('pointercancel', up);
+        localStorage.setItem(
+          key,
+          parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar))
+        );
+      };
+      g.addEventListener('pointermove', move);
+      g.addEventListener('pointerup', up);
+      g.addEventListener('pointercancel', up);
+    });
+
+    g.addEventListener('dblclick', () => {
+      document.documentElement.style.removeProperty(cssVar);
+      localStorage.removeItem(key);
+    });
+  };
+  grip('sv-rail-grip', 'left', '--sv-rail-w', 'sv-railw', 180, 560);
+  grip('sv-cbar-grip', 'right', '--sv-cbar-w', 'sv-cbarw', 220, 680);
+}
+mountGrips();
+
 // ---- the mobile sheet vs the iOS keyboard --------------------------------------
 // Two iOS truths (thread 35, live): body overflow:hidden does not stop touch
 // scroll, and position:fixed elements keep layout-viewport size while the
