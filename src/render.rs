@@ -285,6 +285,10 @@ mod tests {
             html.contains(r#"src="att:aaaaaaaa""#),
             "att: URLs survive safe mode for the client to resolve"
         );
+        // Non-images link rather than embed, so the link form must survive
+        // safe mode's URL filtering too (it strips javascript:/data:, not this).
+        let link = comment_body("[moo.csv](att:bbbbbbbb)");
+        assert!(link.contains(r#"href="att:bbbbbbbb""#), "att: links survive too");
     }
 
     #[test]

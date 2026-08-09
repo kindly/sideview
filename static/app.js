@@ -997,7 +997,10 @@ function mountCommentBar() {
       // survives editing.
       const replyAtts = reactive({});
       const rAtts = (id) => (replyAtts[id] || (replyAtts[id] = []));
-      const attToken = (a) => `![${a.name}](att:${a.sha256.slice(0, 8)})`;
+      // Images embed, everything else links: `![a.csv](…)` is a lie in a
+      // body people read and edit (found live, thread 36).
+      const attToken = (a) =>
+        `${a.mime.startsWith('image/') ? '!' : ''}[${a.name}](att:${a.sha256.slice(0, 8)})`;
       const uploadOne = async (file) => {
         const res = await fetch(
           '/api/attachments?name=' + encodeURIComponent(file.name || 'pasted'),
@@ -1063,12 +1066,15 @@ function mountCommentBar() {
         const atts = svc.attachments.filter((a) => a.comment_id === c.id);
         const used = new Set();
         let html = c.body_html != null ? c.body_html : esc(c.body); // older-daemon fallback
-        html = html.replace(/<img[^>]*\bsrc="att:([0-9a-f]{8})"[^>]*\/?>/g, (m, sha) => {
+        const swap = (m, sha) => {
           const a = atts.find((x) => x.sha256.startsWith(sha) && !used.has(x.id));
           if (!a) return m;
           used.add(a.id);
           return attHtml(a);
-        });
+        };
+        html = html
+          .replace(/<img[^>]*\bsrc="att:([0-9a-f]{8})"[^>]*\/?>/g, swap)
+          .replace(/<a[^>]*\bhref="att:([0-9a-f]{8})"[^>]*>.*?<\/a>/g, swap);
         for (const a of atts) if (!used.has(a.id)) html += attHtml(a);
         return html;
       };
