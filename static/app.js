@@ -948,16 +948,17 @@ function mountCommentBar() {
       const replyFiles = (e, t) =>
         composeFiles(e, rAtts(t.id), () => replies[t.id], (v) => { replies[t.id] = v; });
       // The mobile road in: no clipboard image, no drag — the native picker.
-      const filePick = (kind, obj) => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.multiple = true;
-        input.onchange = () => {
-          const fake = { clipboardData: { files: input.files }, preventDefault() {}, target: null };
-          if (kind === 'd') draftFiles(fake, obj);
-          else replyFiles(fake, obj);
-        };
-        input.click();
+      // A real input overlays the attach button (no scripted click()): iOS
+      // opens pickers reliably only for genuine input activation — a
+      // detached input did nothing and a hidden DOM one was still flaky
+      // (both found live, thread 34).
+      const pickChange = (e, kind, obj) => {
+        const files = e.target.files;
+        if (!files || !files.length) return;
+        const fake = { clipboardData: { files }, preventDefault() {}, target: null };
+        if (kind === 'd') draftFiles(fake, obj);
+        else replyFiles(fake, obj);
+        e.target.value = ''; // the same file twice still fires change
       };
       const dropAtt = (bucket, a, get, set) => {
         bucket.splice(bucket.indexOf(a), 1);
@@ -1018,7 +1019,7 @@ function mountCommentBar() {
       return {
         svc, draftsHere, open, resolved, collapsed, replies, error,
         commentsFor, lastAuthor, sentPending, fmt, jump, reply, sendDraft,
-        rAtts, draftFiles, replyFiles, bodyHtml,
+        rAtts, draftFiles, replyFiles, bodyHtml, pickChange,
         removeDraftAtt: (d, a) => dropAtt(d.atts, a, () => d.text, (v) => { d.text = v; }),
         removeReplyAtt: (t, a) =>
           dropAtt(rAtts(t.id), a, () => replies[t.id], (v) => { replies[t.id] = v; }),
@@ -1055,8 +1056,8 @@ function mountCommentBar() {
           </div>
           <div class="sv-cbar-actions">
             <button type="button" @click="sendDraft(d)">comment</button>
-            <button type="button" class="sv-quiet" @click="filePick('d', d)"
-                    title="attach files — paste and drop work too">attach</button>
+            <label class="sv-attach-btn" title="attach files — paste and drop work too">attach
+              <input type="file" multiple @change="pickChange($event, 'd', d)"></label>
             <button type="button" class="sv-quiet" @click="cancelDraft(d)">cancel</button>
           </div>
         </div>
@@ -1095,8 +1096,8 @@ function mountCommentBar() {
             </div>
             <div class="sv-cbar-actions">
               <button type="button" @click="reply(t)">reply</button>
-              <button type="button" class="sv-quiet" @click="filePick('r', t)"
-                      title="attach files — paste and drop work too">attach</button>
+              <label class="sv-attach-btn" title="attach files — paste and drop work too">attach
+                <input type="file" multiple @change="pickChange($event, 'r', t)"></label>
               <button type="button" class="sv-quiet" @click="resolve(t)"
                       title="resolve — reopenable below">resolve</button>
             </div>

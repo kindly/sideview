@@ -1240,6 +1240,27 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 .sv-cbar-actions button:hover { border-color: var(--sv-ink); color: var(--sv-ink); }
 .sv-cbar-actions .sv-quiet { border-color: transparent; color: var(--bs-secondary-color); }
 .sv-cbar-actions .sv-quiet:hover { color: var(--sv-ink); border-color: transparent; }
+/* The attach control is a real file input riding an invisible saddle over a
+   label styled as a button — no scripted click(), which iOS distrusts. */
+.sv-cbar-actions .sv-attach-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  padding: 0.05rem 0.55rem;
+  border: 1px solid transparent;
+  color: var(--bs-secondary-color);
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.sv-cbar-actions .sv-attach-btn:hover { color: var(--sv-ink); }
+.sv-attach-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
 
 .sv-cbar-resolved summary {
   font-family: var(--sv-mono);
