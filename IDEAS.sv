@@ -1,4 +1,4 @@
-<sv-page label="ideas — the pool v3 draws from">
+<sv-page label="ideas — the pool v3 draws from" category="plan" order="2">
 
 <sv-prose id="intro">
 # The pool — everything discussed, still unbuilt

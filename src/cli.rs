@@ -866,11 +866,24 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
 pub fn sessions() -> Result<()> {
     let store = open_project_store()?;
     let port = store.daemon_alive()?.filter(|d| d.reachable).map(|d| d.port);
+    let cfg = crate::config::load(&store.root).0;
     for b in store.bindings()? {
-        let label = std::fs::read_to_string(store.root.join(&b.path))
-            .ok()
-            .and_then(|src| format::parse(&src).prop("label").map(str::to_string))
-            .unwrap_or_else(|| b.id.clone());
+        // Only a composed page carries an sv-page tag. Parsing an imported
+        // one as sv is not merely pointless but wrong: V1.md documents the
+        // format, so its *example* tag was read as a real one (found by
+        // dogfooding, 2026-08-10). Imported labels come from config.
+        let label = if crate::config::is_imported(&b.path) {
+            cfg.pages
+                .iter()
+                .find(|e| e.path == b.path)
+                .and_then(|e| e.label.clone())
+                .unwrap_or_else(|| b.id.clone())
+        } else {
+            std::fs::read_to_string(store.root.join(&b.path))
+                .ok()
+                .and_then(|src| format::parse(&src).prop("label").map(str::to_string))
+                .unwrap_or_else(|| b.id.clone())
+        };
         match port {
             Some(p) => println!(
                 "{label}  {}  http://127.0.0.1:{p}/s/{}",

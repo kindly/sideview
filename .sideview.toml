@@ -1,14 +1,50 @@
-# sideview, configuring itself. Committed: this is versioned intent, while
-# .sideview/ holds disposable machinery.
+# sideview, configuring itself — committed, because this is versioned intent
+# while .sideview/ holds disposable machinery.
+#
+# A page that can declare its own label, order and category does so in canon:
+# see the <sv-page> tags in V3.sv and friends. This file is for the files
+# that cannot — the project's markdown — and for what must outlive the db.
+
+port = 46423
 
 [[pages]]
 path = "HANDOFF.md"
 label = "Handoff"
 category = "state"
-order = 1
+order = 3
+
+[[pages]]
+path = "README.md"
+label = "Readme"
+category = "design"
+order = 4
 
 [[pages]]
 path = "DESIGN.md"
 label = "Design"
 category = "design"
-order = 2
+order = 5
+
+[[pages]]
+path = "SHARING.md"
+label = "Sharing"
+category = "design"
+order = 6
+
+[[pages]]
+path = "PRIOR-ART.md"
+label = "Prior art"
+category = "design"
+order = 7
+
+[[pages]]
+path = "V1.md"
+label = "v1"
+category = "shipped"
+order = 9
+
+[[pages]]
+path = "V0.md"
+label = "v0"
+category = "shipped"
+order = 10

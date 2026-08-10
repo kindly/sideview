@@ -23,6 +23,7 @@ const state = {
   expand: new Map(),     // section key -> bool, manual twist overrides (per session)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
   conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
+  home: false,           // the index view: every page, grouped
 };
 
 let outline = { sections: [], blockSections: new Map() };
@@ -32,15 +33,29 @@ const $blocks = document.getElementById('sv-blocks');
 const $sessions = document.getElementById('sv-sessions');
 const $status = document.getElementById('sv-status');
 const $brand = document.getElementById('sv-brand');
+// The wordmark is the way home: the index of every page, grouped.
+$brand.addEventListener('click', () => {
+  if (state.home) return;
+  state.home = true;
+  state.pinned = true;
+  history.pushState(null, '', '/home');
+  renderAllBlocks();
+  renderSessionStrip();
+});
 const $outline = document.getElementById('sv-outline');
 const $railToggle = document.getElementById('sv-rail-toggle');
 const $outlineList = document.getElementById('sv-outline-list');
 
-// /s/<session> pins that session; / follows the most recently active one.
+// /s/<session> pins that session; / follows the most recently active one;
+// /home is the index, which follows nothing.
 const pathMatch = location.pathname.match(/^\/s\/(.+)$/);
 if (pathMatch) {
   state.selected = decodeURIComponent(pathMatch[1]);
   state.pinned = true;
+}
+if (location.pathname === '/home') {
+  state.home = true;
+  state.pinned = true; // the index must not be yanked away by activity
 }
 
 function sessionProps() {
@@ -275,6 +290,7 @@ es.addEventListener('sessions', (e) => {
     switchSession(mostActive.id);
   }
   renderSessionStrip();
+  if (state.home) renderHome(); // the index lists pages: it follows them
   refreshOutline(); // a session's outline property may have changed
 });
 
@@ -310,9 +326,53 @@ function switchSession(id) {
   renderAllBlocks();
 }
 
+// Pages in display order: by category, then by the `order` a page (or the
+// config) declared, then by creation. Uncategorized pages keep today's
+// behaviour and sit last, under no label — the default category is "no
+// category", not a category called default.
+function groupedSessions() {
+  const cat = (s) => ((s.props && s.props.category) || '').trim();
+  const ord = (s) => {
+    const o = parseFloat((s.props && s.props.order) ?? '');
+    return Number.isFinite(o) ? o : Infinity;
+  };
+  const groups = new Map();
+  for (const s of state.sessions) {
+    const k = cat(s);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(s);
+  }
+  for (const list of groups.values()) {
+    list.sort((a, b) => ord(a) - ord(b) || state.sessions.indexOf(a) - state.sessions.indexOf(b));
+  }
+  // A category sorts by its earliest declared order, so `order` places
+  // groups as well as pages and nobody needs a second key.
+  return [...groups.entries()]
+    .sort(([ka, a], [kb, b]) => {
+      if (!ka !== !kb) return ka ? -1 : 1; // uncategorized last
+      const d = Math.min(...a.map(ord)) - Math.min(...b.map(ord));
+      return Number.isFinite(d) && d !== 0 ? d : ka.localeCompare(kb);
+    })
+    .map(([name, pages]) => ({ name, pages }));
+}
+
 function renderSessionStrip() {
   $sessions.textContent = '';
-  for (const s of state.sessions) {
+  const groups = groupedSessions();
+  const named = groups.filter((g) => g.name).length > 0;
+  for (const g of groups) {
+    if (named && g.name) {
+      const tag = document.createElement('span');
+      tag.className = 'sv-chip-group';
+      tag.textContent = g.name;
+      $sessions.appendChild(tag);
+    }
+    renderChips(g.pages);
+  }
+}
+
+function renderChips(sessions) {
+  for (const s of sessions) {
     const chip = document.createElement('span');
     chip.className = 'sv-chip' + (s.id === state.selected ? ' active' : '');
 
@@ -322,6 +382,7 @@ function renderSessionStrip() {
     btn.title = s.id;
     btn.addEventListener('click', () => {
       state.pinned = true;
+      state.home = false;
       history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
       switchSession(s.id);
       renderSessionStrip();
@@ -695,7 +756,61 @@ function applyIframeMemory(el, block) {
   }
 }
 
+// The home index: every page in the project, grouped exactly as the strip
+// groups them. A landing rather than a page — the strip stays the fast
+// switch, this is the one you read when there are more pages than strip.
+function renderHome() {
+  $blocks.textContent = '';
+  document.body.classList.remove('sv-rail');
+  const wrap = document.createElement('section');
+  wrap.className = 'sv-block sv-home';
+  const h = document.createElement('h1');
+  h.textContent = 'Pages';
+  wrap.appendChild(h);
+  const groups = groupedSessions();
+  if (!groups.length) {
+    const p = document.createElement('p');
+    p.className = 'text-muted';
+    p.textContent = 'No pages yet.';
+    wrap.appendChild(p);
+  }
+  for (const g of groups) {
+    const sec = document.createElement('div');
+    sec.className = 'sv-home-group';
+    const tag = document.createElement('h2');
+    tag.textContent = g.name || 'Ungrouped';
+    sec.appendChild(tag);
+    for (const s of g.pages) {
+      const a = document.createElement('a');
+      a.className = 'sv-home-page';
+      a.href = '/s/' + encodeURIComponent(s.id);
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        state.pinned = true;
+        history.pushState(null, '', a.getAttribute('href'));
+        state.home = false;
+        switchSession(s.id);
+        renderSessionStrip();
+      });
+      const name = document.createElement('span');
+      name.className = 'sv-home-name';
+      name.textContent = (s.props && s.props.label) || shortLabel(s.id);
+      const meta = document.createElement('span');
+      meta.className = 'sv-home-meta';
+      meta.textContent = (s.props && s.props.path) || s.id;
+      a.append(name, meta);
+      sec.appendChild(a);
+    }
+    wrap.appendChild(sec);
+  }
+  $blocks.appendChild(wrap);
+}
+
 function renderAllBlocks() {
+  if (state.home) {
+    renderHome();
+    return;
+  }
   $blocks.textContent = '';
   const per = state.blocks.get(state.selected);
   if (per) {

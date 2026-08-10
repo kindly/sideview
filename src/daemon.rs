@@ -233,6 +233,8 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
                 .route("/", web::get().to(page))
                 .route("/s/{session}", web::get().to(page))
+                // The index of every page, grouped by category.
+                .route("/home", web::get().to(page))
                 .route("/events", web::get().to(events))
                 .route("/api/pages/{page}", web::delete().to(delete_session))
                 // The old noun, one release of grace — same handler.
@@ -704,6 +706,8 @@ fn poll_loop(
                     "committed"
                 };
                 fresh.props.insert("tier".into(), serde_json::Value::String(tier.into()));
+                // The index shows where a page lives; the file is the page.
+                fresh.props.insert("path".into(), serde_json::Value::String(b.path.clone()));
                 fresh.props.insert(
                     "closable".into(),
                     serde_json::Value::String(

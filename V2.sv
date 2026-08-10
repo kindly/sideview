@@ -1,4 +1,4 @@
-<sv-page label="v2 — closing the feedback loop">
+<sv-page label="v2 — closing the feedback loop" category="shipped" order="8">
 
 <sv-prose id="intro">
 # v2 — closing the feedback loop

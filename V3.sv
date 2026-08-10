@@ -1,4 +1,4 @@
-<sv-page label="v3 — the project moves in">
+<sv-page label="v3 — the project moves in" category="plan" order="1">
 
 <sv-prose id="intro">
 # v3 — the project moves in
@@ -18,7 +18,7 @@ Carried principles, not up for re-decision: sv files are canon, the db holds wha
 - **html blocks as Vue islands — lean in** — the vendoring and CORS shipped in v2; v3 delivers the rest of the prize: skill guidance and worked examples so any agent writes artifact-grade interactive blocks against the vendored Vue, no CDN, files-in-repo persistence, the envelope already sizing and theming them. *(pulled 2026-08-09, thread 31)*
 - **Binary releases + AUR** — tag-triggered GitHub releases with prebuilt per-target archives, checksums and deb/rpm (the sqlnow shape — its release.yml is the template; sideview is pure Rust with embedded assets, so it can go simpler, and musl/static is on the table since nothing dlopens), plus an AUR package. `cargo install` stops being the only door. *(author, 2026-08-09, chat)*
 - **Three page formats, and a repo config** — `.md` and `.html` become page formats sideview accepts and tracks, not new block types (author, 2026-08-10). Design in the formats section below; it replaces the md→sv conversion, so the docs stay markdown and GitHub keeps rendering them.
-- **Page management at scale** — a project with many pages outgrows the chip strip: each `<sv-page>` may declare a `category` (canon, beside `order` — for committed pages, grouping is plan-worthy so it lives in the file); the switcher groups by it; unhomed pages fall to a default category that behaves exactly like today; and `/` grows a real **homepage** — the project's pages laid out by category — where today there is only the strip. Dogfood: this project's design docs convert to .sv and live in it. *(pulled 2026-08-09, thread 32)*
+- **Page management at scale** — a project with many pages outgrows the chip strip: each `<sv-page>` may declare a `category` (canon, beside `order` — for committed pages, grouping is plan-worthy so it lives in the file), imported pages get theirs from `.sideview.toml`, the strip groups by it, and the wordmark opens **`/home`** — every page in the project, grouped, for when there are more pages than strip. Uncategorized pages keep today's behaviour and sit last. **Built and dogfooded 2026-08-10**: this project's own eleven pages now live in four categories, its docs still markdown. *(pulled 2026-08-09, thread 32)*
 </sv-prose>
 
 <sv-prose id="goal">
