@@ -353,7 +353,7 @@ function groupedSessions() {
   // groups as well as pages and nobody needs a second key.
   return [...groups.entries()]
     .sort(([ka, a], [kb, b]) => {
-      if (!ka !== !kb) return ka ? -1 : 1; // uncategorized last
+      if (!ka !== !kb) return ka ? 1 : -1; // the untitled set leads
       const d = Math.min(...a.map(ord)) - Math.min(...b.map(ord));
       return Number.isFinite(d) && d !== 0 ? d : ka.localeCompare(kb);
     })
@@ -367,13 +367,38 @@ function groupedSessions() {
 // index's job, not the strip's — it never lists a category as a chip.
 function renderSessionStrip() {
   $sessions.textContent = '';
+  const groups = groupedSessions();
+
+  // The strip always shows the siblings of what you are looking at. On the
+  // home index that is the categories themselves (author, 2026-08-10 — the
+  // strip showing the last category you visited was the confusion); the
+  // untitled set has no chip to show, so its pages stand in for it.
+  if (state.view === 'home') {
+    for (const g of groups) {
+      if (!g.name) {
+        renderChips(g.pages);
+        continue;
+      }
+      const chip = document.createElement('span');
+      chip.className = 'sv-chip sv-chip-cat';
+      const btn = document.createElement('button');
+      btn.className = 'sv-chip-label';
+      btn.textContent = g.name;
+      btn.title = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
+      btn.addEventListener('click', () => goCategory(g.name));
+      chip.appendChild(btn);
+      $sessions.appendChild(chip);
+    }
+    return;
+  }
+
   const here = state.sessions.find((s) => s.id === state.selected);
   const current =
     state.view === 'category'
       ? state.category
       : ((here && here.props && here.props.category) || '').trim();
 
-  const group = groupedSessions().find((g) => g.name === current);
+  const group = groups.find((g) => g.name === current);
   if (current) {
     // The title is the category of the page you are on, and it is also that
     // category's page — one place to see the rest of the set.
@@ -384,7 +409,7 @@ function renderSessionStrip() {
     title.addEventListener('click', () => goCategory(current));
     $sessions.appendChild(title);
   }
-  renderChips(group ? group.pages : groupedSessions().find((g) => !g.name)?.pages || []);
+  renderChips(group ? group.pages : groups.find((g) => !g.name)?.pages || []);
 }
 
 function goCategory(name) {

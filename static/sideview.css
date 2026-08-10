@@ -315,6 +315,14 @@ html {
 }
 .sv-strip-title:hover { color: var(--sv-ink); }
 
+/* A category chip — only ever on the home index, where the categories are
+   what you are looking at. Small caps mark it as a set, not a document. */
+.sv-chip-cat .sv-chip-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* A chip is a bordered pair: the label switches, the × deletes (two-step —
    .sv-armed is the armed state, and it disarms itself). */
 .sv-chip {
