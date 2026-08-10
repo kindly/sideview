@@ -327,21 +327,33 @@ function renderSessionStrip() {
       renderSessionStrip();
     });
 
-    // Deletion is the page's one write, and it's irrevocable (the file goes),
-    // so it's two-step: first click arms, second confirms, and it disarms
-    // itself. No dialog — dialogs train reflexive clicking.
+    // The ✕ is tidying power, and what it tidies depends on the page's tier
+    // (V3.sv): a throwaway page's file goes with it; a committed page is only
+    // closed, its file left to git. A page the config declares gets no ✕ at
+    // all — closing it would be a lie, since the config re-binds it.
+    const props = s.props || {};
+    if (props.closable === 'config') {
+      chip.append(btn);
+      $sessions.appendChild(chip);
+      continue;
+    }
+    const throwaway = props.tier !== 'committed';
     const del = document.createElement('button');
     del.className = 'sv-chip-del';
     del.textContent = '×';
-    del.title = 'delete this page';
+    const rest = throwaway ? 'delete this page' : 'close this page — the file stays';
+    const armed = throwaway
+      ? 'click again to delete — removes the page file'
+      : 'click again to close — unbinds it; the committed file is untouched';
+    del.title = rest;
     let disarm = 0;
     del.addEventListener('click', () => {
       if (!chip.classList.contains('sv-armed')) {
         chip.classList.add('sv-armed');
-        del.title = 'click again to delete — removes the page file';
+        del.title = armed;
         disarm = setTimeout(() => {
           chip.classList.remove('sv-armed');
-          del.title = 'delete this page';
+          del.title = rest;
         }, 3000);
         return;
       }

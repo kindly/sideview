@@ -693,6 +693,23 @@ fn poll_loop(
                 let fmt =
                     crate::config::format_of(&b.path, entry.and_then(|e| e.render.as_deref()));
                 let mut fresh = load_page(&file, &b.path, stamp, fmt);
+                // What the chip's ✕ may do, decided here where the tier and
+                // the config are both in hand: a throwaway page is scratch
+                // and closes by deleting; a committed one only unbinds; and
+                // a page the config declares has no meaningful close at all,
+                // since it returns the moment the config is read again.
+                let tier = if crate::store::is_throwaway_page(&b.path) {
+                    "throwaway"
+                } else {
+                    "committed"
+                };
+                fresh.props.insert("tier".into(), serde_json::Value::String(tier.into()));
+                fresh.props.insert(
+                    "closable".into(),
+                    serde_json::Value::String(
+                        if entry.is_some() { "config" } else { "yes" }.into(),
+                    ),
+                );
                 // Config supplies only what the file cannot say about itself:
                 // an .sv page's own props always win.
                 if let Some(e) = entry {
