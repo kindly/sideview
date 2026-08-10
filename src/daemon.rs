@@ -233,9 +233,8 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
                 .route("/", web::get().to(page))
                 .route("/s/{session}", web::get().to(page))
-                // The index of categories, and one category's own page.
+                // The index: categories and the pages in them.
                 .route("/home", web::get().to(page))
-                .route("/c/{category}", web::get().to(page))
                 .route("/events", web::get().to(events))
                 .route("/api/pages/{page}", web::delete().to(delete_session))
                 // The old noun, one release of grace — same handler.

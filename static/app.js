@@ -23,8 +23,7 @@ const state = {
   expand: new Map(),     // section key -> bool, manual twist overrides (per session)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
   conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
-  view: 'page',          // 'page' | 'home' | 'category'
-  category: null,        // which category, when view === 'category'
+  view: 'page',          // 'page' | 'home'
 };
 
 let outline = { sections: [], blockSections: new Map() };
@@ -49,16 +48,10 @@ if (pathMatch) {
   state.selected = decodeURIComponent(pathMatch[1]);
   state.pinned = true;
 }
-// /home is the index of categories; /c/<name> is one category's own page.
-// Both pin, because an index must not be yanked away by activity elsewhere.
+// /home is the index: categories and the pages in them. It pins, because an
+// index must not be yanked away by activity elsewhere.
 if (location.pathname === '/home') {
   state.view = 'home';
-  state.pinned = true;
-}
-const catMatch = location.pathname.match(/^\/c\/(.+)$/);
-if (catMatch) {
-  state.view = 'category';
-  state.category = decodeURIComponent(catMatch[1]);
   state.pinned = true;
 }
 
@@ -385,7 +378,10 @@ function renderSessionStrip() {
       btn.className = 'sv-chip-label';
       btn.textContent = g.name;
       btn.title = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
-      btn.addEventListener('click', () => goCategory(g.name));
+      btn.addEventListener('click', () => {
+        const el = document.getElementById('sv-cat-' + cssId(g.name));
+        if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
       chip.appendChild(btn);
       $sessions.appendChild(chip);
     }
@@ -393,32 +389,18 @@ function renderSessionStrip() {
   }
 
   const here = state.sessions.find((s) => s.id === state.selected);
-  const current =
-    state.view === 'category'
-      ? state.category
-      : ((here && here.props && here.props.category) || '').trim();
+  const current = ((here && here.props && here.props.category) || '').trim();
 
   const group = groups.find((g) => g.name === current);
   if (current) {
-    // The title is the category of the page you are on, and it is also that
-    // category's page — one place to see the rest of the set.
-    const title = document.createElement('button');
+    // A name for the set you are in. It names; it does not navigate — the
+    // index is the only place categories are browsed (author, 2026-08-10).
+    const title = document.createElement('span');
     title.className = 'sv-strip-title';
     title.textContent = current;
-    title.title = 'this category’s page';
-    title.addEventListener('click', () => goCategory(current));
     $sessions.appendChild(title);
   }
   renderChips(group ? group.pages : groups.find((g) => !g.name)?.pages || []);
-}
-
-function goCategory(name) {
-  state.view = 'category';
-  state.category = name;
-  state.pinned = true;
-  history.pushState(null, '', '/c/' + encodeURIComponent(name));
-  renderAllBlocks();
-  renderSessionStrip();
 }
 
 function hasCategories() {
@@ -430,7 +412,6 @@ function goHome() {
   // view it always had — every page in the strip (author, 2026-08-10).
   if (!hasCategories()) {
     state.view = 'page';
-    state.category = null;
     state.pinned = false;
     history.pushState(null, '', '/');
     renderAllBlocks();
@@ -438,7 +419,6 @@ function goHome() {
     return;
   }
   state.view = 'home';
-  state.category = null;
   state.pinned = true;
   history.pushState(null, '', '/home');
   renderAllBlocks();
@@ -830,47 +810,37 @@ function applyIframeMemory(el, block) {
   }
 }
 
-// Two indexes, one renderer. Home is about the *categories* — what kinds of
-// pages this project has (author, 2026-08-10) — with each one's pages listed
-// beneath as the useful extra. A category page is the same list, scoped to
-// one, and is what a category chip opens.
+// The index: every category with the pages in it, and the untitled set
+// leading. There is no per-category page — categories are browsed here and
+// nowhere else (author, 2026-08-10).
+function cssId(name) {
+  return name.replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
 function renderIndex() {
   $blocks.textContent = '';
   document.body.classList.remove('sv-rail');
-  const home = state.view === 'home';
-  const groups = groupedSessions().filter((g) => (home ? true : g.name === state.category));
-
   const wrap = document.createElement('section');
   wrap.className = 'sv-block sv-home';
   const h = document.createElement('h1');
-  h.textContent = home ? 'Pages' : state.category;
+  h.textContent = 'Pages';
   wrap.appendChild(h);
 
-  if (!home) {
-    const back = document.createElement('a');
-    back.className = 'sv-home-back';
-    back.href = '/home';
-    back.textContent = '← all categories';
-    back.addEventListener('click', (e) => { e.preventDefault(); goHome(); });
-    wrap.appendChild(back);
-  }
+  const groups = groupedSessions();
   if (!groups.length) {
     const p = document.createElement('p');
     p.className = 'text-muted';
-    p.textContent = home ? 'No pages yet.' : 'No pages in this category.';
+    p.textContent = 'No pages yet.';
     wrap.appendChild(p);
   }
 
   for (const g of groups) {
     const sec = document.createElement('div');
     sec.className = 'sv-home-group';
-    // The uncategorized set is a category like any other, minus its title
-    // (author, 2026-08-10) — which is what makes a project that has never
-    // used categories behave exactly as it did before they existed.
-    if (home && g.name) {
-      const head = document.createElement('a');
+    if (g.name) {
+      sec.id = 'sv-cat-' + cssId(g.name);
+      const head = document.createElement('div');
       head.className = 'sv-home-cat';
-      head.href = '/c/' + encodeURIComponent(g.name);
       const name = document.createElement('span');
       name.className = 'sv-home-cat-name';
       name.textContent = g.name;
@@ -878,14 +848,9 @@ function renderIndex() {
       count.className = 'sv-home-meta';
       count.textContent = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
       head.append(name, count);
-      head.addEventListener('click', (e) => { e.preventDefault(); goCategory(g.name); });
       sec.appendChild(head);
     }
-    // Home is about the categories: a named one links to its own page rather
-    // than spilling its contents here (author, 2026-08-10). The untitled set
-    // has no page to link to, so its pages *are* its entry.
-    const pages = home && g.name ? [] : g.pages;
-    for (const s2 of pages) {
+    for (const s2 of g.pages) {
       const a = document.createElement('a');
       a.className = 'sv-home-page';
       a.href = '/s/' + encodeURIComponent(s2.id);
@@ -912,7 +877,7 @@ function renderIndex() {
 }
 
 function renderAllBlocks() {
-  if (state.view === 'home' || state.view === 'category') {
+  if (state.view === 'home') {
     renderIndex();
     return;
   }

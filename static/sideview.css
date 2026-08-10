@@ -238,23 +238,11 @@ html {
    switch, this is what you read when there are more pages than strip. */
 #sv-brand { cursor: pointer; }
 .sv-home-group { margin: 1.5rem 0; }
-.sv-home-back {
-  display: inline-block;
-  margin-bottom: 0.75rem;
-  font-family: var(--sv-mono);
-  font-size: 0.72rem;
-  color: var(--bs-secondary-color);
-  text-decoration: none;
-}
-.sv-home-back:hover { color: var(--sv-ink); }
-/* On the home index the category is the headline — the pages beneath it are
-   the useful extra, not the point. */
+/* On the index a category heads its own pages. */
 .sv-home-cat {
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  text-decoration: none;
-  color: inherit;
   border-bottom: 1px solid var(--bs-border-color);
   padding-bottom: 0.35rem;
   margin-bottom: 0.5rem;
@@ -266,7 +254,7 @@ html {
   text-transform: uppercase;
   color: var(--sv-ink);
 }
-.sv-home-cat:hover .sv-home-cat-name { text-decoration: underline; }
+
 .sv-home-group h2 {
   font-family: var(--sv-mono);
   font-size: 0.68rem;
@@ -294,9 +282,8 @@ html {
   color: var(--bs-secondary-color);
 }
 
-/* The strip's title: which set of pages these are. Not a chip — it names
-   the group rather than joining it — but clickable, because a category is
-   also a page. */
+/* The strip's title: which set of pages these are. Not a chip and not a
+   link — it names the group; browsing categories happens on the index. */
 .sv-strip-title {
   align-self: center;
   flex: none;
@@ -313,7 +300,7 @@ html {
   white-space: nowrap;
   cursor: pointer;
 }
-.sv-strip-title:hover { color: var(--sv-ink); }
+
 
 /* A category chip — only ever on the home index, where the categories are
    what you are looking at. Small caps mark it as a set, not a document. */
