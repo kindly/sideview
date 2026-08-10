@@ -253,8 +253,14 @@ html {
   color: var(--bs-secondary-color);
 }
 
+/* The label's right padding is small because the ✕ normally supplies the
+   rest of it. A chip without one (a config-declared page) has to supply its
+   own, or the text sits against the border. */
 .sv-chip-label {
   padding: 0.1rem 0.15rem 0.1rem 0.6rem;
+}
+.sv-chip-label:only-child {
+  padding-right: 0.6rem;
 }
 
 .sv-chip-del {
