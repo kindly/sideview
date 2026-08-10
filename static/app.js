@@ -824,22 +824,21 @@ function renderIndex() {
   for (const g of groups) {
     const sec = document.createElement('div');
     sec.className = 'sv-home-group';
-    if (home) {
-      // The category is the headline, and it is itself a page.
+    // The uncategorized set is a category like any other, minus its title
+    // (author, 2026-08-10) — which is what makes a project that has never
+    // used categories behave exactly as it did before they existed.
+    if (home && g.name) {
       const head = document.createElement('a');
       head.className = 'sv-home-cat';
-      head.href = g.name ? '/c/' + encodeURIComponent(g.name) : '#';
-      head.innerHTML = '';
+      head.href = '/c/' + encodeURIComponent(g.name);
       const name = document.createElement('span');
       name.className = 'sv-home-cat-name';
-      name.textContent = g.name || 'Ungrouped';
+      name.textContent = g.name;
       const count = document.createElement('span');
       count.className = 'sv-home-meta';
       count.textContent = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
       head.append(name, count);
-      if (g.name) {
-        head.addEventListener('click', (e) => { e.preventDefault(); goCategory(g.name); });
-      }
+      head.addEventListener('click', (e) => { e.preventDefault(); goCategory(g.name); });
       sec.appendChild(head);
     }
     for (const s2 of g.pages) {
