@@ -23,7 +23,8 @@ const state = {
   expand: new Map(),     // section key -> bool, manual twist overrides (per session)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
   conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
-  home: false,           // the index view: every page, grouped
+  view: 'page',          // 'page' | 'home' | 'category'
+  category: null,        // which category, when view === 'category'
 };
 
 let outline = { sections: [], blockSections: new Map() };
@@ -35,12 +36,7 @@ const $status = document.getElementById('sv-status');
 const $brand = document.getElementById('sv-brand');
 // The wordmark is the way home: the index of every page, grouped.
 $brand.addEventListener('click', () => {
-  if (state.home) return;
-  state.home = true;
-  state.pinned = true;
-  history.pushState(null, '', '/home');
-  renderAllBlocks();
-  renderSessionStrip();
+  if (state.view !== 'home') goHome();
 });
 const $outline = document.getElementById('sv-outline');
 const $railToggle = document.getElementById('sv-rail-toggle');
@@ -53,9 +49,17 @@ if (pathMatch) {
   state.selected = decodeURIComponent(pathMatch[1]);
   state.pinned = true;
 }
+// /home is the index of categories; /c/<name> is one category's own page.
+// Both pin, because an index must not be yanked away by activity elsewhere.
 if (location.pathname === '/home') {
-  state.home = true;
-  state.pinned = true; // the index must not be yanked away by activity
+  state.view = 'home';
+  state.pinned = true;
+}
+const catMatch = location.pathname.match(/^\/c\/(.+)$/);
+if (catMatch) {
+  state.view = 'category';
+  state.category = decodeURIComponent(catMatch[1]);
+  state.pinned = true;
 }
 
 function sessionProps() {
@@ -290,7 +294,7 @@ es.addEventListener('sessions', (e) => {
     switchSession(mostActive.id);
   }
   renderSessionStrip();
-  if (state.home) renderHome(); // the index lists pages: it follows them
+  if (state.view !== 'page') renderAllBlocks(); // indexes list pages: they follow them
   refreshOutline(); // a session's outline property may have changed
 });
 
@@ -356,19 +360,51 @@ function groupedSessions() {
     .map(([name, pages]) => ({ name, pages }));
 }
 
+// The strip is categories, not pages (author, 2026-08-10): a category is
+// itself a page, so the top level stays short however many documents a
+// project grows. The category you are inside expands its own pages beside
+// it, so switching between siblings — the common move — stays one click.
+// Pages with no category keep today's behaviour and appear directly.
 function renderSessionStrip() {
   $sessions.textContent = '';
   const groups = groupedSessions();
-  const named = groups.filter((g) => g.name).length > 0;
+  const here = state.sessions.find((s) => s.id === state.selected);
+  const hereCat = ((here && here.props && here.props.category) || '').trim();
   for (const g of groups) {
-    if (named && g.name) {
-      const tag = document.createElement('span');
-      tag.className = 'sv-chip-group';
-      tag.textContent = g.name;
-      $sessions.appendChild(tag);
+    if (!g.name) {
+      renderChips(g.pages); // uncategorized: the page is its own entry
+      continue;
     }
-    renderChips(g.pages);
+    const open = state.view === 'category' ? state.category === g.name : hereCat === g.name;
+    const chip = document.createElement('span');
+    chip.className = 'sv-chip sv-chip-cat' + (open ? ' active' : '');
+    const btn = document.createElement('button');
+    btn.className = 'sv-chip-label';
+    btn.textContent = g.name;
+    btn.title = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
+    btn.addEventListener('click', () => goCategory(g.name));
+    chip.appendChild(btn);
+    $sessions.appendChild(chip);
+    if (open) renderChips(g.pages);
   }
+}
+
+function goCategory(name) {
+  state.view = 'category';
+  state.category = name;
+  state.pinned = true;
+  history.pushState(null, '', '/c/' + encodeURIComponent(name));
+  renderAllBlocks();
+  renderSessionStrip();
+}
+
+function goHome() {
+  state.view = 'home';
+  state.category = null;
+  state.pinned = true;
+  history.pushState(null, '', '/home');
+  renderAllBlocks();
+  renderSessionStrip();
 }
 
 function renderChips(sessions) {
@@ -382,7 +418,7 @@ function renderChips(sessions) {
     btn.title = s.id;
     btn.addEventListener('click', () => {
       state.pinned = true;
-      state.home = false;
+      state.view = 'page';
       history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
       switchSession(s.id);
       renderSessionStrip();
@@ -756,48 +792,76 @@ function applyIframeMemory(el, block) {
   }
 }
 
-// The home index: every page in the project, grouped exactly as the strip
-// groups them. A landing rather than a page — the strip stays the fast
-// switch, this is the one you read when there are more pages than strip.
-function renderHome() {
+// Two indexes, one renderer. Home is about the *categories* — what kinds of
+// pages this project has (author, 2026-08-10) — with each one's pages listed
+// beneath as the useful extra. A category page is the same list, scoped to
+// one, and is what a category chip opens.
+function renderIndex() {
   $blocks.textContent = '';
   document.body.classList.remove('sv-rail');
+  const home = state.view === 'home';
+  const groups = groupedSessions().filter((g) => (home ? true : g.name === state.category));
+
   const wrap = document.createElement('section');
   wrap.className = 'sv-block sv-home';
   const h = document.createElement('h1');
-  h.textContent = 'Pages';
+  h.textContent = home ? 'Pages' : state.category;
   wrap.appendChild(h);
-  const groups = groupedSessions();
+
+  if (!home) {
+    const back = document.createElement('a');
+    back.className = 'sv-home-back';
+    back.href = '/home';
+    back.textContent = '← all categories';
+    back.addEventListener('click', (e) => { e.preventDefault(); goHome(); });
+    wrap.appendChild(back);
+  }
   if (!groups.length) {
     const p = document.createElement('p');
     p.className = 'text-muted';
-    p.textContent = 'No pages yet.';
+    p.textContent = home ? 'No pages yet.' : 'No pages in this category.';
     wrap.appendChild(p);
   }
+
   for (const g of groups) {
     const sec = document.createElement('div');
     sec.className = 'sv-home-group';
-    const tag = document.createElement('h2');
-    tag.textContent = g.name || 'Ungrouped';
-    sec.appendChild(tag);
-    for (const s of g.pages) {
+    if (home) {
+      // The category is the headline, and it is itself a page.
+      const head = document.createElement('a');
+      head.className = 'sv-home-cat';
+      head.href = g.name ? '/c/' + encodeURIComponent(g.name) : '#';
+      head.innerHTML = '';
+      const name = document.createElement('span');
+      name.className = 'sv-home-cat-name';
+      name.textContent = g.name || 'Ungrouped';
+      const count = document.createElement('span');
+      count.className = 'sv-home-meta';
+      count.textContent = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
+      head.append(name, count);
+      if (g.name) {
+        head.addEventListener('click', (e) => { e.preventDefault(); goCategory(g.name); });
+      }
+      sec.appendChild(head);
+    }
+    for (const s2 of g.pages) {
       const a = document.createElement('a');
       a.className = 'sv-home-page';
-      a.href = '/s/' + encodeURIComponent(s.id);
+      a.href = '/s/' + encodeURIComponent(s2.id);
       a.addEventListener('click', (e) => {
         e.preventDefault();
         state.pinned = true;
+        state.view = 'page';
         history.pushState(null, '', a.getAttribute('href'));
-        state.home = false;
-        switchSession(s.id);
+        switchSession(s2.id);
         renderSessionStrip();
       });
       const name = document.createElement('span');
       name.className = 'sv-home-name';
-      name.textContent = (s.props && s.props.label) || shortLabel(s.id);
+      name.textContent = (s2.props && s2.props.label) || shortLabel(s2.id);
       const meta = document.createElement('span');
       meta.className = 'sv-home-meta';
-      meta.textContent = (s.props && s.props.path) || s.id;
+      meta.textContent = (s2.props && s2.props.path) || s2.id;
       a.append(name, meta);
       sec.appendChild(a);
     }
@@ -807,8 +871,8 @@ function renderHome() {
 }
 
 function renderAllBlocks() {
-  if (state.home) {
-    renderHome();
+  if (state.view === 'home' || state.view === 'category') {
+    renderIndex();
     return;
   }
   $blocks.textContent = '';
