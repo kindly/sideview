@@ -294,19 +294,26 @@ html {
   color: var(--bs-secondary-color);
 }
 
-/* A category chip: the strip's top level. Small caps mark it as a container
-   rather than a document, and the open one leads its own pages. */
-.sv-chip-cat .sv-chip-label {
+/* The strip's title: which set of pages these are. Not a chip — it names
+   the group rather than joining it — but clickable, because a category is
+   also a page. */
+.sv-strip-title {
+  align-self: center;
+  flex: none;
+  padding: 0 0.35rem 0 0;
+  margin-right: 0.35rem;
+  border: 0;
+  border-right: 1px solid var(--bs-border-color);
+  background: transparent;
+  font-family: var(--sv-mono);
   font-size: 0.66rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+  cursor: pointer;
 }
-.sv-chip-cat.active {
-  border-color: var(--sv-ink);
-}
-.sv-chip-cat.active .sv-chip-label {
-  color: var(--sv-ink);
-}
+.sv-strip-title:hover { color: var(--sv-ink); }
 
 /* A chip is a bordered pair: the label switches, the × deletes (two-step —
    .sv-armed is the armed state, and it disarms itself). */

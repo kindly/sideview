@@ -360,33 +360,31 @@ function groupedSessions() {
     .map(([name, pages]) => ({ name, pages }));
 }
 
-// The strip is categories, not pages (author, 2026-08-10): a category is
-// itself a page, so the top level stays short however many documents a
-// project grows. The category you are inside expands its own pages beside
-// it, so switching between siblings — the common move — stays one click.
-// Pages with no category keep today's behaviour and appear directly.
+// The strip carries one category's pages and nothing else (author,
+// 2026-08-10). Its length is the whole point: a project may hold dozens of
+// pages, but you are only ever working inside one set, so the strip shows
+// that set and a title naming it. Moving between categories is the home
+// index's job, not the strip's — it never lists a category as a chip.
 function renderSessionStrip() {
   $sessions.textContent = '';
-  const groups = groupedSessions();
   const here = state.sessions.find((s) => s.id === state.selected);
-  const hereCat = ((here && here.props && here.props.category) || '').trim();
-  for (const g of groups) {
-    if (!g.name) {
-      renderChips(g.pages); // uncategorized: the page is its own entry
-      continue;
-    }
-    const open = state.view === 'category' ? state.category === g.name : hereCat === g.name;
-    const chip = document.createElement('span');
-    chip.className = 'sv-chip sv-chip-cat' + (open ? ' active' : '');
-    const btn = document.createElement('button');
-    btn.className = 'sv-chip-label';
-    btn.textContent = g.name;
-    btn.title = `${g.pages.length} page${g.pages.length === 1 ? '' : 's'}`;
-    btn.addEventListener('click', () => goCategory(g.name));
-    chip.appendChild(btn);
-    $sessions.appendChild(chip);
-    if (open) renderChips(g.pages);
+  const current =
+    state.view === 'category'
+      ? state.category
+      : ((here && here.props && here.props.category) || '').trim();
+
+  const group = groupedSessions().find((g) => g.name === current);
+  if (current) {
+    // The title is the category of the page you are on, and it is also that
+    // category's page — one place to see the rest of the set.
+    const title = document.createElement('button');
+    title.className = 'sv-strip-title';
+    title.textContent = current;
+    title.title = 'this category’s page';
+    title.addEventListener('click', () => goCategory(current));
+    $sessions.appendChild(title);
   }
+  renderChips(group ? group.pages : groupedSessions().find((g) => !g.name)?.pages || []);
 }
 
 function goCategory(name) {
