@@ -293,6 +293,10 @@ es.addEventListener('sessions', (e) => {
     // position — attention is never stolen.
     switchSession(mostActive.id);
   }
+  if (state.view === 'home' && !hasCategories()) {
+    state.view = 'page'; // nothing to index; the strip is the whole story
+    state.pinned = false;
+  }
   renderSessionStrip();
   if (state.view !== 'page') renderAllBlocks(); // indexes list pages: they follow them
   refreshOutline(); // a session's outline property may have changed
@@ -370,15 +374,11 @@ function renderSessionStrip() {
   const groups = groupedSessions();
 
   // The strip always shows the siblings of what you are looking at. On the
-  // home index that is the categories themselves (author, 2026-08-10 — the
-  // strip showing the last category you visited was the confusion); the
-  // untitled set has no chip to show, so its pages stand in for it.
+  // home index that is the categories, and only those: the untitled set's
+  // pages belong to the index below, not to the strip (author, 2026-08-10).
   if (state.view === 'home') {
     for (const g of groups) {
-      if (!g.name) {
-        renderChips(g.pages);
-        continue;
-      }
+      if (!g.name) continue;
       const chip = document.createElement('span');
       chip.className = 'sv-chip sv-chip-cat';
       const btn = document.createElement('button');
@@ -421,7 +421,22 @@ function goCategory(name) {
   renderSessionStrip();
 }
 
+function hasCategories() {
+  return state.sessions.some((s) => ((s.props && s.props.category) || '').trim());
+}
+
 function goHome() {
+  // A project that never used categories has nothing to index: home is the
+  // view it always had — every page in the strip (author, 2026-08-10).
+  if (!hasCategories()) {
+    state.view = 'page';
+    state.category = null;
+    state.pinned = false;
+    history.pushState(null, '', '/');
+    renderAllBlocks();
+    renderSessionStrip();
+    return;
+  }
   state.view = 'home';
   state.category = null;
   state.pinned = true;
