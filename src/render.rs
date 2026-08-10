@@ -218,6 +218,16 @@ fn iframe(document: &str, height: Option<&str>) -> String {
     const PRELUDE: &str = concat!(
         r#"<link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">"#,
         r#"<link rel="stylesheet" href="/assets/sideview.css">"#,
+        // The islands prize, made cheap (V3.sv): an import map so a block
+        // writes `import { createApp, ref } from 'vue'` — the spelling every
+        // model already knows — instead of a vendored path it has to be told.
+        // A srcdoc document inherits its creator's base URL, so the relative
+        // path resolves; the module fetch is CORS-checked from an opaque
+        // origin, which is what the Access-Control-Allow-Origin on /assets
+        // is for. Must precede any module script, hence its place here.
+        r#"<script type="importmap">"#,
+        r#"{"imports":{"vue":"/assets/vendor/vue.esm-browser.prod.js"}}"#,
+        "</script>",
         "<script>",
         // The OS guess paints first; the parent's theme message corrects
         // it as soon as the size handshake announces this iframe.
@@ -272,6 +282,21 @@ mod tests {
         let page = format::parse(src);
         assert_eq!(page.blocks.len(), 1, "test fixture must be one block");
         page.blocks.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn html_blocks_can_be_vue_islands() {
+        let b = parse_one(
+            "<sv-html id=\"b1\">\n<div id=\"app\"></div>\n<script type=\"module\">\nimport { createApp } from 'vue'\n</script>\n</sv-html>",
+        );
+        let html = block("b1", &b);
+        // The import map must be present and must precede the block's own
+        // module script, or the bare 'vue' specifier cannot resolve.
+        let map = html.find("importmap").expect("islands need the import map");
+        let body = html.find("type=&quot;module&quot;").expect("the block's module script");
+        assert!(map < body, "the import map has to come first");
+        assert!(html.contains("vue.esm-browser.prod.js"), "mapped to the vendored build");
+        assert!(html.contains(r#"sandbox="allow-scripts""#), "still an isolated island");
     }
 
     #[test]

@@ -107,6 +107,40 @@ small `sv-` layer (metrics, deltas), run `sideview styles`. Images: `<img
 src="shots/before.png">` in a markup block — the path resolves against the project
 root, so copy files into the project first (`$TMPDIR` gets cleaned up).
 
+## Interactive blocks: an `html` block is a Vue island
+
+When interaction *is* the point — a number the reader should push on, options
+they want to sort, a matrix worth exploring — an `html` block can be a real Vue
+app. Vue is vendored and mapped, so the import is the spelling you already know:
+
+```html
+<div id="app" class="p-3"></div>
+<script type="module">
+  import { createApp, ref, computed } from 'vue'
+  createApp({
+    setup() {
+      const rate = ref(4)
+      return { rate, dropped: computed(() => Math.round(4000 * rate.value / 100)) }
+    },
+    template: `
+      <input class="form-range" type="range" min="0" max="25" v-model.number="rate">
+      <div class="sv-metric">{{ dropped }} rows dropped</div>`,
+  }).mount('#app')
+</script>
+```
+
+No CDN, no build step, no `<script src>` juggling: write `from 'vue'` and it
+resolves to the vendored copy. The block inherits the page's Bootstrap and design
+system (so it looks native without CSS of yours), follows the theme toggle, and
+autosizes — the frame grows to its content, so don't set `--height` unless you
+want it pinned. Use the composition API with an explicit `setup()` and an inline
+`template` string: `<script setup>` sugar needs a compiler and there is none.
+
+An island cannot reach the page that hosts it (sandboxed, opaque origin), which
+is what makes it safe to be careless in. Reach for one only when interaction is
+the point — prose, tables and diffs are cheaper to write, cheaper to read, and
+they survive in a snapshot where an island's state does not.
+
 ## The page talks back — comments, and who resolves them
 
 **If the user asked for the page, watching is part of the ask.** Don't end at
