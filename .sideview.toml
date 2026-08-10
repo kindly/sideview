@@ -1,0 +1,14 @@
+# sideview, configuring itself. Committed: this is versioned intent, while
+# .sideview/ holds disposable machinery.
+
+[[pages]]
+path = "HANDOFF.md"
+label = "Handoff"
+category = "state"
+order = 1
+
+[[pages]]
+path = "DESIGN.md"
+label = "Design"
+category = "design"
+order = 2

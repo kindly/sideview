@@ -436,7 +436,7 @@ pub fn session_set(
 /// its binding. No id means your own, matching `session set`. Deliberately
 /// never touches the daemon: deletion must not auto-spawn one, and a running
 /// one notices the binding vanish on its next tick.
-pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()> {
+pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>, delete_file: bool) -> Result<()> {
     let mut store = open_project_store()?;
     let target = match id {
         Some(id) => id.to_string(),
@@ -451,6 +451,23 @@ pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>) -> Result<()
         .binding(&target)?
         .map(|b| b.path)
         .unwrap_or_else(|| session::page_rel_path(&target));
+    // Deletion splits by tier, not by format (author, 2026-08-10): a
+    // throwaway page is sideview's own scratch and `rm` means rm; anything
+    // in the repo — a promoted .sv as much as an imported DESIGN.md — is a
+    // committed file, so the default is to unbind and leave it on disk.
+    // `--file` is the deliberate second word for actually deleting one.
+    if !store::is_throwaway_page(&rel) && !delete_file {
+        let had = store.delete_binding(&target)?;
+        if !had {
+            bail!("no page {target}");
+        }
+        eprintln!("unbound page {target} — {rel} is a committed file and stays on disk");
+        eprintln!("(delete it with `sideview page rm {target} --file`, or with git)");
+        if crate::config::load(&store.root).0.pages.iter().any(|e| e.page_id() == target) {
+            eprintln!("note: .sideview.toml still lists it, so it will re-bind — remove the entry to keep it closed");
+        }
+        return Ok(());
+    }
     let file = store.root.join(&rel);
     let had_binding = store.delete_binding(&target)?;
     let had_file = match std::fs::remove_file(&file) {

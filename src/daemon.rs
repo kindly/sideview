@@ -129,10 +129,17 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     // restarts. Taken? Take another and print the new URL. Meta is the
     // durable copy (the row is cleared on clean shutdown); a crash-leftover
     // row is the fallback.
-    let remembered = store
-        .meta("port")?
-        .and_then(|p| p.parse().ok())
-        .or(store.daemon()?.map(|d| d.port))
+    // Config beats the remembered value: it is canon and survives a deleted
+    // db, which is the wrinkle V2's sign-off recorded (the page resurrects;
+    // its address did not). An explicit --port still beats both.
+    let (cfg, cfg_err) = crate::config::load(&store.root);
+    if let Some(e) = &cfg_err {
+        eprintln!("config ignored — {e}");
+    }
+    let remembered = cfg
+        .port
+        .or_else(|| store.meta("port").ok().flatten().and_then(|p| p.parse().ok()))
+        .or_else(|| store.daemon().ok().flatten().map(|d| d.port))
         .unwrap_or(0);
     let loopback = match opts.port {
         Some(p) => TcpListener::bind((Ipv4Addr::LOCALHOST, p))
@@ -266,14 +273,21 @@ async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl 
     let Ok(Some(binding)) = store.binding(&id) else {
         return HttpResponse::NotFound().body(format!("no session {id:?}"));
     };
-    let file = state.root.join(&binding.path);
-    if let Err(e) = std::fs::remove_file(&file) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            return HttpResponse::InternalServerError()
-                .body(format!("removing {}: {e}", file.display()));
+    // Tidying power, not destruction: the page's ✕ deletes a *throwaway*
+    // page's file, and merely unbinds anything committed — a promoted .sv
+    // as much as an imported DESIGN.md (author, 2026-08-10). Deleting a
+    // file someone committed belongs to git, or to an explicit
+    // `page rm --file`, never to a two-click affordance in a browser.
+    if crate::store::is_throwaway_page(&binding.path) {
+        let file = state.root.join(&binding.path);
+        if let Err(e) = std::fs::remove_file(&file) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return HttpResponse::InternalServerError()
+                    .body(format!("removing {}: {e}", file.display()));
+            }
         }
+        let _ = std::fs::remove_file(file.with_extension("sv.lock"));
     }
-    let _ = std::fs::remove_file(file.with_extension("sv.lock"));
     match store.delete_binding(&id) {
         Ok(_) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
@@ -579,6 +593,10 @@ fn poll_loop(
     // after a long idle, live 2026-08-08; an aggregate probe briefly stood
     // in before the author called for the counter.)
     let mut conversation_gen = -1i64;
+    // The repo config is a file like any other: stat it on the same tick, so
+    // a category or a new imported page lands live.
+    let mut config_stamp: Option<Option<(SystemTime, u64)>> = None;
+    let mut cfg = crate::config::Config::default();
 
     loop {
         ticks = ticks.wrapping_add(1);
@@ -617,6 +635,36 @@ fn poll_loop(
             }
         }
 
+        // Config: reload on change, then make its pages exist. This is the
+        // half that survives a deleted db — .sv files announce themselves in
+        // the startup scan, a repo's markdown never does, and sideview must
+        // not colonize it by scanning (V3.sv).
+        let cfg_file = store.root.join(crate::config::FILE);
+        let cfg_now = std::fs::metadata(&cfg_file)
+            .ok()
+            .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+        let config_changed = config_stamp != Some(cfg_now);
+        if config_changed {
+            config_stamp = Some(cfg_now);
+            let (c, err) = crate::config::load(&store.root);
+            if let Some(e) = err {
+                eprintln!("config ignored — {e}");
+            }
+            cfg = c;
+            for e in &cfg.pages {
+                let id = e.page_id();
+                if store.binding(&id)?.is_some() {
+                    continue;
+                }
+                if !store.root.join(&e.path).exists() {
+                    eprintln!("config: no file {} (page {id})", e.path);
+                    continue;
+                }
+                store.bind_session(&id, &e.path, &store.root.display().to_string(), "config")?;
+                eprintln!("config page {id} → {}", e.path);
+            }
+        }
+
         let mut changed_sessions = false;
         let mut events: Vec<Outgoing> = Vec::new();
         let bindings = store.bindings()?;
@@ -635,11 +683,29 @@ fn poll_loop(
                 let stamp = std::fs::metadata(&file)
                     .ok()
                     .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+                let entry = cfg.pages.iter().find(|e| e.page_id() == b.id || e.path == b.path);
                 let known = shared.pages.get(&b.id).map(|p| p.stamp);
-                if known == Some(stamp) {
+                // A config edit can change how a page renders or what it is
+                // called, so it re-reads even when the file itself is still.
+                if known == Some(stamp) && !config_changed {
                     continue;
                 }
-                let fresh = load_page(&file, &b.path, stamp);
+                let fmt =
+                    crate::config::format_of(&b.path, entry.and_then(|e| e.render.as_deref()));
+                let mut fresh = load_page(&file, &b.path, stamp, fmt);
+                // Config supplies only what the file cannot say about itself:
+                // an .sv page's own props always win.
+                if let Some(e) = entry {
+                    for (key, val) in [
+                        ("label", e.label.clone()),
+                        ("category", e.category.clone()),
+                        ("order", e.order.map(|o| o.to_string())),
+                    ] {
+                        if let Some(v) = val {
+                            fresh.props.entry(key.to_string()).or_insert(serde_json::Value::String(v));
+                        }
+                    }
+                }
                 let old = shared.pages.insert(b.id.clone(), fresh);
                 let fresh = &shared.pages[&b.id];
                 if old.as_ref().map(|o| &o.props) != Some(&fresh.props) {
@@ -712,7 +778,38 @@ fn poll_loop(
 /// Read and render a page file into daemon state. A missing or unreadable
 /// file renders as one honest block rather than an empty page — a binding
 /// pointing at nothing is a fact worth showing.
-fn load_page(file: &Path, rel: &str, stamp: Option<(SystemTime, u64)>) -> PageState {
+/// An imported file as a one-block page. One block and not one per heading,
+/// deliberately: block ids are what comments target, so heading-derived ids
+/// would orphan every thread under a renamed heading (V3.sv).
+fn imported_page(source: &str, fmt: crate::config::Format) -> format::Page {
+    use crate::config::Format;
+    let type_name = match fmt {
+        Format::Markdown => "sv-prose",
+        Format::HtmlInline => "sv-markup",
+        Format::HtmlFrame => "sv-html",
+        Format::Sv => unreachable!("sv files are parsed, not imported"),
+    };
+    format::Page {
+        props: Vec::new(), // label/category come from config: the file cannot say
+        blocks: vec![format::Block {
+            type_name: type_name.into(),
+            // A stable id, so a doc's comments survive every edit to it: the
+            // anchor inside does the finer work.
+            attrs: vec![("id".into(), "doc".into())],
+            body: source.to_string(),
+            warnings: Vec::new(),
+            lines: (0, 0), // never spliced: the CLI only edits .sv pages
+        }],
+        warnings: Vec::new(),
+    }
+}
+
+fn load_page(
+    file: &Path,
+    rel: &str,
+    stamp: Option<(SystemTime, u64)>,
+    fmt: crate::config::Format,
+) -> PageState {
     let source = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(_) => {
@@ -732,7 +829,14 @@ fn load_page(file: &Path, rel: &str, stamp: Option<(SystemTime, u64)>) -> PageSt
             }
         }
     };
-    let page = format::parse(&source);
+    // Three page formats, one renderer (V3.sv). An imported file is a page
+    // sideview did not compose, so it becomes exactly one block through the
+    // path that already exists for its content — no new block type, and the
+    // limitations belong to the format.
+    let page = match fmt {
+        crate::config::Format::Sv => format::parse(&source),
+        other => imported_page(&source, other),
+    };
     let mut props = serde_json::Map::new();
     for (k, v) in &page.props {
         props.insert(k.clone(), serde_json::Value::String(v.clone()));
@@ -1006,7 +1110,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("p.sv");
         std::fs::write(&file, src).unwrap();
-        load_page(&file, "p.sv", None)
+        load_page(&file, "p.sv", None, crate::config::Format::Sv)
     }
 
     #[test]
@@ -1035,7 +1139,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_renders_an_honest_block() {
-        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None);
+        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None, crate::config::Format::Sv);
         assert_eq!(page.blocks.len(), 1);
         assert!(page.blocks[0].html.contains("moved or deleted"), "{}", page.blocks[0].html);
     }
@@ -1113,6 +1217,21 @@ mod tests {
         assert!(
             state.store.lock().unwrap().binding("s1").unwrap().is_none(),
             "the binding is deleted"
+        );
+
+        // A committed page is a different tier: the ✕ closes it and leaves
+        // the file, because deleting something someone committed is git's
+        // job or an explicit `page rm --file`, never a browser affordance.
+        let doc = state.store.lock().unwrap().root.join("DESIGN.md");
+        std::fs::write(&doc, "# Design\n").unwrap();
+        state.store.lock().unwrap().bind_session("DESIGN", "DESIGN.md", "/tmp", "config").unwrap();
+        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/DESIGN").to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status(), actix_web::http::StatusCode::NO_CONTENT);
+        assert!(doc.exists(), "a committed file survives the page's ✕");
+        assert!(
+            state.store.lock().unwrap().binding("DESIGN").unwrap().is_none(),
+            "…but it is unbound"
         );
     }
 

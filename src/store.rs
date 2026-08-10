@@ -22,6 +22,16 @@ pub const SPAWN_LOCK: &str = "spawn.lock";
 /// gitignored by the store's own `.gitignore`; promotion is `mv` into the repo.
 pub const PAGES_DIR: &str = "pages";
 
+/// Is this page sideview's own scratch, or a file someone committed? The
+/// tier is the path: throwaway pages live under `.sideview/pages/` and are
+/// disposable by construction; everything else — a promoted `.sv`, an
+/// imported `.md` — is repo canon, and deleting it should be exactly as
+/// scary as deleting any other committed file (author, 2026-08-10).
+pub fn is_throwaway_page(rel: &str) -> bool {
+    let prefix = format!("{DIR_NAME}/{PAGES_DIR}/");
+    rel.starts_with(&prefix)
+}
+
 /// A daemon whose `last_seen` is older than this is doubted, and the doubt
 /// path (ping/pong) decides.
 pub const STALE_AFTER_MS: i64 = 10_000;

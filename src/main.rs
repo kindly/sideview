@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod daemon;
 mod diff;
 mod format;
@@ -207,10 +208,15 @@ enum PageCmd {
         #[command(flatten)]
         author: AuthorArgs,
     },
-    /// Delete a page: its file, its binding, its conversation. No id means this session's
+    /// Close a page: unbinds it, and for a throwaway page deletes its file
+    /// and conversation too. No id means this session's
     Rm {
-        /// The page to delete (defaults to your own)
+        /// The page to close (defaults to your own)
         id: Option<String>,
+        /// Also delete the file when it is a committed one — the deliberate
+        /// second word, since that is as destructive as deleting any file
+        #[arg(long)]
+        file: bool,
         #[command(flatten)]
         author: AuthorArgs,
     },
@@ -328,9 +334,11 @@ fn main() -> anyhow::Result<()> {
         | Some(Cmd::Session { action: SessionCmd::Set { label, outline, author } }) => {
             cli::session_set(author.session.as_deref(), label.as_deref(), outline.as_deref())
         }
-        Some(Cmd::Page { action: PageCmd::Rm { id, author } })
-        | Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
-            cli::session_rm(author.session.as_deref(), id.as_deref())
+        Some(Cmd::Page { action: PageCmd::Rm { id, file, author } }) => {
+            cli::session_rm(author.session.as_deref(), id.as_deref(), file)
+        }
+        Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
+            cli::session_rm(author.session.as_deref(), id.as_deref(), false)
         }
         Some(Cmd::Page { action: PageCmd::Promote { dest, author } }) => {
             cli::page_promote(author.session.as_deref(), &dest)
