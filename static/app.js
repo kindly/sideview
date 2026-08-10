@@ -881,7 +881,11 @@ function renderIndex() {
       head.addEventListener('click', (e) => { e.preventDefault(); goCategory(g.name); });
       sec.appendChild(head);
     }
-    for (const s2 of g.pages) {
+    // Home is about the categories: a named one links to its own page rather
+    // than spilling its contents here (author, 2026-08-10). The untitled set
+    // has no page to link to, so its pages *are* its entry.
+    const pages = home && g.name ? [] : g.pages;
+    for (const s2 of pages) {
       const a = document.createElement('a');
       a.className = 'sv-home-page';
       a.href = '/s/' + encodeURIComponent(s2.id);
