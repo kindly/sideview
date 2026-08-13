@@ -742,7 +742,31 @@ function elementFor(blockId, html, ord) {
   const el = tpl.content.firstElementChild;
   if (!el) return null;
   el.dataset.ord = ord;
+  addBlockComment(el);
   return el;
+}
+
+// A thread on the block *as a whole* (author, 2026-08-13). Until now every
+// gesture went through a text selection, so a block with no selectable text —
+// an iframe today, a framed table tomorrow — could not be commented on at
+// all. It is also the simplest kind of thread there is: the empty anchor
+// means the block's tail, so it never orphans; it outlives every edit to the
+// block's content and dies only with the block.
+function addBlockComment(el) {
+  if (!el.matches?.('[data-block]')) return;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sv-block-comment';
+  b.title = 'comment on this block';
+  b.setAttribute('aria-label', 'comment on this block');
+  b.innerHTML = BUBBLE_SVG;
+  b.addEventListener('click', () => startDraft(el, ''));
+  el.appendChild(b);
+  // No selectable text means no other way in, so the affordance stops being
+  // hover-revealed and simply sits there, quietly.
+  if (el.querySelector('iframe') && !textOf(el).trim()) {
+    el.classList.add('sv-needs-bubble');
+  }
 }
 
 // Scripts parsed via innerHTML are inert; markup blocks are deliberately

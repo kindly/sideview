@@ -420,6 +420,43 @@ body.sv-rail .sv-block > table {
 
 .sv-block {
   margin-bottom: 1.75rem;
+  position: relative; /* the block-level comment bubble anchors here */
+}
+
+/* Comment on the block as a whole: the only way in for a block with no
+   selectable text (an iframe, a framed table), and the simplest thread there
+   is — an empty anchor means the block's tail, which never orphans.
+   Hover-revealed, so it adds no resting furniture to the reading; blocks
+   that offer no other gesture keep it visible instead. */
+.sv-block-comment {
+  position: absolute;
+  top: 0;
+  right: -0.35rem;
+  z-index: 3;
+  padding: 0.15rem 0.3rem;
+  line-height: 0;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.sv-block:hover > .sv-block-comment,
+.sv-block-comment:focus-visible {
+  opacity: 1;
+}
+.sv-block-comment:hover {
+  border-color: var(--sv-ink);
+  color: var(--sv-ink);
+}
+.sv-block.sv-needs-bubble > .sv-block-comment {
+  opacity: 0.45;
+}
+.sv-block.sv-needs-bubble:hover > .sv-block-comment { opacity: 1; }
+/* Touch has no hover: leave the affordance visible rather than unreachable. */
+@media (hover: none) {
+  .sv-block > .sv-block-comment { opacity: 0.45; }
 }
 
 /* Plex Sans display for headings — bigger and bolder than the system-stack
