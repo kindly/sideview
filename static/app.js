@@ -754,6 +754,11 @@ function elementFor(blockId, html, ord) {
 // block's content and dies only with the block.
 function addBlockComment(el) {
   if (!el.matches?.('[data-block]')) return;
+  // Only blocks with no selectable text get one (author, 2026-08-13): an
+  // iframe, a lone image. Everywhere else double-click and selection already
+  // work, and a second affordance would make the user reason about a
+  // block-type divide they should never have to see.
+  if (textOf(el).trim()) return;
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'sv-block-comment';
@@ -762,11 +767,6 @@ function addBlockComment(el) {
   b.innerHTML = BUBBLE_SVG;
   b.addEventListener('click', () => startDraft(el, ''));
   el.appendChild(b);
-  // No selectable text means no other way in, so the affordance stops being
-  // hover-revealed and simply sits there, quietly.
-  if (el.querySelector('iframe') && !textOf(el).trim()) {
-    el.classList.add('sv-needs-bubble');
-  }
 }
 
 // Scripts parsed via innerHTML are inert; markup blocks are deliberately
