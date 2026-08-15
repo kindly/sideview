@@ -29,6 +29,13 @@ guarantee is the inverse boundary: *content* (blocks agents write, pages
 anyone edits) cannot reach extension machinery — see "What content cannot
 do" below.
 
+A consequence stated so it is chosen rather than stumbled into: an installed
+extension wrapping `git` (or any tool with hook-like configuration —
+`.gitattributes` textconv, for example) runs whatever that configuration
+says. Core sideview refuses exactly this and uses gitoxide instead; an
+extension may accept it, because installing the extension was the decision.
+
+
 ## Anatomy
 
 ```
@@ -117,8 +124,11 @@ are written against, which only you know. The installer never overrides it.
 
 Before your entry's first script runs:
 
-- `<base href="…">` — the opaque per-block base. Rely on it; never on
-  `location.origin` or root-absolute paths.
+- `<base href="…">` — the opaque per-block base. Rely on it for your own
+  assets; never construct your own absolute paths from `location.origin`.
+  The one sanctioned exception: sideview's public endpoints are same-origin
+  and fair game — `fetch("/f/<project-relative path>")` reads a project file
+  without spawning anything.
 - `window.SIDEVIEW_BLOCK` — `{ page, id, attrs, body }`: the block's page id,
   block id, attributes as an object of strings, and the raw body. This is
   how your UI learns what it is showing without asking anyone.
@@ -142,7 +152,9 @@ for await (const chunk of response.body) { /* paint as it arrives */ }
   arguments, never the executable. Arguments are passed as an argv array —
   there is no shell, no quoting, no interpolation.
 - `call_cli(args, {stdin})` → `Promise<{code, stdout, stderr}>`. `stdout`
-  and `stderr` are UTF-8 text. Large inputs belong on `stdin`, not in argv.
+  and `stderr` are UTF-8 text — a binary that emits bytes (an image, a
+  parquet) must be called through the streaming variant, whose `Response`
+  carries them faithfully. Large inputs belong on `stdin`, not in argv.
 - `call_cli_streaming(args, {stdin})` → a `fetch` `Response` whose body
   streams the child's stdout as it is produced. **Aborting the request
   (AbortController) kills the child** — wire it to scroll-away or re-run
