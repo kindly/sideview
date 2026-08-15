@@ -168,9 +168,34 @@ for await (const chunk of response.body) { /* paint as it arrives */ }
   the error goes to the daemon's log, so emit your own end-marker if your
   format needs one.
 
-There is no third function. No persistent process, no sessions held open, no
-push channel: see "The contract" below for why, and the ladder for what to
-do if you believe you need one.
+There is no process-shaped third function — no resident child, no sessions
+held open: see "The contract" below for why, and the ladder for what to do
+if you believe you need one.
+
+## Comments from inside an extension
+
+Specified now, lands after the first build. Sideview places a block-level
+comment bubble on every extension block for free; these three give a frame
+*finer* anchors — a cell, a row — that only it can address:
+
+- `sideview.create_comment({anchor, quote, context})` — opens a pre-anchored
+  draft in sideview's comment bar; the human writes and sends there, where
+  attachments and markdown already live. `anchor` is yours (stored as
+  `c:<your string>`, opaque to sideview); **`quote` must carry the meaning
+  without your UI visible** ("`revenue`, row 1,204: −£3,412") — it is what
+  the agent's watch event shows and what survives when the anchor stops
+  resolving. This never posts a comment by itself.
+- `sideview.get_comments()` → the block's threads and comments, and
+  `sideview.on_comments(cb)` — called with the same shape on every change,
+  so highlighting commented cells stays correct without polling.
+- **Jump delegation, inward**: when a reader clicks a `c:` thread's
+  jump-back, sideview cannot resolve your anchor, so the frame receives a
+  `sideview:jump` event with it — scroll your own UI, flash your own cell.
+
+Orphaning is yours: sideview never marks a `c:` thread "§ changed", because
+it cannot know whether "row 1,204 of this query" still exists. If you can
+detect staleness, say so in your UI; the captured quote is what keeps the
+thread meaningful either way.
 
 ## The contract: every call is a fresh process
 
