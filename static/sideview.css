@@ -423,6 +423,17 @@ body.sv-rail .sv-block > table {
   position: relative; /* the block-level comment bubble anchors here */
 }
 
+/* Extension frames (EXTENSIONS.md): same-origin, parent-measured unless the
+   block pinned a height. The border matches sv-html frames so blocks read
+   as one family. */
+iframe.sv-ext {
+  display: block;
+  width: 100%;
+  height: 16rem; /* pre-measure default; replaced on load or pinned by attr */
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+}
+
 /* Comment on the block as a whole. It exists *only* on blocks with no
    selectable text — an iframe, a lone image — because everywhere else
    selection already works and a second affordance would make the reader

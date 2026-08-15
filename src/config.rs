@@ -27,6 +27,110 @@ pub struct Config {
     /// Pages to bind at startup. `.sv` files need no entry unless they want
     /// a category; imported formats need one to exist at all.
     pub pages: Vec<PageEntry>,
+    /// Installed extensions. Listing one here is the trust act
+    /// (EXTENSIONS.md): everything an extension can say about itself lives
+    /// in its own manifest; config says only that it is installed, and
+    /// whether it is currently enabled.
+    pub extensions: Vec<ExtensionEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtensionEntry {
+    /// Project-relative directory holding plugin.toml and the entry files.
+    pub path: String,
+    pub enabled: Option<bool>,
+}
+
+/// An extension's own manifest — extensions/<name>/plugin.toml. Required in
+/// full: a stray index.html never becomes an extension by accident.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Manifest {
+    /// Claims the block tag `sv-<name>`.
+    pub name: String,
+    /// The version of the EXTENSIONS.md contract the extension expects.
+    pub api: u32,
+    /// "inline" | "frame" | "sandbox" — only "frame" is built (api 1).
+    pub render: String,
+    /// Entry file, relative to the extension directory.
+    pub entry: String,
+    /// The one binary call_cli may exec; bare names resolve on PATH,
+    /// "./…" relative to the extension directory. Optional: a pure-UI
+    /// extension has no binary at all.
+    pub bin: Option<String>,
+}
+
+/// The highest EXTENSIONS.md contract this build implements.
+pub const EXTENSION_API: u32 = 1;
+
+/// A loaded, validated extension: manifest plus its directory.
+#[derive(Debug, Clone)]
+pub struct Extension {
+    pub manifest: Manifest,
+    /// Project-relative directory (the config entry's path).
+    pub dir: String,
+}
+
+impl Extension {
+    pub fn tag(&self) -> String {
+        format!("sv-{}", self.manifest.name)
+    }
+}
+
+/// Load every enabled extension's manifest. Failures are facts to render,
+/// not reasons to refuse service: each problem comes back as a
+/// (path, message) the caller logs, and a degraded manifest is simply not
+/// in the map — its blocks fall through to the honest unknown-tag block.
+pub fn load_extensions(root: &Path, cfg: &Config) -> (Vec<Extension>, Vec<(String, String)>) {
+    let mut out = Vec::new();
+    let mut problems = Vec::new();
+    for e in &cfg.extensions {
+        if e.enabled == Some(false) {
+            continue;
+        }
+        let manifest_path = root.join(&e.path).join("plugin.toml");
+        let src = match std::fs::read_to_string(&manifest_path) {
+            Ok(s) => s,
+            Err(err) => {
+                problems.push((e.path.clone(), format!("no plugin.toml ({err})")));
+                continue;
+            }
+        };
+        let m: Manifest = match toml::from_str(&src) {
+            Ok(m) => m,
+            Err(err) => {
+                problems.push((e.path.clone(), format!("plugin.toml: {err}")));
+                continue;
+            }
+        };
+        if !m.name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            || m.name.is_empty()
+        {
+            problems.push((e.path.clone(), format!("name {:?} is not [a-z0-9-]", m.name)));
+            continue;
+        }
+        if m.api > EXTENSION_API {
+            problems.push((
+                e.path.clone(),
+                format!("wants api {} but this sideview knows {}", m.api, EXTENSION_API),
+            ));
+            continue;
+        }
+        if m.render != "frame" {
+            // inline and sandbox are specified, not built; anything else is
+            // a typo. Either way the honest outcome is the same: not loaded.
+            problems.push((
+                e.path.clone(),
+                format!("render {:?} is not built in this sideview (only \"frame\")", m.render),
+            ));
+            continue;
+        }
+        if out.iter().any(|x: &Extension| x.manifest.name == m.name) {
+            problems.push((e.path.clone(), format!("duplicate extension name {:?}", m.name)));
+            continue;
+        }
+        out.push(Extension { manifest: m, dir: e.path.clone() });
+    }
+    (out, problems)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -112,6 +216,49 @@ pub fn is_imported(rel: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extensions_load_validated_and_degrade_by_omission() {
+        let dir = std::env::temp_dir().join(format!("sv-ext-{}", uuid::Uuid::new_v4()));
+        for (name, manifest) in [
+            ("good", "name = \"wordcount\"\napi = 1\nrender = \"frame\"\nentry = \"index.html\"\nbin = \"wc\"\n"),
+            ("newer", "name = \"future\"\napi = 99\nrender = \"frame\"\nentry = \"index.html\"\n"),
+            ("inline", "name = \"prose-ext\"\napi = 1\nrender = \"inline\"\nentry = \"index.html\"\n"),
+            ("broken", "name = = nope"),
+        ] {
+            let d = dir.join("extensions").join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("plugin.toml"), manifest).unwrap();
+        }
+        let cfg: Config = toml::from_str(
+            r#"
+            [[extensions]]
+            path = "extensions/good"
+            [[extensions]]
+            path = "extensions/newer"
+            [[extensions]]
+            path = "extensions/inline"
+            [[extensions]]
+            path = "extensions/broken"
+            [[extensions]]
+            path = "extensions/missing"
+            [[extensions]]
+            path = "extensions/good"      # duplicate name
+            [[extensions]]
+            path = "extensions/off"
+            enabled = false
+            "#,
+        )
+        .unwrap();
+        let (exts, problems) = load_extensions(&dir, &cfg);
+        assert_eq!(exts.len(), 1, "only the valid one loads");
+        assert_eq!(exts[0].tag(), "sv-wordcount");
+        assert_eq!(exts[0].manifest.bin.as_deref(), Some("wc"));
+        // Every failure is a named fact; the disabled one is not a failure.
+        assert_eq!(problems.len(), 5, "newer api, unbuilt render, broken toml, missing, dup: {problems:?}");
+        assert!(problems.iter().any(|(_, m)| m.contains("api 99")));
+        assert!(problems.iter().any(|(_, m)| m.contains("only \"frame\"")));
+    }
 
     #[test]
     fn config_parses_pages_and_port_and_survives_nonsense() {

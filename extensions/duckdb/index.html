@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- The vendored Vue, same-origin — an extension frame may use sideview's
+     public endpoints (EXTENSIONS.md). -->
+<script type="importmap">{"imports":{"vue":"/assets/vendor/vue.esm-browser.prod.js"}}</script>
+<style>
+  :root { --ink: #23272d; --paper: #faf9f5; --line: #e4e0d7; --muted: #6c757d; --accent: #3357d0; }
+  [data-bs-theme="dark"] { --ink: #dcdad5; --paper: #16181c; --line: #2b2e34; --muted: #8a9099; --accent: #8fa7ff; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+    font: 14px/1.4 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  .bar { flex: none; display: flex; gap: 1rem; align-items: baseline;
+    padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .bar .muted { color: var(--muted); }
+  .bar button { margin-left: auto; border: 1px solid var(--line); background: transparent;
+    color: var(--ink); font: inherit; font-size: 12px; padding: 0.1rem 0.6rem; cursor: pointer; }
+  .bar button:hover { border-color: var(--accent); color: var(--accent); }
+  .scroll { flex: 1; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th { position: sticky; top: 0; background: var(--paper); text-align: left;
+    border-bottom: 1px solid var(--ink); padding: 0.25rem 0.75rem; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.08em; }
+  td { padding: 0.15rem 0.75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .err { padding: 0.75rem; color: #b3423e; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { createApp, ref, computed, onMounted } from 'vue'
+
+// The whole extension: stream `duckdb -jsonlines` and paint rows as they
+// arrive. SQL is the block's body; an optional db attr opens a database
+// read-only. Fresh process per run — the EXTENSIONS.md contract.
+createApp({
+  setup() {
+    const { attrs, body } = window.SIDEVIEW_BLOCK;
+    const rows = ref([]);
+    const cols = ref([]);
+    const running = ref(false);
+    const error = ref('');
+    const elapsed = ref(null);
+    let aborter = null;
+
+    const args = attrs.db ? ['-readonly', attrs.db, '-jsonlines'] : ['-jsonlines'];
+
+    async function run() {
+      aborter?.abort(); // a re-run cancels the previous child (kill-on-abort)
+      aborter = new AbortController();
+      running.value = true;
+      error.value = '';
+      rows.value = [];
+      cols.value = [];
+      const started = performance.now();
+      try {
+        const res = await sideview.call_cli_streaming(args, {
+          stdin: body,
+          signal: aborter.signal,
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (value) {
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const obj = JSON.parse(line);
+              if (!cols.value.length) cols.value = Object.keys(obj);
+              rows.value.push(obj);
+            }
+          }
+          if (done) break;
+        }
+        // Zero rows and a closed stream: either an empty result or an error
+        // the stream could not carry — one plain call retrieves the truth.
+        if (!rows.value.length) {
+          const check = await sideview.call_cli(args, { stdin: body });
+          if (check.code !== 0) error.value = check.stderr.trim();
+        }
+        elapsed.value = ((performance.now() - started) / 1000).toFixed(2);
+      } catch (e) {
+        if (e.name !== 'AbortError') error.value = String(e.message || e);
+      } finally {
+        running.value = false;
+      }
+    }
+
+    onMounted(run);
+    return {
+      rows, cols, running, error, elapsed, run,
+      status: computed(() =>
+        running.value ? 'running…'
+        : error.value ? 'failed'
+        : `${rows.value.length.toLocaleString()} rows · ${elapsed.value}s`),
+    };
+  },
+  template: `
+    <div class="bar">
+      <span>duckdb</span>
+      <span class="muted">{{ status }}</span>
+      <button type="button" @click="run">{{ running ? 'cancel + re-run' : 're-run' }}</button>
+    </div>
+    <div v-if="error" class="err">{{ error }}</div>
+    <div v-else class="scroll">
+      <table>
+        <thead><tr><th v-for="c in cols" :key="c">{{ c }}</th></tr></thead>
+        <tbody>
+          <tr v-for="(r, i) in rows" :key="i">
+            <td v-for="c in cols" :key="c">{{ r[c] }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `,
+}).mount('#app');
+</script>
+</body>
+</html>

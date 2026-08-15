@@ -74,6 +74,10 @@ struct PageState {
     blocks: Vec<Rendered>,
     /// (mtime, len) of the file this state was derived from.
     stamp: Option<(SystemTime, u64)>,
+    /// Extension blocks' raw context — attrs and body — kept for the
+    /// SIDEVIEW_BLOCK injection when the frame is served. Only blocks whose
+    /// tag matched a registered extension appear here.
+    ext_blocks: HashMap<String, (Vec<(String, String)>, String)>,
 }
 
 #[derive(Default)]
@@ -88,6 +92,8 @@ struct Shared {
     /// Explicit outlines (page → parsed spec), riding the sessions event as a
     /// prop so the client needs no fourth event kind.
     outlines: HashMap<String, serde_json::Value>,
+    /// Installed extensions, loaded from config (reloaded when it changes).
+    extensions: Vec<crate::config::Extension>,
 }
 
 struct AppState {
@@ -135,6 +141,10 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     let (cfg, cfg_err) = crate::config::load(&store.root);
     if let Some(e) = &cfg_err {
         eprintln!("config ignored — {e}");
+    }
+    let (initial_exts, ext_problems) = crate::config::load_extensions(&store.root, &cfg);
+    for (path, why) in &ext_problems {
+        eprintln!("extension {path} not loaded — {why}");
     }
     let remembered = cfg
         .port
@@ -203,7 +213,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     let (tx, _) = broadcast::channel::<Outgoing>(1024);
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared = Arc::new(Mutex::new(Shared { extensions: initial_exts, ..Shared::default() }));
 
     // The poll loop gets its own db connection on its own thread; the actix
     // handlers only ever touch the in-memory state.
@@ -241,6 +251,11 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 .route("/api/sessions/{session}", web::delete().to(delete_session))
                 .route("/api/comments", web::post().to(post_comment))
                 .route("/api/attachments", web::post().to(upload_attachment))
+                // Extensions (EXTENSIONS.md): the entry with its injections,
+                // the extension's own files, and the two call endpoints.
+                .route("/x/{ext}/{page}/{block}/__call", web::post().to(ext_call))
+                .route("/x/{ext}/{page}/{block}/__call_stream", web::post().to(ext_call_stream))
+                .route("/x/{ext}/{page}/{block}/{tail:.*}", web::get().to(ext_serve))
                 .route("/api/threads/{id}/resolve", web::post().to(resolve_thread))
                 .route("/api/threads/{id}/unresolve", web::post().to(unresolve_thread))
                 .route("/f/{path:.*}", web::get().to(project_file))
@@ -526,6 +541,127 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     }
 }
 
+// ---- extensions (EXTENSIONS.md) -----------------------------------------------
+// One generic route family. The entry is served with its injections; the
+// extension's other files serve confined to its directory; the two call
+// endpoints exec the manifest's binary — fresh process per call, argv array,
+// no shell, the caps in ext.rs.
+
+fn ext_lookup(
+    state: &AppState,
+    ext: &str,
+    page: &str,
+    block: &str,
+) -> std::result::Result<(crate::config::Extension, Vec<(String, String)>, String), HttpResponse> {
+    let shared = state.shared.lock().unwrap();
+    let Some(x) = shared.extensions.iter().find(|x| x.manifest.name == ext) else {
+        return Err(HttpResponse::NotFound().body(format!("no extension {ext:?} installed")));
+    };
+    // Path segments arrive still percent-encoded (the /s/ route learned the
+    // same); page ids can hold `/` and `%`, so decode before the lookup.
+    let page = percent_encoding::percent_decode_str(page).decode_utf8_lossy().to_string();
+    let block = percent_encoding::percent_decode_str(block).decode_utf8_lossy().to_string();
+    let Some((attrs, body)) =
+        shared.pages.get(&page).and_then(|p| p.ext_blocks.get(&block)).cloned()
+    else {
+        return Err(HttpResponse::NotFound()
+            .body(format!("no {} block {block:?} on page {page:?}", x.tag())));
+    };
+    Ok((x.clone(), attrs, body))
+}
+
+async fn ext_serve(
+    path: web::Path<(String, String, String, String)>,
+    state: Data<AppState>,
+) -> impl Responder {
+    let (ext, page, block, tail) = path.into_inner();
+    let (x, attrs, body) = match ext_lookup(&state, &ext, &page, &block) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    // The entry gets the injections; everything else is a plain file.
+    if tail.is_empty() || tail == x.manifest.entry {
+        let entry_path = state.root.join(&x.dir).join(&x.manifest.entry);
+        let html = match std::fs::read_to_string(&entry_path) {
+            Ok(h) => h,
+            Err(e) => {
+                return HttpResponse::NotFound()
+                    .body(format!("extension entry {}: {e}", entry_path.display()))
+            }
+        };
+        let page_dec = percent_encoding::percent_decode_str(&page).decode_utf8_lossy();
+        let block_dec = percent_encoding::percent_decode_str(&block).decode_utf8_lossy();
+        let base = format!(
+            "/x/{}/{}/{}/",
+            x.manifest.name,
+            crate::session::encode(&page_dec),
+            crate::session::encode(&block_dec)
+        );
+        let json = crate::ext::block_json(&page_dec, &block_dec, &attrs, &body);
+        return HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .insert_header(("Cache-Control", "no-cache"))
+            .body(crate::ext::inject_entry(&html, &base, &json));
+    }
+    match crate::ext::safe_ext_file(&state.root, &x, &tail) {
+        Some(file) => match std::fs::read(&file) {
+            Ok(bytes) => HttpResponse::Ok()
+                .content_type(mime_guess::from_path(&file).first_or_octet_stream().to_string())
+                .insert_header(("Cache-Control", "no-cache"))
+                .body(bytes),
+            Err(e) => HttpResponse::NotFound().body(format!("{e}")),
+        },
+        None => HttpResponse::NotFound().body("outside the extension directory"),
+    }
+}
+
+async fn ext_call(
+    path: web::Path<(String, String, String)>,
+    body: web::Json<crate::ext::CallBody>,
+    state: Data<AppState>,
+) -> impl Responder {
+    let (ext, page, block) = path.into_inner();
+    let (x, _, _) = match ext_lookup(&state, &ext, &page, &block) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let bin = match crate::ext::resolve_bin(&state.root, &x) {
+        Ok(b) => b,
+        Err(e) => return HttpResponse::BadRequest().body(format!("{e:#}")),
+    };
+    let b = body.into_inner();
+    match crate::ext::run_call(&bin, &b.args, b.stdin.as_deref(), &state.root).await {
+        Ok(result) => HttpResponse::Ok().json(result),
+        // Mechanism failures (spawn, timeout, cap) — a non-zero *exit* is a
+        // result, handled above by resolving normally.
+        Err(e) => HttpResponse::BadGateway().body(format!("{e:#}")),
+    }
+}
+
+async fn ext_call_stream(
+    path: web::Path<(String, String, String)>,
+    body: web::Json<crate::ext::CallBody>,
+    state: Data<AppState>,
+) -> impl Responder {
+    let (ext, page, block) = path.into_inner();
+    let (x, _, _) = match ext_lookup(&state, &ext, &page, &block) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let bin = match crate::ext::resolve_bin(&state.root, &x) {
+        Ok(b) => b,
+        Err(e) => return HttpResponse::BadRequest().body(format!("{e:#}")),
+    };
+    let b = body.into_inner();
+    match crate::ext::stream_call(bin, b.args, b.stdin, state.root.clone(), x.manifest.name.clone()) {
+        Ok(stream) => HttpResponse::Ok()
+            .content_type("application/octet-stream")
+            .insert_header(("X-Accel-Buffering", "no"))
+            .streaming(stream),
+        Err(e) => HttpResponse::BadGateway().body(format!("{e:#}")),
+    }
+}
+
 async fn resolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl Responder {
     set_resolution(path.into_inner(), false, &state)
 }
@@ -653,6 +789,11 @@ fn poll_loop(
                 eprintln!("config ignored — {e}");
             }
             cfg = c;
+            let (exts, problems) = crate::config::load_extensions(&store.root, &cfg);
+            for (path, why) in &problems {
+                eprintln!("extension {path} not loaded — {why}");
+            }
+            shared.lock().unwrap().extensions = exts;
             for e in &cfg.pages {
                 let id = e.page_id();
                 if store.binding(&id)?.is_some() {
@@ -680,6 +821,7 @@ fn poll_loop(
                 changed_sessions = true;
             }
 
+            let exts = shared.extensions.clone();
             for b in &bindings {
                 let file = store.root.join(&b.path);
                 let stamp = std::fs::metadata(&file)
@@ -694,7 +836,7 @@ fn poll_loop(
                 }
                 let fmt =
                     crate::config::format_of(&b.path, entry.and_then(|e| e.render.as_deref()));
-                let mut fresh = load_page(&file, &b.path, stamp, fmt);
+                let mut fresh = load_page(&file, &b.path, stamp, fmt, &b.id, &exts);
                 // What the chip's ✕ may do, decided here where the tier and
                 // the config are both in hand: a throwaway page is scratch
                 // and closes by deleting; a committed one only unbinds; and
@@ -830,12 +972,15 @@ fn load_page(
     rel: &str,
     stamp: Option<(SystemTime, u64)>,
     fmt: crate::config::Format,
+    page_id: &str,
+    exts: &[crate::config::Extension],
 ) -> PageState {
     let source = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(_) => {
             let msg = format!("page file moved or deleted — was {rel}");
             return PageState {
+                ext_blocks: HashMap::new(),
                 props: serde_json::Map::new(),
                 blocks: vec![Rendered {
                     id: "sv-missing".into(),
@@ -869,6 +1014,7 @@ fn load_page(
     // identical anonymous blocks — get an occurrence suffix.
     let mut seen: HashMap<String, u32> = HashMap::new();
     let mut blocks = Vec::new();
+    let mut ext_blocks: HashMap<String, (Vec<(String, String)>, String)> = HashMap::new();
     for (i, b) in page.blocks.iter().enumerate() {
         let base = match b.id() {
             Some(id) => id.to_string(),
@@ -882,6 +1028,19 @@ fn load_page(
         let n = seen.entry(base.clone()).or_insert(0);
         *n += 1;
         let id = if *n == 1 { base } else { format!("{base}-{n}") };
+        // A tag a registered extension claims renders as that extension's
+        // frame; everything else takes the normal path (which ends at the
+        // honest unknown-tag block).
+        if let Some(ext) = exts.iter().find(|x| x.tag() == b.type_name) {
+            ext_blocks.insert(id.clone(), (b.attrs.clone(), b.body.clone()));
+            blocks.push(Rendered {
+                ord: format!("a{i:012}"),
+                html: render::ext_block(&id, &ext.manifest.name, page_id, b.attr("height")),
+                headings_json: serde_json::json!([]),
+                id,
+            });
+            continue;
+        }
         blocks.push(Rendered {
             ord: format!("a{i:012}"),
             html: render::block(&id, b),
@@ -890,7 +1049,7 @@ fn load_page(
             id,
         });
     }
-    PageState { props, blocks, stamp }
+    PageState { props, blocks, stamp, ext_blocks }
 }
 
 /// The reparse diff: upserts for new or changed blocks, removes for gone ones.
@@ -1131,7 +1290,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("p.sv");
         std::fs::write(&file, src).unwrap();
-        load_page(&file, "p.sv", None, crate::config::Format::Sv)
+        load_page(&file, "p.sv", None, crate::config::Format::Sv, "test", &[])
     }
 
     #[test]
@@ -1160,7 +1319,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_renders_an_honest_block() {
-        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None, crate::config::Format::Sv);
+        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None, crate::config::Format::Sv, "test", &[]);
         assert_eq!(page.blocks.len(), 1);
         assert!(page.blocks[0].html.contains("moved or deleted"), "{}", page.blocks[0].html);
     }
@@ -1352,6 +1511,11 @@ mod tests {
             actix_web::App::new()
                 .app_data(state.clone())
                 .route("/api/attachments", web::post().to(upload_attachment))
+                // Extensions (EXTENSIONS.md): the entry with its injections,
+                // the extension's own files, and the two call endpoints.
+                .route("/x/{ext}/{page}/{block}/__call", web::post().to(ext_call))
+                .route("/x/{ext}/{page}/{block}/__call_stream", web::post().to(ext_call_stream))
+                .route("/x/{ext}/{page}/{block}/{tail:.*}", web::get().to(ext_serve))
                 .route("/api/comments", web::post().to(post_comment)),
         )
         .await;
@@ -1411,6 +1575,87 @@ mod tests {
             .to_request();
         let res = actix_web::test::call_service(&app, req).await;
         assert_eq!(res.status().as_u16(), 400);
+    }
+
+    #[actix_web::test]
+    async fn extension_frames_serve_injected_and_calls_exec_the_manifest_bin() {
+        let dir = std::env::temp_dir().join(format!("sv-x-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let ext_dir = store.root.join("extensions/demo");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(ext_dir.join("index.html"), "<head><title>d</title></head><body>x</body>").unwrap();
+        std::fs::write(ext_dir.join("style.css"), "body{}").unwrap();
+        std::fs::write(store.root.join("secret.txt"), "canon").unwrap();
+
+        let ext = crate::config::Extension {
+            manifest: crate::config::Manifest {
+                name: "demo".into(),
+                api: 1,
+                render: "frame".into(),
+                entry: "index.html".into(),
+                bin: Some("cat".into()),
+            },
+            dir: "extensions/demo".into(),
+        };
+        let mut page = PageState::default();
+        page.ext_blocks.insert(
+            "b1".into(),
+            (vec![("db".into(), "x.duckdb".into())], "select 1".into()),
+        );
+        let shared = Shared {
+            extensions: vec![ext],
+            pages: HashMap::from([("v3".to_string(), page)]),
+            ..Shared::default()
+        };
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(shared)),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/x/{ext}/{page}/{block}/__call", web::post().to(ext_call))
+                .route("/x/{ext}/{page}/{block}/{tail:.*}", web::get().to(ext_serve)),
+        )
+        .await;
+
+        // The entry arrives with its injections, in order.
+        let req = actix_web::test::TestRequest::get().uri("/x/demo/v3/b1/").to_request();
+        let body = actix_web::test::call_and_read_body(&app, req).await;
+        let html = String::from_utf8_lossy(&body);
+        assert!(html.contains(r#"<base href="/x/demo/v3/b1/">"#), "base: {html}");
+        assert!(html.contains(r#""db":"x.duckdb""#) && html.contains("select 1"), "block context");
+        assert!(html.contains("window.sideview"), "the api");
+        assert!(html.find("<base").unwrap() < html.find("<title>").unwrap(), "prelude first");
+
+        // Its own files serve; the project outside its directory does not.
+        let ok = actix_web::test::TestRequest::get().uri("/x/demo/v3/b1/style.css").to_request();
+        assert!(actix_web::test::call_service(&app, ok).await.status().is_success());
+        let esc = actix_web::test::TestRequest::get()
+            .uri("/x/demo/v3/b1/../../secret.txt")
+            .to_request();
+        assert_ne!(
+            actix_web::test::call_service(&app, esc).await.status().as_u16(),
+            200,
+            "confinement"
+        );
+
+        // __call execs the manifest's bin — args from the caller, stdin carried.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/x/demo/v3/b1/__call")
+            .set_json(serde_json::json!({"args": [], "stdin": "hello"}))
+            .to_request();
+        let r: serde_json::Value = actix_web::test::call_and_read_body_json(&app, req).await;
+        assert_eq!((r["code"].as_i64(), r["stdout"].as_str()), (Some(0), Some("hello")));
+
+        // Unknown extension and unknown block are named 404s.
+        let req = actix_web::test::TestRequest::get().uri("/x/nope/v3/b1/").to_request();
+        assert_eq!(actix_web::test::call_service(&app, req).await.status().as_u16(), 404);
+        let req = actix_web::test::TestRequest::get().uri("/x/demo/v3/b9/").to_request();
+        assert_eq!(actix_web::test::call_service(&app, req).await.status().as_u16(), 404);
     }
 
     /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed

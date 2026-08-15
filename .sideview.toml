@@ -54,3 +54,9 @@ path = "V0.md"
 label = "v0"
 category = "shipped"
 order = 10
+
+[[extensions]]
+path = "extensions/duckdb"
+
+[[extensions]]
+path = "extensions/git"

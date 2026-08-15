@@ -771,6 +771,31 @@ function addBlockComment(el) {
 
 // Scripts parsed via innerHTML are inert; markup blocks are deliberately
 // unsanitized (see V0.md), so re-create them to let them run.
+// Extension frames are same-origin (EXTENSIONS.md), so no envelope: the
+// parent measures the document directly and follows it — unless the block
+// pinned a height, which wins.
+function wireExtFrames(el) {
+  for (const frame of el.querySelectorAll('iframe.sv-ext')) {
+    if (frame.dataset.svFixed) continue;
+    frame.addEventListener('load', () => {
+      try {
+        const doc = frame.contentDocument;
+        const set = () => {
+          const h = Math.max(
+            doc.documentElement.scrollHeight,
+            doc.body ? doc.body.scrollHeight : 0
+          );
+          if (h > 0) frame.style.height = h + 'px';
+        };
+        set();
+        new ResizeObserver(set).observe(doc.documentElement);
+      } catch (e) {
+        /* a foreign frame: leave the default height */
+      }
+    });
+  }
+}
+
 function activateScripts(el) {
   for (const old of el.querySelectorAll('script')) {
     const s = document.createElement('script');
@@ -813,6 +838,7 @@ function applyBlock(ev) {
   });
   if (live) el.classList.add('sv-arrive');
   activateScripts(el);
+  wireExtFrames(el);
   // Never scroll for new content (the author's rule); when it lands out of
   // view, offer the pill instead.
   if (live && !newBelowEl && el.getBoundingClientRect().top > innerHeight) {
@@ -915,6 +941,7 @@ function renderAllBlocks() {
         applyDiffPref(el);
         $blocks.appendChild(el);
         activateScripts(el);
+        wireExtFrames(el);
       }
     }
   }

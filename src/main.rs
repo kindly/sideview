@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod daemon;
+mod ext;
 mod diff;
 mod format;
 mod netcheck;

@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #23272d; --paper: #faf9f5; --line: #e4e0d7; --muted: #6c757d;
+    --add: #1d6a3c; --del: #a13a36; --hunk: #3357d0; }
+  [data-bs-theme="dark"] { --ink: #dcdad5; --paper: #16181c; --line: #2b2e34;
+    --muted: #8a9099; --add: #6fbf8f; --del: #e08a86; --hunk: #8fa7ff; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink);
+    font: 13px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+  .bar { display: flex; gap: 1rem; padding: 0.4rem 0.75rem; font-size: 12px;
+    border-bottom: 1px solid var(--line); }
+  .bar .muted { color: var(--muted); }
+  pre { margin: 0; padding: 0.5rem 0.75rem; white-space: pre-wrap; word-break: break-word; }
+  .a { color: var(--add); }
+  .d { color: var(--del); }
+  .h { color: var(--hunk); }
+  .f { font-weight: 700; }
+  .err { color: #b3423e; }
+</style>
+</head>
+<body>
+<div class="bar"><span>git</span> <span class="muted" id="cmd"></span></div>
+<pre id="out">running…</pre>
+<script type="module">
+// The generality check (V3.sv): a second extension proves the mechanism is
+// not shaped around one tool. The block body's first line becomes argv —
+// split on whitespace, a demo-grade simplification (no quoted args).
+const { body } = window.SIDEVIEW_BLOCK;
+const args = body.trim().split(/\s+/);
+document.getElementById('cmd').textContent = 'git ' + args.join(' ');
+
+const out = document.getElementById('out');
+const { code, stdout, stderr } = await sideview.call_cli(args);
+if (code !== 0) {
+  out.className = 'err';
+  out.textContent = stderr || `git exited ${code}`;
+} else {
+  out.textContent = '';
+  for (const line of stdout.split('\n')) {
+    const span = document.createElement('span');
+    span.className =
+      line.startsWith('+') ? 'a'
+      : line.startsWith('-') ? 'd'
+      : line.startsWith('@@') ? 'h'
+      : line.startsWith('diff --git') || line.startsWith('commit ') ? 'f'
+      : '';
+    span.textContent = line + '\n';
+    out.appendChild(span);
+  }
+}
+</script>
+</body>
+</html>

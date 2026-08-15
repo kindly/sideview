@@ -254,6 +254,26 @@ fn iframe(document: &str, height: Option<&str>) -> String {
     format!(r#"<iframe class="sv-html" sandbox="allow-scripts"{style} srcdoc="{srcdoc}"></iframe>"#)
 }
 
+/// An extension block: an iframe on our own origin at the extension's
+/// per-block base (EXTENSIONS.md). Same-origin and unsandboxed — the
+/// registration was the trust act — so the parent can measure it, and the
+/// entry gets its injections when the frame is fetched, not here.
+pub fn ext_block(id: &str, ext_name: &str, page_id: &str, height: Option<&str>) -> String {
+    let src = format!(
+        "/x/{}/{}/{}/",
+        ext_name,
+        crate::session::encode(page_id),
+        crate::session::encode(id)
+    );
+    let style = match height.filter(|h| is_css_length(h)) {
+        Some(h) => format!(r#" data-sv-fixed="1" style="height:{h}""#),
+        None => String::new(),
+    };
+    format!(
+        r#"<section class="sv-block" data-block="{id}" data-type="sv-{ext_name}"><iframe class="sv-ext" src="{src}"{style}></iframe></section>"#,
+    )
+}
+
 /// A plausible CSS length (`40rem`, `600px`, `85vh`, `50%`) and nothing more —
 /// not because the author is distrusted (markup blocks are unsanitized by
 /// design), but because a typo'd unit should fall back to the default rather

@@ -27,6 +27,16 @@ screenshots** (a `#svdebug` probe now reports visual viewport, lock state and el
 — add it to the URL hash), and **prefer structure over override** when a layout keeps needing
 another patch.
 
+**The extension mechanism is in (2026-08-15)** — EXTENSIONS.md's `frame` mode and two-function
+API, built with two working references (`extensions/duckdb`, `extensions/git`) and verified
+live end to end: entry served with `<base>` + `SIDEVIEW_BLOCK` + the API + live theme, blocks
+with a registered tag rendering as same-origin frames the parent measures, `call_cli` /
+`call_cli_streaming` execing the manifest's binary (fresh process, argv, no shell, 30s/64MB
+caps, abort kills the child). The duckdb CLI (v1.5.5, ~/.local/bin) streams `-jsonlines` into
+a Vue grid; git colorizes its own repo's log and diffs. 59 tests. The next act is the author's:
+an agent in the sqlnow repo builds the real table extension against EXTENSIONS.md alone, as a
+test of the docs.
+
 **v3 underway, 2026-08-09 — the attachments backend is in** (same day the author curated
 V3.sv through the page and blessed its goal). Migration v4 (the `attachments` table —
 metadata in db, bytes on disk, V3.sv's model verbatim), the raw-bytes upload endpoint

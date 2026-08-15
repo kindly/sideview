@@ -2,11 +2,11 @@
 
 How to build an extension for sideview. This document is the contract: an
 extension written against it should work without reading sideview's source.
-It is honest about status — the mechanism below is **specified, not yet
-built** (2026-08-15); it is published first so that an extension and the
-mechanism can be built against each other and this document corrected where
-it proves unclear. Design rationale lives in V3.sv's plugins section; this
-file states only what is so.
+Status (2026-08-15): **`frame` mode and the two-function API are built and
+verified live** — `extensions/duckdb` and `extensions/git` in this repo are
+working references, exercised on the "Extensions demo" page. `inline` and
+`sandbox` modes and the comment API remain specified only. Design rationale
+lives in V3.sv's plugins section; this file states only what is so.
 
 ## The idea in four sentences
 
@@ -90,7 +90,12 @@ select station, avg(temp) from readings group by 1
 The tag is the extension's `name`. Attributes and body mean whatever the
 extension decides — sideview does not interpret them, it delivers them (see
 `SIDEVIEW_BLOCK`). The body is raw bytes to the closing tag, like every
-sideview block: authors never escape anything.
+sideview block: authors never escape anything. Two format rules that bite
+(they bit this document's own author): tags count only at **column 0**, and
+the closing tag must sit **alone on its own line** — a one-line
+`<sv-git>log</sv-git>` is not a block. Give blocks an `id`: without one the
+id is a content hash, which works but makes ugly frame URLs and re-anchors
+comments on every edit.
 
 One attribute is reserved: `height`, a CSS length. When present the frame is
 pinned to it; when absent sideview measures the frame's document and grows

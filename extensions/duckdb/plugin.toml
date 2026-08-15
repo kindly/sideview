@@ -1,0 +1,5 @@
+name = "duckdb"
+api = 1
+render = "frame"
+entry = "index.html"
+bin = "duckdb"
