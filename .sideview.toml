@@ -38,6 +38,12 @@ category = "design"
 order = 7
 
 [[pages]]
+path = "EXTENSIONS.md"
+label = "Extensions"
+category = "design"
+order = 8
+
+[[pages]]
 path = "V1.md"
 label = "v1"
 category = "shipped"
