@@ -60,6 +60,41 @@ function sessionProps() {
   return (s && s.props) || {};
 }
 
+// The back button is real navigation (found broken by the author,
+// 2026-08-18: pushState everywhere, popstate nowhere — the URL moved and the
+// view stayed). One function re-derives the view from the location; the
+// initial-load routing above stays separate because it runs before any
+// sessions exist.
+let lastAppliedPath = location.pathname;
+function applyRoute() {
+  if (location.pathname === lastAppliedPath) return; // hash-only changes
+  lastAppliedPath = location.pathname;
+  const m = location.pathname.match(/^\/s\/(.+)$/);
+  if (m) {
+    state.view = 'page';
+    state.pinned = true;
+    const id = decodeURIComponent(m[1]);
+    if (id !== state.selected) switchSession(id);
+    else renderAllBlocks();
+    renderSessionStrip();
+    return;
+  }
+  if (location.pathname === '/home' && hasCategories()) {
+    state.view = 'home';
+    state.pinned = true;
+    renderAllBlocks();
+    renderSessionStrip();
+    return;
+  }
+  // '/' — and /home in a project with nothing to index: back to following
+  // the most recently active page, exactly what an unpinned tab does.
+  state.view = 'page';
+  state.pinned = false;
+  renderAllBlocks();
+  renderSessionStrip();
+}
+addEventListener('popstate', applyRoute);
+
 // The agent's declared mode: tabs, or scrollspy (the default). `off` means
 // scrollspy with the rail starting collapsed.
 function railMode() {
@@ -414,6 +449,7 @@ function goHome() {
     state.view = 'page';
     state.pinned = false;
     history.pushState(null, '', '/');
+    lastAppliedPath = '/';
     renderAllBlocks();
     renderSessionStrip();
     return;
@@ -421,6 +457,7 @@ function goHome() {
   state.view = 'home';
   state.pinned = true;
   history.pushState(null, '', '/home');
+  lastAppliedPath = '/home';
   renderAllBlocks();
   renderSessionStrip();
 }
@@ -437,7 +474,9 @@ function renderChips(sessions) {
     btn.addEventListener('click', () => {
       state.pinned = true;
       state.view = 'page';
+      if (s.id === state.selected) return; // same chip: no duplicate history
       history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
+      lastAppliedPath = location.pathname;
       switchSession(s.id);
       renderSessionStrip();
     });
@@ -930,6 +969,7 @@ function renderIndex() {
         state.pinned = true;
         state.view = 'page';
         history.pushState(null, '', a.getAttribute('href'));
+        lastAppliedPath = location.pathname;
         switchSession(s2.id);
         renderSessionStrip();
       });
