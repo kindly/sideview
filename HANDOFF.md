@@ -27,6 +27,18 @@ screenshots** (a `#svdebug` probe now reports visual viewport, lock state and el
 — add it to the URL hash), and **prefer structure over override** when a layout keeps needing
 another patch.
 
+**v3 shipped: 0.3.0, 2026-08-16** — seven days from curation to release, every feature argued
+on the page before its code. What 0.3.0 carries over 0.2.1: comment attachments end to end
+(migration v4, upload, tokens, markdown bodies, gc) with the mobile comment sheet and
+resizable rails; three page formats plus `.sideview.toml` (docs stay markdown and become live
+pages); page categories with the one-category strip and `/home`; the extension mechanism
+(frame mode, `call_cli`/`call_cli_streaming`, duckdb + git references); Vue islands via the
+import map; and `sv-csv`, the table's default tier — server-rendered, diff-tinted, frozen
+columns, live on file change. Binary releases: tag-triggered workflow, musl-static Linux
+x86_64/aarch64 + macOS both arches, fat LTO (the 90→35 MB probe finding). Deferred out of the
+gate by the author at release: the sqlnow extension tier, AUR, and the per-item acceptance
+pass (items were resolved thread-by-thread as they shipped).
+
 **The extension mechanism is in (2026-08-15)** — EXTENSIONS.md's `frame` mode and two-function
 API, built with two working references (`extensions/duckdb`, `extensions/git`) and verified
 live end to end: entry served with `<base>` + `SIDEVIEW_BLOCK` + the API + live theme, blocks

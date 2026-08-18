@@ -1,6 +1,6 @@
 [package]
 name = "sideview"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 description = "A visual side channel for CLI agents: pages are .sv files in your project, rendered live in the browser as agents (or you) write them"
 license = "MIT"
@@ -8,6 +8,10 @@ readme = "README.md"
 keywords = ["agent", "cli", "markdown", "live", "daemon"]
 categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/kindly/sideview"
+# A whitelist, not an exclude list: the working directory holds sandbox
+# mount artifacts (char-device .bash_profile and friends) that must never
+# reach the crate — and the crate needs only what the binary embeds.
+include = ["src/**", "static/**", "skills/**", "README.md", "LICENSE", "THIRD-PARTY.md"]
 
 [dependencies]
 actix-web = "4.14.0"
@@ -34,3 +38,11 @@ toml = { version = "0.9.8", default-features = false, features = ["parse", "serd
 tokio = { version = "1.53.1", features = ["sync", "rt", "process", "io-util", "time"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 uuid = { version = "1.24.0", features = ["v4"] }
+
+# Fat LTO earns its keep here: measured on the DataFusion probe it cut a
+# binary 90 -> 35 MB (V3.sv, 2026-08-16). CI pays the link time, every
+# download shrinks; dev builds are untouched.
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1

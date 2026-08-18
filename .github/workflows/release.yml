@@ -1,0 +1,73 @@
+# Release builds, on the sqlnow template simplified (V3.sv): every target
+# compiles on its own native-architecture runner; Linux is musl and fully
+# static, because nothing here dlopens (V2's lesson belongs to sqlnow, not
+# to us). Windows is honestly absent — the code is Unix by construction
+# (flock, SIGPIPE, network-namespace checks).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: create the release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --generate-notes
+
+  build:
+    needs: create-release
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          # macOS cross-compiles its own other arch cleanly (one SDK, two
+          # arches) — no dependence on Intel runners staying available.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: target
+        run: rustup target add ${{ matrix.target }}
+      - name: build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: package
+        run: |
+          name="sideview-${{ matrix.target }}"
+          mkdir "$name"
+          cp "target/${{ matrix.target }}/release/sideview" "$name/"
+          cp README.md LICENSE THIRD-PARTY.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          else
+            shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          fi
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" sideview-*.tar.gz sideview-*.tar.gz.sha256 --clobber
