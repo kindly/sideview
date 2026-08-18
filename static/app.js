@@ -16,14 +16,12 @@ console.log('sideview client', CLIENT_STAMP);
 const state = {
   sessions: [],          // [{id, last_active_at, props}] most recent first
   blocks: new Map(),     // session id -> Map(block id -> {ord, html, headings})
-  selected: null,        // session id
-  pinned: false,         // the user deliberately clicked a session
+  selected: null,        // session id — set once from the URL, never changed
   section: null,         // tabs mode: the selected section key
   spyActive: null,       // scrollspy mode: the section currently in view
   expand: new Map(),     // section key -> bool, manual twist overrides (per session)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
   conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
-  view: 'page',          // 'page' | 'home'
 };
 
 let outline = { sections: [], blockSections: new Map() };
@@ -34,66 +32,34 @@ const $sessions = document.getElementById('sv-sessions');
 const $status = document.getElementById('sv-status');
 const $brand = document.getElementById('sv-brand');
 // The wordmark is the way home: the index of every page, grouped.
+// Real navigation — the server owns routing (author, 2026-08-18).
 $brand.addEventListener('click', () => {
-  if (state.view !== 'home') goHome();
+  if (ROUTE.view !== 'home') location.href = '/home';
 });
 const $outline = document.getElementById('sv-outline');
 const $railToggle = document.getElementById('sv-rail-toggle');
 const $outlineList = document.getElementById('sv-outline-list');
 
-// /s/<session> pins that session; / follows the most recently active one;
-// /home is the index, which follows nothing.
-const pathMatch = location.pathname.match(/^\/s\/(.+)$/);
-if (pathMatch) {
-  state.selected = decodeURIComponent(pathMatch[1]);
-  state.pinned = true;
-}
-// /home is the index: categories and the pages in them. It pins, because an
-// index must not be yanked away by activity elsewhere.
-if (location.pathname === '/home') {
-  state.view = 'home';
-  state.pinned = true;
-}
+// Routing is the server's (author, 2026-08-18: a week of navigation-state
+// bugs — a cross-page misfiled comment, the wrong-category strip, a dead
+// back button — all impossible when the URL *is* the state). The client
+// parses its location once and never navigates itself: every link is a
+// real link, back is the browser's, and nothing is held across pages.
+// '/' never reaches here with pages present — the server 302s it to the
+// most recently active page.
+const ROUTE = (() => {
+  const m = location.pathname.match(/^\/s\/(.+)$/);
+  if (m) return { view: 'page', session: decodeURIComponent(m[1]) };
+  if (location.pathname === '/home') return { view: 'home', session: null };
+  return { view: 'page', session: null }; // '/' in an empty project
+})();
+state.selected = ROUTE.session;
 
 function sessionProps() {
   const s = state.sessions.find((x) => x.id === state.selected);
   return (s && s.props) || {};
 }
 
-// The back button is real navigation (found broken by the author,
-// 2026-08-18: pushState everywhere, popstate nowhere — the URL moved and the
-// view stayed). One function re-derives the view from the location; the
-// initial-load routing above stays separate because it runs before any
-// sessions exist.
-let lastAppliedPath = location.pathname;
-function applyRoute() {
-  if (location.pathname === lastAppliedPath) return; // hash-only changes
-  lastAppliedPath = location.pathname;
-  const m = location.pathname.match(/^\/s\/(.+)$/);
-  if (m) {
-    state.view = 'page';
-    state.pinned = true;
-    const id = decodeURIComponent(m[1]);
-    if (id !== state.selected) switchSession(id);
-    else renderAllBlocks();
-    renderSessionStrip();
-    return;
-  }
-  if (location.pathname === '/home' && hasCategories()) {
-    state.view = 'home';
-    state.pinned = true;
-    renderAllBlocks();
-    renderSessionStrip();
-    return;
-  }
-  // '/' — and /home in a project with nothing to index: back to following
-  // the most recently active page, exactly what an unpinned tab does.
-  state.view = 'page';
-  state.pinned = false;
-  renderAllBlocks();
-  renderSessionStrip();
-}
-addEventListener('popstate', applyRoute);
 
 // The agent's declared mode: tabs, or scrollspy (the default). `off` means
 // scrollspy with the rail starting collapsed.
@@ -302,31 +268,17 @@ es.addEventListener('sessions', (e) => {
   for (const held of [...state.blocks.keys()]) {
     if (!ids.has(held)) state.blocks.delete(held);
   }
-  // Chips sit in stable creation order; "which page should an unpinned tab
-  // show" is decided by activity instead.
-  const mostActive = state.sessions.reduce(
-    (a, s) => (!a || s.last_active_at > a.last_active_at ? s : a),
-    null
-  );
+  // No auto-follow: the URL is the state, and a tab never navigates itself
+  // (retired with the client router, 2026-08-18 — its pinning saga cost more
+  // confusion than the feature earned). The strip still updates live, so a
+  // new page is one click away, not zero.
   if (state.selected && !ids.has(state.selected)) {
-    state.pinned = false;
-    history.replaceState(null, '', '/');
-    switchSession(mostActive?.id ?? null);
-  } else if (
-    !state.pinned && mostActive && mostActive.id !== state.selected &&
-    !(svc && svc.drafts.length)
-  ) {
-    // Composing holds the tab: auto-follow yanking the page out from under
-    // an open draft is how thread 28 got misfiled. Same law as the reading
-    // position — attention is never stolen.
-    switchSession(mostActive.id);
-  }
-  if (state.view === 'home' && !hasCategories()) {
-    state.view = 'page'; // nothing to index; the strip is the whole story
-    state.pinned = false;
+    // The page under this tab was deleted: a real navigation, like any other.
+    location.href = '/';
+    return;
   }
   renderSessionStrip();
-  if (state.view !== 'page') renderAllBlocks(); // indexes list pages: they follow them
+  if (ROUTE.view === 'home') renderIndex(); // the index lists pages: it follows them
   refreshOutline(); // a session's outline property may have changed
 });
 
@@ -353,14 +305,6 @@ es.addEventListener('threads', (e) => {
   });
   if (ev.page === state.selected) scheduleConversation();
 });
-
-function switchSession(id) {
-  state.selected = id;
-  state.section = null;
-  state.spyActive = null;
-  state.expand.clear();
-  renderAllBlocks();
-}
 
 // Pages in display order: by category, then by the `order` a page (or the
 // config) declared, then by creation. Uncategorized pages keep today's
@@ -404,7 +348,7 @@ function renderSessionStrip() {
   // The strip always shows the siblings of what you are looking at. On the
   // home index that is the categories, and only those: the untitled set's
   // pages belong to the index below, not to the strip (author, 2026-08-10).
-  if (state.view === 'home') {
+  if (ROUTE.view === 'home') {
     for (const g of groups) {
       if (!g.name) continue;
       const chip = document.createElement('span');
@@ -438,48 +382,18 @@ function renderSessionStrip() {
   renderChips(group ? group.pages : groups.find((g) => !g.name)?.pages || []);
 }
 
-function hasCategories() {
-  return state.sessions.some((s) => ((s.props && s.props.category) || '').trim());
-}
-
-function goHome() {
-  // A project that never used categories has nothing to index: home is the
-  // view it always had — every page in the strip (author, 2026-08-10).
-  if (!hasCategories()) {
-    state.view = 'page';
-    state.pinned = false;
-    history.pushState(null, '', '/');
-    lastAppliedPath = '/';
-    renderAllBlocks();
-    renderSessionStrip();
-    return;
-  }
-  state.view = 'home';
-  state.pinned = true;
-  history.pushState(null, '', '/home');
-  lastAppliedPath = '/home';
-  renderAllBlocks();
-  renderSessionStrip();
-}
-
 function renderChips(sessions) {
   for (const s of sessions) {
     const chip = document.createElement('span');
     chip.className = 'sv-chip' + (s.id === state.selected ? ' active' : '');
 
-    const btn = document.createElement('button');
+    // A chip is a link: the server routes, the browser remembers (back,
+    // middle-click, bookmark — all free once nothing intercepts them).
+    const btn = document.createElement('a');
     btn.className = 'sv-chip-label';
     btn.textContent = (s.props && s.props.label) || shortLabel(s.id);
     btn.title = s.id;
-    btn.addEventListener('click', () => {
-      state.pinned = true;
-      state.view = 'page';
-      if (s.id === state.selected) return; // same chip: no duplicate history
-      history.pushState(null, '', '/s/' + encodeURIComponent(s.id));
-      lastAppliedPath = location.pathname;
-      switchSession(s.id);
-      renderSessionStrip();
-    });
+    btn.href = '/s/' + encodeURIComponent(s.id);
 
     // The ✕ is tidying power, and what it tidies depends on the page's tier
     // (V3.sv): a throwaway page's file goes with it; a committed page is only
@@ -963,16 +877,7 @@ function renderIndex() {
     for (const s2 of g.pages) {
       const a = document.createElement('a');
       a.className = 'sv-home-page';
-      a.href = '/s/' + encodeURIComponent(s2.id);
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        state.pinned = true;
-        state.view = 'page';
-        history.pushState(null, '', a.getAttribute('href'));
-        lastAppliedPath = location.pathname;
-        switchSession(s2.id);
-        renderSessionStrip();
-      });
+      a.href = '/s/' + encodeURIComponent(s2.id); // a real link, nothing intercepted
       const name = document.createElement('span');
       name.className = 'sv-home-name';
       name.textContent = (s2.props && s2.props.label) || shortLabel(s2.id);
@@ -988,7 +893,7 @@ function renderIndex() {
 }
 
 function renderAllBlocks() {
-  if (state.view === 'home') {
+  if (ROUTE.view === 'home') {
     renderIndex();
     return;
   }

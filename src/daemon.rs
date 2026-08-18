@@ -245,7 +245,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 // The Bytes extractor's ceiling — this is the attachment
                 // size cap (413 past it), and nothing else reads raw bodies.
                 .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
-                .route("/", web::get().to(page))
+                .route("/", web::get().to(root_redirect))
                 .route("/s/{session}", web::get().to(page))
                 // The index: categories and the pages in them.
                 .route("/home", web::get().to(page))
@@ -1175,7 +1175,30 @@ fn to_sse(o: Outgoing) -> sse::Event {
     sse::Event::Data(sse::Data::new(o.data).event(o.kind))
 }
 
-async fn page() -> impl Responder {
+/// `/` — the server owns routing now (author, 2026-08-18): redirect to the
+/// most recently active page, which is what the client's auto-follow used
+/// to decide and the URL now simply *is*. An empty project gets the shell,
+/// which renders its honest "no pages yet".
+async fn root_redirect(state: Data<AppState>) -> HttpResponse {
+    let most_active = {
+        let shared = state.shared.lock().unwrap();
+        shared
+            .sessions
+            .iter()
+            .max_by_key(|(_, at)| *at)
+            .map(|(id, _)| id.clone())
+    };
+    match most_active {
+        Some(id) => HttpResponse::Found()
+            .insert_header(("Location", format!("/s/{}", crate::session::encode(&id))))
+            // The choice changes as pages become active: never cache it.
+            .insert_header(("Cache-Control", "no-store"))
+            .finish(),
+        None => page().await,
+    }
+}
+
+async fn page() -> HttpResponse {
     match Assets::get("index.html") {
         Some(f) => {
             // no-cache asks politely; iOS sometimes pairs a fresh script with
