@@ -796,6 +796,26 @@ function wireExtFrames(el) {
   }
 }
 
+// Frozen csv columns: CSS owns the stickiness, this pass only supplies the
+// measured left offsets (column widths are unknowable before layout).
+// Positions, never renders — the sv-csv line.
+function wireCsvFreeze(el) {
+  for (const fig of el.querySelectorAll('figure.sv-csv[data-sv-freeze]')) {
+    const n = parseInt(fig.dataset.svFreeze, 10) || 0;
+    const set = () => {
+      const ths = fig.querySelectorAll('thead th');
+      let left = 0;
+      for (let i = 0; i < n && i < ths.length; i++) {
+        fig.style.setProperty('--sv-fz-' + i, left + 'px');
+        left += ths[i].getBoundingClientRect().width;
+      }
+    };
+    set();
+    // Fonts shift widths; measure once more when they settle.
+    document.fonts?.ready.then(set);
+  }
+}
+
 function activateScripts(el) {
   for (const old of el.querySelectorAll('script')) {
     const s = document.createElement('script');
@@ -839,6 +859,7 @@ function applyBlock(ev) {
   if (live) el.classList.add('sv-arrive');
   activateScripts(el);
   wireExtFrames(el);
+  wireCsvFreeze(el);
   // Never scroll for new content (the author's rule); when it lands out of
   // view, offer the pill instead.
   if (live && !newBelowEl && el.getBoundingClientRect().top > innerHeight) {
@@ -942,6 +963,7 @@ function renderAllBlocks() {
         $blocks.appendChild(el);
         activateScripts(el);
         wireExtFrames(el);
+        wireCsvFreeze(el);
       }
     }
   }

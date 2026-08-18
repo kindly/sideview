@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod csv;
 mod daemon;
 mod ext;
 mod diff;

@@ -1,0 +1,13 @@
+station,readings,avg_temp,max_gust_mph,notes
+Alnwick,245,14.5,39.7,
+Berwick,104,6.7,46.8,
+Hexham,267,11.2,65.5,
+Kelso,189,6.3,41.7,"quote, embedded"
+Morpeth,115,8.2,47.6,
+Rothbury,110,13.4,26.2,
+Wooler,194,11.7,49.1,
+Bellingham,111,11.2,39.8,
+Corbridge,193,6.4,62.9,
+Haltwhistle,228,9.8,47.0,
+Seahouses,372,8.8,60.8,
+Amble,172,6.9,48.6,multi word note

@@ -93,6 +93,32 @@ Text sits at a comfortable reading width; tables, code blocks and figures widen
 automatically. To give a markup block the full wide column (a dashboard row, an
 embedded document), put `class="w-100"` on its top-level element.
 
+## Tables: reference a CSV, never paste one
+
+Produce the file with whatever tool you have, then add an `sv-csv` block to
+your page file (a string edit — see "your page is a file" above):
+
+```bash
+duckdb -csv -c "select ..." > out/rows.csv    # or sqlnow, sqlite3, pandas…
+```
+
+```
+<sv-csv id="t1" src="out/rows.csv" freeze="2" height="24rem">
+</sv-csv>
+```
+
+The daemon reads the file and renders a real table: sticky header always,
+`freeze="N"` pins the first N columns (1–4) through horizontal scroll,
+`height` bounds the block with its own scroll. Capped at 2,000 rows with an
+honest remainder line — past that a human cannot review it; query a subset
+instead. **Overwrite the file and the block re-renders**, so re-running your
+analysis updates the page with no further writes. The rows never pass
+through your context: keep the query's output in the file, not in your reply.
+
+For a data diff, compute the comparison yourself and add a `_sv_row` column
+with `add` / `del` / `mod`: rows tint like a diff, and `_sv_*` columns never
+display. Paths are project-relative.
+
 ## The page is styled with Bootstrap 5 — write what you already know
 
 Markup blocks can use the full Bootstrap 5 vocabulary: grid (`row`/`col-*`),

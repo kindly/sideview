@@ -278,7 +278,7 @@ pub fn ext_block(id: &str, ext_name: &str, page_id: &str, height: Option<&str>) 
 /// not because the author is distrusted (markup blocks are unsanitized by
 /// design), but because a typo'd unit should fall back to the default rather
 /// than emit a broken style attribute.
-fn is_css_length(h: &str) -> bool {
+pub(crate) fn is_css_length(h: &str) -> bool {
     !h.is_empty()
         && h.len() <= 16
         && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '%')

@@ -108,6 +108,13 @@ pub fn load_extensions(root: &Path, cfg: &Config) -> (Vec<Extension>, Vec<(Strin
             problems.push((e.path.clone(), format!("name {:?} is not [a-z0-9-]", m.name)));
             continue;
         }
+        // Core block tags are not claimable — sv-csv arriving in core made
+        // the collision real rather than theoretical.
+        const RESERVED: &[&str] = &["prose", "markup", "html", "diff", "note", "csv", "stray", "page"];
+        if RESERVED.contains(&m.name.as_str()) {
+            problems.push((e.path.clone(), format!("name {:?} is a core block tag", m.name)));
+            continue;
+        }
         if m.api > EXTENSION_API {
             problems.push((
                 e.path.clone(),

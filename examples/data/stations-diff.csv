@@ -1,0 +1,9 @@
+_sv_row,station,avg_temp_before,avg_temp_after
+,Alnwick,12.1,12.1
+mod,Berwick,11.2,13.9
+del,Hexham,9.4,
+,Kelso,8.0,8.0
+add,Longframlington,,10.7
+mod,Morpeth,10.9,9.2
+,Wooler,7.7,7.7
+add,Craster,,11.4

@@ -434,6 +434,70 @@ iframe.sv-ext {
   background: var(--bs-body-bg);
 }
 
+/* --- sv-csv: the table's default tier (V3.sv, 2026-08-16) -------------------
+   Server-rendered, review-scale, zero rendering JS. border-collapse stays
+   separate because collapse sheds sticky borders (the diff tables' lesson);
+   every cell paints an opaque background because sticky headers and frozen
+   columns slide over content. Row tints reuse the diff duotone: additions
+   lean ink, removals lean the warm tone, changes a faint ink wash. */
+.sv-csv { margin: 0; }
+.sv-csv-scroll { overflow: auto; }
+.sv-csv table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.sv-csv th,
+.sv-csv td {
+  padding: 0.2rem 0.75rem;
+  border-bottom: 1px solid var(--bs-border-color);
+  white-space: nowrap;
+  text-align: left;
+  background: var(--bs-body-bg);
+}
+.sv-csv thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--bs-emphasis-color);
+}
+.sv-csv .sv-num { text-align: right; font-variant-numeric: tabular-nums; }
+.sv-csv tr.sv-csv-add td { background: color-mix(in srgb, var(--sv-ink) 12%, var(--bs-body-bg)); }
+.sv-csv tr.sv-csv-del td { background: color-mix(in srgb, #c98a2b 14%, var(--bs-body-bg)); }
+.sv-csv tr.sv-csv-mod td { background: color-mix(in srgb, var(--sv-ink) 5%, var(--bs-body-bg)); }
+.sv-csv figcaption {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+  padding: 0.35rem 0.1rem;
+}
+/* Frozen columns: freeze="N" (1..4). The client measures widths once and
+   sets the --sv-fz-* offsets; CSS owns everything else. Headers in the
+   frozen corner stack above both axes. */
+.sv-csv[data-sv-freeze="1"] tr > :nth-child(-n+1),
+.sv-csv[data-sv-freeze="2"] tr > :nth-child(-n+2),
+.sv-csv[data-sv-freeze="3"] tr > :nth-child(-n+3),
+.sv-csv[data-sv-freeze="4"] tr > :nth-child(-n+4) {
+  position: sticky;
+  z-index: 1;
+}
+.sv-csv[data-sv-freeze] tr > :nth-child(1) { left: var(--sv-fz-0, 0px); }
+.sv-csv[data-sv-freeze] tr > :nth-child(2) { left: var(--sv-fz-1); }
+.sv-csv[data-sv-freeze] tr > :nth-child(3) { left: var(--sv-fz-2); }
+.sv-csv[data-sv-freeze] tr > :nth-child(4) { left: var(--sv-fz-3); }
+.sv-csv[data-sv-freeze="1"] thead th:nth-child(-n+1),
+.sv-csv[data-sv-freeze="2"] thead th:nth-child(-n+2),
+.sv-csv[data-sv-freeze="3"] thead th:nth-child(-n+3),
+.sv-csv[data-sv-freeze="4"] thead th:nth-child(-n+4) {
+  z-index: 3;
+}
+
 /* Comment on the block as a whole. It exists *only* on blocks with no
    selectable text — an iframe, a lone image — because everywhere else
    selection already works and a second affordance would make the reader

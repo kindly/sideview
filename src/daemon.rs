@@ -78,6 +78,10 @@ struct PageState {
     /// SIDEVIEW_BLOCK injection when the frame is served. Only blocks whose
     /// tag matched a registered extension appear here.
     ext_blocks: HashMap<String, (Vec<(String, String)>, String)>,
+    /// Files the page's blocks reference (sv-csv src=), with the stamps they
+    /// were rendered from — the poll loop stats these too, so overwriting a
+    /// referenced CSV re-renders its block: reference-never-embed made live.
+    file_refs: Vec<(String, Option<(SystemTime, u64)>)>,
 }
 
 #[derive(Default)]
@@ -830,13 +834,22 @@ fn poll_loop(
                 let entry = cfg.pages.iter().find(|e| e.page_id() == b.id || e.path == b.path);
                 let known = shared.pages.get(&b.id).map(|p| p.stamp);
                 // A config edit can change how a page renders or what it is
-                // called, so it re-reads even when the file itself is still.
-                if known == Some(stamp) && !config_changed {
+                // called, so it re-reads even when the file itself is still —
+                // and a changed *referenced* file (a csv a block points at)
+                // re-renders even though the page file never moved.
+                let refs_stale = shared
+                    .pages
+                    .get(&b.id)
+                    .map(|p| {
+                        p.file_refs.iter().any(|(rel, old)| file_stamp(&store.root.join(rel)) != *old)
+                    })
+                    .unwrap_or(false);
+                if known == Some(stamp) && !config_changed && !refs_stale {
                     continue;
                 }
                 let fmt =
                     crate::config::format_of(&b.path, entry.and_then(|e| e.render.as_deref()));
-                let mut fresh = load_page(&file, &b.path, stamp, fmt, &b.id, &exts);
+                let mut fresh = load_page(&file, &b.path, stamp, fmt, &b.id, &exts, &store.root);
                 // What the chip's ✕ may do, decided here where the tier and
                 // the config are both in hand: a throwaway page is scratch
                 // and closes by deleting; a committed one only unbinds; and
@@ -967,6 +980,14 @@ fn imported_page(source: &str, fmt: crate::config::Format) -> format::Page {
     }
 }
 
+/// (mtime, len) of a file, None when it is missing — the shared shape for
+/// page stamps and referenced-file stamps.
+fn file_stamp(path: &Path) -> Option<(SystemTime, u64)> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok().map(|t| (t, m.len())))
+}
+
 fn load_page(
     file: &Path,
     rel: &str,
@@ -974,6 +995,7 @@ fn load_page(
     fmt: crate::config::Format,
     page_id: &str,
     exts: &[crate::config::Extension],
+    root: &Path,
 ) -> PageState {
     let source = match std::fs::read_to_string(file) {
         Ok(s) => s,
@@ -981,6 +1003,7 @@ fn load_page(
             let msg = format!("page file moved or deleted — was {rel}");
             return PageState {
                 ext_blocks: HashMap::new(),
+                file_refs: Vec::new(),
                 props: serde_json::Map::new(),
                 blocks: vec![Rendered {
                     id: "sv-missing".into(),
@@ -1015,6 +1038,7 @@ fn load_page(
     let mut seen: HashMap<String, u32> = HashMap::new();
     let mut blocks = Vec::new();
     let mut ext_blocks: HashMap<String, (Vec<(String, String)>, String)> = HashMap::new();
+    let mut file_refs: Vec<(String, Option<(SystemTime, u64)>)> = Vec::new();
     for (i, b) in page.blocks.iter().enumerate() {
         let base = match b.id() {
             Some(id) => id.to_string(),
@@ -1028,6 +1052,29 @@ fn load_page(
         let n = seen.entry(base.clone()).or_insert(0);
         *n += 1;
         let id = if *n == 1 { base } else { format!("{base}-{n}") };
+        // sv-csv reads its referenced file here, where root and the poll
+        // loop live: content confined to the project (the /f/ rule), the
+        // stamp recorded so an overwritten csv re-renders the block.
+        if b.type_name == "sv-csv" {
+            let src = b.attr("src").unwrap_or("").trim().to_string();
+            let content = if src.is_empty() {
+                Err("sv-csv needs src=\"<project-relative .csv>\"".to_string())
+            } else if src.starts_with('/') || src.split('/').any(|seg| seg == "..") {
+                Err(format!("{src}: outside the project"))
+            } else {
+                let abs = root.join(&src);
+                file_refs.push((src.clone(), file_stamp(&abs)));
+                std::fs::read_to_string(&abs)
+                    .map_err(|e| format!("{src}: {e} — the block heals when the file appears"))
+            };
+            blocks.push(Rendered {
+                ord: format!("a{i:012}"),
+                html: crate::csv::block(&id, b, content),
+                headings_json: serde_json::json!([]),
+                id,
+            });
+            continue;
+        }
         // A tag a registered extension claims renders as that extension's
         // frame; everything else takes the normal path (which ends at the
         // honest unknown-tag block).
@@ -1049,7 +1096,7 @@ fn load_page(
             id,
         });
     }
-    PageState { props, blocks, stamp, ext_blocks }
+    PageState { props, blocks, stamp, ext_blocks, file_refs }
 }
 
 /// The reparse diff: upserts for new or changed blocks, removes for gone ones.
@@ -1290,7 +1337,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("p.sv");
         std::fs::write(&file, src).unwrap();
-        load_page(&file, "p.sv", None, crate::config::Format::Sv, "test", &[])
+        load_page(&file, "p.sv", None, crate::config::Format::Sv, "test", &[], &dir)
     }
 
     #[test]
@@ -1319,7 +1366,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_renders_an_honest_block() {
-        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None, crate::config::Format::Sv, "test", &[]);
+        let page = load_page(Path::new("/nonexistent/nowhere.sv"), "nowhere.sv", None, crate::config::Format::Sv, "test", &[], Path::new("/tmp"));
         assert_eq!(page.blocks.len(), 1);
         assert!(page.blocks[0].html.contains("moved or deleted"), "{}", page.blocks[0].html);
     }
