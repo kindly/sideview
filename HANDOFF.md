@@ -39,6 +39,12 @@ x86_64/aarch64 + macOS both arches, fat LTO (the 90→35 MB probe finding). Defe
 gate by the author at release: the sqlnow extension tier, AUR, and the per-item acceptance
 pass (items were resolved thread-by-thread as they shipped).
 
+**0.3.1, 2026-08-18** — the post-release navigation fix, shipped so the binaries carry it:
+routing moved fully server-side (the client router is deleted; every navigation is a real
+link, `/` 302s to the most-active page) after the back button showed the SPA holding comments
+and layout across pages, plus the chip styling that survives the label's button→anchor move.
+No state crosses pages in this app, so nothing was lost by the deletion.
+
 **The extension mechanism is in (2026-08-15)** — EXTENSIONS.md's `frame` mode and two-function
 API, built with two working references (`extensions/duckdb`, `extensions/git`) and verified
 live end to end: entry served with `<base>` + `SIDEVIEW_BLOCK` + the API + live theme, blocks
