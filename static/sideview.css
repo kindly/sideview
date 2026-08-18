@@ -320,7 +320,8 @@ html {
   white-space: nowrap;
 }
 
-.sv-chip button {
+.sv-chip button,
+.sv-chip a {
   font-family: var(--sv-mono);
   font-size: 0.78rem;
   margin: 0;
@@ -334,6 +335,9 @@ html {
    own, or the text sits against the border. */
 .sv-chip-label {
   padding: 0.1rem 0.15rem 0.1rem 0.6rem;
+  text-decoration: none; /* a chip is a chip, whatever element carries it */
+  cursor: pointer;
+  display: inline-block;
 }
 .sv-chip-label:only-child {
   padding-right: 0.6rem;
@@ -348,7 +352,8 @@ html {
   border-color: var(--bs-secondary-color);
 }
 
-.sv-chip:hover button {
+.sv-chip:hover button,
+.sv-chip:hover a {
   color: var(--bs-body-color);
 }
 
@@ -361,7 +366,8 @@ html {
   background: color-mix(in srgb, var(--sv-ink) 8%, transparent);
 }
 
-.sv-chip.active button {
+.sv-chip.active button,
+.sv-chip.active a {
   color: var(--sv-ink);
 }
 
