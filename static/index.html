@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>sideview</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="stylesheet" href="/assets/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/assets/sideview.css">
   <script>
@@ -25,7 +26,25 @@
 <body>
   <header id="sv-header">
     <div id="sv-brand" title="connected">
-      <span id="sv-dot" aria-hidden="true"></span>
+      <!-- The reviewer (logo.svg, thread 59) inlined so currentColor follows
+           the theme — and the mark IS the liveness indicator (V4.sv, thread
+           64): open and glancing = live, half-lidded = reconnecting, lids
+           drawn and pupils hidden = daemon gone. Lids are separate elements
+           toggled by body state classes: structure over override. -->
+      <svg id="sv-logo" viewBox="0 0 96 58" aria-hidden="true">
+        <path d="M10,15 Q22,11 36,13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <!-- The raised brow is a live expression: when the lids draw, it
+             swaps for a resting brow symmetric to the left (thread 75). -->
+        <path class="sv-brow-live" d="M59,12 Q73,5 87,11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path class="sv-brow-rest" d="M60,15 Q72,11 86,13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <rect x="4" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+        <rect x="54" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M42,28 Q48,23 54,28" fill="none" stroke="currentColor" stroke-width="3"/>
+        <circle class="sv-pupil" cx="33" cy="33" r="6" fill="currentColor"/>
+        <circle class="sv-pupil" cx="83" cy="33" r="6" fill="currentColor"/>
+        <path class="sv-lid sv-lid-half" d="M8,26 H38 M58,26 H88" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path class="sv-lid sv-lid-closed" d="M8,33 H38 M58,33 H88" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>
       <span id="sv-wordmark">sideview</span>
     </div>
     <nav id="sv-sessions" aria-label="sessions"></nav>

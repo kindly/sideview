@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 58" role="img" aria-label="sideview">
+  <!-- The reviewer as a favicon: the ink accents from sideview.css, chosen
+       by the browser chrome's own scheme (a favicon can't see the page's
+       data-bs-theme override, so the OS preference is the honest signal). -->
+  <style>svg{color:#3357d0}@media(prefers-color-scheme:dark){svg{color:#8fa7ff}}</style>
+  <path d="M10,15 Q22,11 36,13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M59,12 Q73,5 87,11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <rect x="4" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+  <rect x="54" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+  <path d="M42,28 Q48,23 54,28" fill="none" stroke="currentColor" stroke-width="3"/>
+  <circle cx="33" cy="33" r="6" fill="currentColor"/>
+  <circle cx="83" cy="33" r="6" fill="currentColor"/>
+</svg>

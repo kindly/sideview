@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 58" role="img" aria-label="sideview: glasses glancing sideways, one brow slightly raised">
+  <!-- the reviewer: chosen 2026-08-20 on the vision grill page (thread 59).
+       currentColor throughout so it follows any theme it is inlined into. -->
+  <path d="M10,15 Q22,11 36,13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M59,12 Q73,5 87,11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <rect x="4" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+  <rect x="54" y="19" width="38" height="28" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+  <path d="M42,28 Q48,23 54,28" fill="none" stroke="currentColor" stroke-width="3"/>
+  <circle cx="33" cy="33" r="6" fill="currentColor"/>
+  <circle cx="83" cy="33" r="6" fill="currentColor"/>
+</svg>

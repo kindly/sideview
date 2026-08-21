@@ -72,7 +72,23 @@ every write ends with `→ <project root>` on stderr (prose/markup/html/diff/upd
 joining comment/working); reads stay quiet. **Round 8 approved same day (thread 74),
 one rider folded: restart is the user's command, never the agent's — the skill now
 says so** (an agent that sees skew relays the command instead of running it; its
-writes land in the file either way). Committed.
+writes land in the file either way). Committed as 24a6077.
+
+**The logo bullet followed: the reviewer wears the state, 2026-08-21.** `logo.svg`
+inlined into the header beside the wordmark (currentColor, so the theme toggle moves
+it) and `static/favicon.svg` in the tab (a favicon can't see the page's theme
+override, so it follows the OS scheme in the same ink blues). The state dot is
+retired: open and glancing = live; half-lidded, pupils dropped, gentle pulse =
+reconnecting; lids drawn and pupils hidden = gone. "Gone" is honestly a duration —
+EventSource retries forever and can't tell restarting from dead, so the lids draw
+after 8s of failed retries (the timer must not re-arm per error event). Lids are
+separate SVG elements toggled by body state classes: structure over override, the
+mobile saga's other lesson. Round 9 (thread 75) approved gone-as-duration and the
+favicon's OS-theme choice, and revised the dead face: **closed eyes rest symmetric**
+— the raised brow is a live expression, so when the lids draw it swaps for a resting
+brow, a second element rather than a tweak to the first. **Round 10 approved
+(thread 76): the logo bullet is the third accepted.** Committed. Remaining In
+bullets: block editing (two tiers), the `sideview-grill` skill, `_sv_cell` marks.
 
 **v4 curated and the vision settled, 2026-08-20, through a grill run on the machinery
 itself.** [VISION.sv](VISION.sv) (committed, registered) now holds the north-star — "a

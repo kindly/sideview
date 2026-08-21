@@ -77,14 +77,18 @@ through SQLite · reference, never embed · dogfood first.
   mattpocock/skills (MIT; the README invites exactly this). *(added by the author,
   2026-08-20, from the vision grill's own workflow)*
 - **The logo, wired in — and it replaces the state dot** (author, 2026-08-20, thread 64
-  on this page). `logo.svg` (the reviewer: specs glancing right, one brow soft-raised;
+  on this page). ✓ **Accepted by the author, 2026-08-21, thread 76 (drill rounds
+  9–10).** `logo.svg` (the reviewer: specs glancing right, one brow soft-raised;
   chosen through seven live iterations on the grill page) becomes the page favicon and
   the header mark beside the wordmark, inlined so `currentColor` follows the theme. The
   mark *is* the liveness indicator: the dot's existing client state machine toggles a
   class on the same inline SVG — open and glancing = live, half-lidded = reconnecting,
   lids drawn and pupils hidden = daemon gone. One indicator instead of two, no color
   needed. Animation (a blink on reconnect) deliberately deferred: charming, and scope
-  creep.
+  creep. Drill decisions (threads 75–76): "gone" is honestly a duration — lids draw
+  after 8s of failed retries; the favicon follows the OS scheme in the ink blues (it
+  can't see the page's theme override); and closed eyes rest symmetric — the raised
+  brow is a live expression, swapped for a resting brow element when the lids draw.
 - **`_sv_cell_<col>` marks.** The second half of the annotated-CSV design: cell-level
   tints beside the shipped `_sv_row`, the author's daily data-diff case. Open with it,
   deliberately: whether the directive names alias sqlnow's, so one annotated file

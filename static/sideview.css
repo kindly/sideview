@@ -176,21 +176,28 @@ html {
   color: var(--bs-body-color);
 }
 
-/* The signature: connection state as a quiet instrument, not an alarm.
-   Steady ink when live; hollow and pulsing while reconnecting. */
-#sv-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sv-ink);
-  box-shadow: 0 0 0 3px var(--sv-ink-soft);
+/* The signature: the reviewer wears the connection state (V4.sv, thread
+   64) — a quiet instrument, not an alarm, and no color needed. Open and
+   glancing = live; half-lidded and pulsing = reconnecting; lids drawn and
+   pupils hidden = the daemon is gone. */
+#sv-logo {
+  height: 1.15rem;
+  width: auto;
+  display: block;
+  color: var(--sv-ink);
 }
-
-.sv-disconnected #sv-dot {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px #c98a2b;
-  animation: sv-pulse 1.2s ease-in-out infinite;
-}
+#sv-logo .sv-lid { visibility: hidden; }
+.sv-disconnected #sv-logo { animation: sv-pulse 1.2s ease-in-out infinite; }
+.sv-disconnected #sv-logo .sv-lid-half { visibility: visible; }
+.sv-disconnected #sv-logo .sv-pupil { transform: translateY(3px); }
+.sv-dead #sv-logo { animation: none; }
+.sv-dead #sv-logo .sv-lid-half { visibility: hidden; }
+.sv-dead #sv-logo .sv-lid-closed { visibility: visible; }
+.sv-dead #sv-logo .sv-pupil { visibility: hidden; }
+/* Closed eyes rest: the raised brow is a live expression (thread 75). */
+#sv-logo .sv-brow-rest { visibility: hidden; }
+.sv-dead #sv-logo .sv-brow-live { visibility: hidden; }
+.sv-dead #sv-logo .sv-brow-rest { visibility: visible; }
 
 @keyframes sv-pulse {
   50% { opacity: 0.35; }
@@ -1326,7 +1333,7 @@ body.sv-rail #sv-outline { display: block; }
 /* --- restraint ---------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  #sv-dot, .sv-arrive, .sv-o-twist::before, #sv-rail-toggle::before,
+  #sv-logo, .sv-arrive, .sv-o-twist::before, #sv-rail-toggle::before,
   #sv-outline, body.sv-rail, .sv-o-kids {
     animation: none !important;
     transition: none !important;

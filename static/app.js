@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-21F sv-ask settled-bar fix';
+const CLIENT_STAMP = '2026-08-21H closed eyes rest symmetric';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -249,15 +249,27 @@ es.addEventListener('open', () => {
   // away would otherwise linger as ghosts.
   state.blocks.clear();
   $blocks.textContent = '';
-  document.body.classList.remove('sv-disconnected');
+  clearTimeout(deadTimer);
+  deadTimer = 0;
+  document.body.classList.remove('sv-disconnected', 'sv-dead');
   $status.hidden = true;
   $brand.title = 'connected · client ' + CLIENT_STAMP;
 });
+// Reconnecting and gone are one signal apart: EventSource retries forever,
+// so "gone" is honestly a duration — after 8s of failed retries the lids
+// draw. The timer must not re-arm per error event or it never fires.
+let deadTimer = 0;
 es.addEventListener('error', () => {
-  // EventSource reconnects on its own; the dot goes hollow while it does.
+  // EventSource reconnects on its own; the reviewer goes half-lidded.
   document.body.classList.add('sv-disconnected');
   $status.hidden = false;
   $brand.title = 'reconnecting';
+  if (!deadTimer && !document.body.classList.contains('sv-dead')) {
+    deadTimer = setTimeout(() => {
+      document.body.classList.add('sv-dead');
+      $brand.title = 'daemon gone — run `sideview` in the project';
+    }, 8000);
+  }
 });
 
 es.addEventListener('sessions', (e) => {
