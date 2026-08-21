@@ -6,6 +6,15 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v4 feature-complete, 2026-08-22: all six In bullets accepted through the page's
+own machinery — six bullets, twenty drill rounds, threads 67–91, roughly 48 hours
+from blessing to done.** Round 20 (thread 91) accepted the last one (cell marks).
+The version is bumped to 0.4.0, the daemon runs it, the suite is green at 71, and
+**the release round is live on V4.sv** (round 21, the v2 precedent — the release
+line signs itself): the author's approve is the order to tag v0.4.0 (release.yml
+builds the binaries) and publish to crates.io. Nothing is tagged or published until
+that round comes back approved.
+
 **Cell marks are in, 2026-08-22 — the last In bullet built, drill open.**
 `_sv_cell_<col>` beside the shipped `_sv_row`: the directive column marks the named
 shown column's cell with add/del/mod, rendered as a deeper wash of the row duotone
