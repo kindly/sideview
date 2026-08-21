@@ -6,6 +6,44 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**Cell marks are in, 2026-08-22 — the last In bullet built, drill open.**
+`_sv_cell_<col>` beside the shipped `_sv_row`: the directive column marks the named
+shown column's cell with add/del/mod, rendered as a deeper wash of the row duotone
+(26% ink vs the row's 12%; the daily case is a mod row whose changed cells go
+deeper). A directive naming no shown column is a silent no-op, same policy as an
+out-of-range freeze. The CSS deliberately matches the row rules' specificity
+(`tr > td.…`) so file order decides — the round-6 lesson applied preemptively. The
+naming question turned out to be live in a way the drill first got wrong: the agent
+checked the sqlnow-mcp repo, declared "nothing to alias", and **the author corrected
+it** — the vocabulary lives in *querier's AGENTS.md*: sqlnow reserves the whole
+`_sqlnow_` prefix (hidden from grid and exports) with `_sqlnow_format_<col>`
+(per-cell styles whose named values include added/changed/removed — the true
+counterpart of a sideview mark), `_sqlnow_cell_<col>` (a rich JSON widget: bar,
+sparkline, tags — a **false friend** of sideview's `_sv_cell_<col>`),
+`_sqlnow_column_<col>` and `_sqlnow_row_height`. Round 19 puts the real fork to the
+author: hide `_sqlnow_*` in sv-csv, honor `_sqlnow_format_` marks for
+one-file-both-viewers interop, and whether the native spelling should become
+`_sv_mark_<col>` to kill the false friend. The lesson for fact-finding: "checked the
+repo" must mean the repo where the docs actually live.
+**Round 19 answered all as suggested (thread 90) and everything is in:** `_sqlnow_*`
+columns hide; `_sqlnow_format_<col>` renders as marks with both vocabularies
+accepted in both directives (add/added, del/removed, mod/changed; other sqlnow
+style words no-op); the native spelling is **`_sv_mark_<col>`** — the false friend
+never shipped. The round's rider asked whether the approach could also produce
+git-style inline diffs (both values in the cell) and side-by-side old/new columns
+— it can, with zero new machinery, because the marks don't care what the cell text
+says: `csvdiff.py --style inline` (changed cells read `old -> new`) and `--style
+split` (old/new column pairs, old del + new add where changed), both rendered live
+on V4.sv beside the marks style, same sources, same script. 71 tests. Round 20 is
+the acceptance.
+Round 18 also asked for a real data diff, and the demo is now a worked one:
+`examples/csvdiff.py` (key-joined compare, `_sv_row` + per-column `_sv_cell_<col>`
+marks, unchanged rows passing through for context) run over
+examples/data/readings-2025.csv / readings-2026.csv, its output rendered live on
+V4.sv — overwriting the output re-renders the table, the sv-csv file-watch law
+demonstrated en route. 70 tests. Round 19 is open; its approval accepts the final
+bullet and starts the release sweep toward 0.4.0.
+
 **The grill skill is written, 2026-08-22 — the sixth bullet built, drill open.**
 `skills/sideview-grill/SKILL.md`, embedded beside the main skill; `skill install` /
 `uninstall` / `status` now treat the two as one set (skill.rs carries a `SKILLS`

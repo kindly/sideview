@@ -105,10 +105,21 @@ through SQLite · reference, never embed · dogfood first.
   after 8s of failed retries; the favicon follows the OS scheme in the ink blues (it
   can't see the page's theme override); and closed eyes rest symmetric — the raised
   brow is a live expression, swapped for a resting brow element when the lids draw.
-- **`_sv_cell_<col>` marks.** The second half of the annotated-CSV design: cell-level
-  tints beside the shipped `_sv_row`, the author's daily data-diff case. Open with it,
-  deliberately: whether the directive names alias sqlnow's, so one annotated file
-  renders in both viewers.
+- **Cell marks — shipped as `_sv_mark_<col>`.** ✓ **Accepted by the author,
+  2026-08-22, thread 91 (drill rounds 18–20).** The second half of the annotated-CSV
+  design: cell-level tints beside the shipped `_sv_row`, the author's daily
+  data-diff case — a deeper wash of the row duotone (cell 26% ink vs row 12%).
+  The open aliasing question got answered properly after the author corrected a bad
+  fact-check (the vocabulary lives in querier's AGENTS.md, not the sqlnow-mcp repo):
+  sqlnow reserves `_sqlnow_` with `format_` (styles; added/changed/removed) and
+  `cell_` (rich JSON widgets) — so the native name became `mark`, killing the
+  false friend, `_sqlnow_*` columns hide here, and `_sqlnow_format_<col>` renders
+  as marks with both vocabularies accepted in both directives: one annotated file
+  renders in both viewers. Diff shapes proved script-side (round 19's rider), no
+  new machinery: `examples/csvdiff.py --style marks|inline|split` — new-values,
+  git-inline (`old -> new` in the changed cell), and side-by-side old/new pairs
+  (old del, new add) — all three rendered live from the same sources during the
+  drill. Bad directive names are silent no-ops, like an out-of-range freeze.
 </sv-prose>
 
 <sv-prose id="goal">
@@ -120,7 +131,15 @@ with a working order and a ritual attached: **the ask block ships first**, and w
 In bullet completes, the agent drills the author — an sv-ask round over whatever the
 implementation did that the plan did not predict — on this page or a sibling. The
 machinery reviews itself. *(It did: the ask block's own acceptance took seven rounds
-through the ask block, threads 67–73.)*
+through the ask block, threads 67–73 — and every other bullet followed the same
+road: six bullets, twenty rounds, threads 67–91.)*
 </sv-prose>
+
+<sv-ask id="release" round="21" role="close">
+**The release round.** All six In items are accepted; the binary says 0.4.0 and the
+suite is green. **Approved** here is the publish order — v2's precedent, the release
+line signing itself: I tag v0.4.0 (the workflow builds the binaries) and publish to
+crates.io. **Revise** holds the release; say why in the note.
+</sv-ask>
 
 </sv-page>

@@ -1,9 +1,9 @@
 _sv_row,_sv_mark_temp,_sv_mark_rainfall,_sv_mark_status,station,temp,rainfall,status
-mod,mod,,,Berwick,11.2,61,open
+mod,mod,,,Berwick,10.8 -> 11.2,61,open
 ,,,,Hexham,9.4,58,open
-mod,,,mod,Alnwick,14.9,44,closed
+mod,,,mod,Alnwick,14.9,44,open -> closed
 ,,,,Rothbury,11.5,49,open
-mod,mod,mod,,Wooler,9.6,71,open
+mod,mod,mod,,Wooler,8.9 -> 9.6,66 -> 71,open
 ,,,,Morpeth,12.3,51,open
 add,,,,Kelso,8.0,63,open
 del,,,,Jedburgh,7.1,72,open

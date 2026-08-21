@@ -46,18 +46,41 @@ fn table(text: &str, b: &Block) -> Result<String, csv::Error> {
         .from_reader(text.as_bytes());
 
     let headers = reader.headers()?.clone();
-    // Directive columns configure the paint and never display.
-    let directive: Vec<bool> = headers.iter().map(|h| h.starts_with("_sv_")).collect();
+    // Directive columns configure the paint and never display. `_sqlnow_*`
+    // hides too (round 19): sqlnow reserves that prefix the same way
+    // (querier's AGENTS.md), and a file carrying its directives must not
+    // render them as data here.
+    let directive: Vec<bool> = headers
+        .iter()
+        .map(|h| h.starts_with("_sv_") || h.starts_with("_sqlnow_"))
+        .collect();
     let row_class_col = headers.iter().position(|h| h == "_sv_row");
     let shown: Vec<&str> =
         headers.iter().zip(&directive).filter(|(_, d)| !**d).map(|(h, _)| h).collect();
+    // `_sv_mark_<col>` marks one cell the way `_sv_row` marks the row (V4.sv;
+    // the author's daily data-diff case is a mod row with the changed cells
+    // deeper). Named `mark`, not `cell`, because sqlnow's `_sqlnow_cell_` is
+    // a rich-JSON widget — a false friend killed in round 19. The alignment
+    // decision from the same round: `_sqlnow_format_<col>` is honored as a
+    // mark source too — its added/changed/removed vocabulary maps onto
+    // add/mod/del, other style words no-op — so one annotated file renders
+    // in both viewers. A directive naming no shown column is ignored, like
+    // an out-of-range freeze.
+    let cell_dirs: Vec<(usize, usize)> = headers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, h)| {
+            h.strip_prefix("_sv_mark_").or_else(|| h.strip_prefix("_sqlnow_format_")).map(|col| (i, col))
+        })
+        .filter_map(|(i, col)| shown.iter().position(|s| *s == col).map(|vis| (i, vis)))
+        .collect();
 
     let mut rows_html = String::new();
     let mut shown_rows = 0usize;
     let mut total = 0usize;
     // Numeric columns right-align; decided from the rows actually shown.
     let mut numeric: Vec<bool> = shown.iter().map(|_| true).collect();
-    let mut cells_by_row: Vec<(Option<String>, Vec<String>)> = Vec::new();
+    let mut cells_by_row: Vec<(Option<String>, Vec<String>, Vec<Option<&str>>)> = Vec::new();
 
     for record in reader.records() {
         let record = record?;
@@ -71,6 +94,17 @@ fn table(text: &str, b: &Block) -> Result<String, csv::Error> {
             .map(str::trim)
             .filter(|v| matches!(*v, "add" | "del" | "mod"))
             .map(str::to_string);
+        let mut cell_class: Vec<Option<&str>> = vec![None; shown.len()];
+        for (dir_i, vis) in &cell_dirs {
+            // Both vocabularies accepted in both directives — the sideview
+            // diff verbs and sqlnow's named styles that mean the same thing.
+            cell_class[*vis] = match record.get(*dir_i).map(str::trim) {
+                Some("add" | "added") => Some("sv-csv-add"),
+                Some("del" | "removed") => Some("sv-csv-del"),
+                Some("mod" | "changed") => Some("sv-csv-mod"),
+                _ => cell_class[*vis],
+            };
+        }
         let mut cells = Vec::with_capacity(shown.len());
         let mut visible = 0usize;
         for (i, val) in record.iter().enumerate() {
@@ -83,10 +117,10 @@ fn table(text: &str, b: &Block) -> Result<String, csv::Error> {
             cells.push(val.to_string());
             visible += 1;
         }
-        cells_by_row.push((class, cells));
+        cells_by_row.push((class, cells, cell_class));
     }
 
-    for (class, cells) in &cells_by_row {
+    for (class, cells, cell_class) in &cells_by_row {
         let tr_class = match class.as_deref() {
             Some("add") => r#" class="sv-csv-add""#,
             Some("del") => r#" class="sv-csv-del""#,
@@ -95,8 +129,19 @@ fn table(text: &str, b: &Block) -> Result<String, csv::Error> {
         };
         rows_html.push_str(&format!("<tr{tr_class}>"));
         for (i, cell) in cells.iter().enumerate() {
-            let num = if *numeric.get(i).unwrap_or(&false) { r#" class="sv-num""# } else { "" };
-            rows_html.push_str(&format!("<td{num}>{}</td>", esc(cell)));
+            let mut classes = Vec::new();
+            if *numeric.get(i).unwrap_or(&false) {
+                classes.push("sv-num");
+            }
+            if let Some(Some(c)) = cell_class.get(i) {
+                classes.push(c);
+            }
+            let attr = if classes.is_empty() {
+                String::new()
+            } else {
+                format!(r#" class="{}""#, classes.join(" "))
+            };
+            rows_html.push_str(&format!("<td{attr}>{}</td>", esc(cell)));
         }
         // Ragged short rows: pad so frozen-column offsets stay aligned.
         for _ in cells.len()..shown.len() {
@@ -174,6 +219,47 @@ mod tests {
         assert!(html.contains("<th>station</th>"));
         assert!(html.contains(r#"<th class="sv-num">temp</th>"#), "numeric column right-aligns");
         assert!(html.contains("4 rows"));
+    }
+
+    #[test]
+    fn cell_marks_tint_one_cell_and_never_display() {
+        // The daily data-diff: a mod row whose changed cell is marked deeper.
+        let html = csv_block(
+            "",
+            "_sv_row,_sv_mark_temp,station,temp\nmod,mod,Berwick,11.2\n,,Hexham,9.4\n",
+        );
+        assert!(html.contains(r#"<tr class="sv-csv-mod">"#), "row mark still applies: {html}");
+        assert!(
+            html.contains(r#"<td class="sv-num sv-csv-mod">11.2</td>"#),
+            "the named cell wears the mark: {html}"
+        );
+        assert!(!html.contains("_sv_mark"), "directive columns never display");
+        assert!(!html.contains(r#"sv-csv-mod">9.4"#), "unmarked rows' cells stay bare: {html}");
+        // A directive naming no shown column is ignored, like a bad freeze.
+        let html = csv_block("", "_sv_mark_ghost,a\nadd,1\n");
+        assert!(!html.contains("sv-csv-add"), "unknown column name is a no-op: {html}");
+    }
+
+    #[test]
+    fn sqlnow_directives_hide_and_format_marks_render() {
+        // One annotated file, both viewers (round 19): sqlnow's format
+        // directive with its own vocabulary renders as tints here, and every
+        // _sqlnow_* column hides — including cell_, the rich-JSON widget
+        // sideview doesn't render.
+        let html = csv_block(
+            "",
+            "_sqlnow_format_temp,_sqlnow_cell_temp,station,temp\nchanged,\"{\"\"kind\"\":\"\"bar\"\"}\",Berwick,11.2\nadded,,Kelso,8.0\n",
+        );
+        assert!(
+            html.contains(r#"<td class="sv-num sv-csv-mod">11.2</td>"#),
+            "changed → mod tint: {html}"
+        );
+        assert!(html.contains(r#"sv-csv-add">8.0"#), "added → add tint: {html}");
+        assert!(!html.contains("_sqlnow_"), "the whole prefix hides: {html}");
+        assert!(!html.contains("bar"), "widget JSON never renders as data: {html}");
+        // Style words that aren't marks (heat ramps, warn) no-op quietly.
+        let html = csv_block("", "_sqlnow_format_a,a\nheat:0.7,1\n");
+        assert!(!html.contains("sv-csv-add") && !html.contains("sv-csv-mod"), "{html}");
     }
 
     #[test]

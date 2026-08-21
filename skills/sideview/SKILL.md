@@ -117,7 +117,15 @@ through your context: keep the query's output in the file, not in your reply.
 
 For a data diff, compute the comparison yourself and add a `_sv_row` column
 with `add` / `del` / `mod`: rows tint like a diff, and `_sv_*` columns never
-display. Paths are project-relative.
+display. A `_sv_mark_<col>` column marks single cells the same way — the
+usual shape is a `mod` row with the changed cells marked deeper. The marks
+don't care what the cell text says, so richer diff shapes are just output
+shapes: put `old → new` in a marked cell for a git-style inline diff, or
+emit old/new column pairs (old marked `del`, new `add` where changed) for
+side-by-side. sqlnow's directives are honored too: `_sqlnow_format_<col>`
+values `added`/`changed`/`removed` render as the same tints and every
+`_sqlnow_*` column hides — one annotated file renders in both viewers.
+Paths are project-relative.
 
 ## Ask blocks: questions answered at the block
 
