@@ -13,6 +13,16 @@ use anyhow::{bail, Context, Result};
 
 pub const SKILL_MD: &str = include_str!("../skills/sideview/SKILL.md");
 
+/// The second embedded skill (V4.sv): the grilling ritual through the page.
+/// Separate from the main skill on purpose — that one is model-invoked and
+/// loads constantly, the ritual is user-invoked and optional; merging would
+/// bloat the core skill's context for every table and plan. Derived with
+/// credit from mattpocock/skills (MIT).
+pub const GRILL_MD: &str = include_str!("../skills/sideview-grill/SKILL.md");
+
+/// Everything `skill install` ships, installed and removed as one set.
+const SKILLS: &[(&str, &str)] = &[("sideview", SKILL_MD), ("sideview-grill", GRILL_MD)];
+
 /// What `sideview styles` prints. Deliberately small: the point of shipping a
 /// framework the model already knows is that almost nothing needs documenting.
 pub const STYLES: &str = "\
@@ -76,8 +86,8 @@ impl Harness {
         on_path(self.bin) || home.join(self.config_rel).is_dir()
     }
 
-    fn skill_path(&self, home: &Path) -> PathBuf {
-        home.join(self.skills_rel).join("sideview").join("SKILL.md")
+    fn skill_path(&self, home: &Path, skill: &str) -> PathBuf {
+        home.join(self.skills_rel).join(skill).join("SKILL.md")
     }
 }
 
@@ -108,44 +118,55 @@ pub fn install(repo: bool, agent: Option<&str>) -> Result<()> {
     if repo {
         // Project-level: one path, and it double-serves — opencode reads a
         // project's .claude/skills natively.
-        let path =
-            std::env::current_dir()?.join(".claude").join("skills").join("sideview").join("SKILL.md");
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        std::fs::write(&path, SKILL_MD)?;
-        eprintln!("installed {}", path.display());
+        let dir = std::env::current_dir()?.join(".claude").join("skills");
+        for (name, content) in SKILLS {
+            let path = dir.join(name).join("SKILL.md");
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::write(&path, content)?;
+            eprintln!("installed {}", path.display());
+        }
         return Ok(());
     }
     let home = home()?;
     for h in targets(agent)? {
-        let path = h.skill_path(&home);
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        std::fs::write(&path, SKILL_MD)?;
-        eprintln!("{:<9} {}", h.name, path.display());
+        for (name, content) in SKILLS {
+            let path = h.skill_path(&home, name);
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::write(&path, content)?;
+            eprintln!("{:<9} {}", h.name, path.display());
+        }
     }
     Ok(())
 }
 
 pub fn uninstall(repo: bool, agent: Option<&str>) -> Result<()> {
+    let mut removed = 0;
     if repo {
-        let path =
-            std::env::current_dir()?.join(".claude").join("skills").join("sideview").join("SKILL.md");
-        if !path.exists() {
-            bail!("nothing installed at {}", path.display());
+        let dir = std::env::current_dir()?.join(".claude").join("skills");
+        for (name, _) in SKILLS {
+            let path = dir.join(name).join("SKILL.md");
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+                let _ = std::fs::remove_dir(path.parent().unwrap());
+                eprintln!("removed {}", path.display());
+                removed += 1;
+            }
         }
-        std::fs::remove_file(&path)?;
-        let _ = std::fs::remove_dir(path.parent().unwrap());
-        eprintln!("removed {}", path.display());
+        if removed == 0 {
+            bail!("nothing installed under {}", dir.display());
+        }
         return Ok(());
     }
     let home = home()?;
-    let mut removed = 0;
     for h in targets(agent)? {
-        let path = h.skill_path(&home);
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-            let _ = std::fs::remove_dir(path.parent().unwrap()); // only if empty
-            eprintln!("removed {}", path.display());
-            removed += 1;
+        for (name, _) in SKILLS {
+            let path = h.skill_path(&home, name);
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+                let _ = std::fs::remove_dir(path.parent().unwrap()); // only if empty
+                eprintln!("removed {}", path.display());
+                removed += 1;
+            }
         }
     }
     if removed == 0 {
@@ -166,11 +187,26 @@ pub fn status_line() -> String {
         if h.name != "claude" && !h.present(&home) {
             continue;
         }
-        let state = match std::fs::read_to_string(h.skill_path(&home)) {
-            Err(_) => "not installed",
-            Ok(s) if s == SKILL_MD => "current",
-            Ok(_) => "STALE — re-run `sideview skill install`",
-        };
+        // One verdict per harness across the whole set: any missing or
+        // drifted member means one `skill install` away from current.
+        let mut state = "current";
+        for (name, content) in SKILLS {
+            match std::fs::read_to_string(h.skill_path(&home, name)) {
+                Ok(s) if s == *content => {}
+                Ok(_) => {
+                    state = "STALE — re-run `sideview skill install`";
+                    break;
+                }
+                Err(_) => {
+                    state = if *name == "sideview" {
+                        "not installed"
+                    } else {
+                        "STALE — re-run `sideview skill install`"
+                    };
+                    break;
+                }
+            }
+        }
         parts.push(format!("{}: {}", h.name, state));
     }
     parts.join(", ")

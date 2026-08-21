@@ -6,6 +6,20 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**The grill skill is written, 2026-08-22 — the sixth bullet built, drill open.**
+`skills/sideview-grill/SKILL.md`, embedded beside the main skill; `skill install` /
+`uninstall` / `status` now treat the two as one set (skill.rs carries a `SKILLS`
+table; status gives one verdict per harness across the pair). The skill is the
+grilling ritual — design tree, frontier, rounds with recommended answers, facts are
+the agent's job — with sv-ask rounds as the medium: `- * ` recommendations
+pre-selected, one `role="close"` block per round, `watch` between rounds, a
+design-tree prose block kept current at the top of the page, machine-mail
+conventions (resolve after folding), and the final confirmation itself a
+one-close-block round. Derived with credit from mattpocock/skills (MIT), per the
+bullet. Installed live on all four harnesses. **Round 17 approved same hour, all as
+suggested (thread 88): the fifth bullet accepted.** Committed. One In bullet
+remains — `_sv_cell_<col>` marks — then the acceptance sweep and 0.4.0.
+
 **Editing from the page is in, 2026-08-21 — the fourth bullet built, drill open.**
 Both tiers exactly as V4.sv specifies. Migration v5 adds `comments.kind`
 ('comment' | 'edit' | 'edited'). Tier one, prose: GET `/api/source` hands the editor

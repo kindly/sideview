@@ -76,7 +76,12 @@ through SQLite · reference, never embed · dogfood first.
   no browser open — tabs reconnect to the same port; honest bail after 10s, never
   SIGKILL; the identity line rides every write and only writes; and **restart is the
   user's command, never the agent's** — the skill says so.
-- **A second embedded skill: `sideview-grill`.** The grilling ritual (design tree,
+- **A second embedded skill: `sideview-grill`.** ✓ **Accepted by the author,
+  2026-08-22, thread 88 (drill round 17, all as suggested).** Drill decisions: the
+  two skills install and report as one set (no per-skill flags; status is "current"
+  only when both match); the ritual's final confirmation runs through the machinery —
+  a one-close-block round — not chat; acceptance on the text, the first real grill
+  arriving with a real topic. The grilling ritual (design tree,
   frontier, rounds with recommended answers) run through the page, shipped beside the
   main skill and installed alongside it by `skill install`. Separate on purpose: the
   main skill is model-invoked and loads constantly, the ritual is user-invoked and
