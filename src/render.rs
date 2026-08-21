@@ -8,6 +8,12 @@ use crate::format::Block;
 /// unknown types and parse warnings render as visibly marked content —
 /// a newer file meeting an older binary degrades honestly, not silently.
 pub fn block(id: &str, b: &Block) -> String {
+    // sv-ask builds its own section, like sv-csv does in the daemon: the
+    // round/role data attributes live on the wrapper, which is what the
+    // client's delegated handlers key on.
+    if b.type_name == "sv-ask" {
+        return crate::ask::block(id, b);
+    }
     let (class, body) = match b.type_name.as_str() {
         // Headings get ids prefixed with the block's id, so outline entries
         // can jump to them and two blocks' "Overview" don't collide.
@@ -69,7 +75,7 @@ fn note(b: &Block) -> String {
 /// GFM via comrak — tables, task lists and strikethrough turn up constantly
 /// in plans. `unsafe` because prose is the author's own HTML-bearing
 /// markdown, same trust story as markup blocks.
-fn markdown_opts(text: &str, header_id_prefix: Option<&str>) -> String {
+pub(crate) fn markdown_opts(text: &str, header_id_prefix: Option<&str>) -> String {
     let mut options = comrak_options();
     options.extension.header_id_prefix = header_id_prefix.map(str::to_string);
     let mut plugins = comrak::options::Plugins::default();

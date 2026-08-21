@@ -119,6 +119,46 @@ For a data diff, compute the comparison yourself and add a `_sv_row` column
 with `add` / `del` / `mod`: rows tint like a diff, and `_sv_*` columns never
 display. Paths are project-relative.
 
+## Ask blocks: questions answered at the block
+
+When you need decisions from the reader, don't bury questions in a comment —
+put `sv-ask` blocks on the page (a string edit, like `sv-csv`). One block per
+question: every column-0 `- ` line becomes a selectable option
+(single-choice; `pick="many"` on the tag makes them multi-select), a `- * `
+line is your suggested answer — badged and pre-selected, so an untouched
+question visibly submits it — the rest of the body is the question
+(markdown), and every question carries a free-text field alongside. Suggest
+an answer whenever you have one. Group a round with `round="N"` and end it
+with one close block:
+
+```
+<sv-ask id="q1" round="1">
+Which retry policy?
+- * exponential backoff
+- fixed 5s
+</sv-ask>
+
+<sv-ask id="fin1" round="1" role="close">
+</sv-ask>
+```
+
+The close block renders the round's verdict (approved / revise), an optional
+closing note, and the send button. A round can be a
+lone close block when the verdict is the whole question. Answers stay
+drafts in the reader's browser until they
+press send, which posts **one comment for the whole round**: it arrives
+through `sideview watch` like any comment, on a thread on the close block,
+first line `ask round N — <verdict>`, then a terse list keyed by question
+block id: only questions whose answer differs from your suggestion appear
+(`q2: <picks>`, riders quoted beneath, unanswered ones say so), and `all as
+suggested` / `everything else as suggested` covers the rest. A sent round
+folds to one line on the page but never locks: an amended send arrives as a
+reply on the same thread. Round threads are yours alone — the page's comment
+bar never shows them — so after folding the answers into the page (update
+the blocks the round settles), resolve the round's thread yourself: the
+reader has no UI for it. A new round of follow-ups is new `sv-ask` blocks
+with the next `round` number, never edits to a sent round's blocks.
+
 ## The page is styled with Bootstrap 5 — write what you already know
 
 Markup blocks can use the full Bootstrap 5 vocabulary: grid (`row`/`col-*`),

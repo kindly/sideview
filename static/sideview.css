@@ -504,6 +504,115 @@ iframe.sv-ext {
   z-index: 3;
 }
 
+/* --- sv-ask: the page asks back (V4.sv, 2026-08-20) -------------------------
+   Agent-led questions answered at the block. An ink bar marks a block that
+   wants something from the reader; answers are browser-side drafts until
+   the round's close block sends one comment through the ordinary machinery.
+   Controls are native inputs — accent-color is the only paint they need. */
+section.sv-ask {
+  border-left: 3px solid var(--sv-ink);
+  padding-left: 1rem;
+}
+.sv-ask .sv-ask-q > :last-child { margin-bottom: 0.5rem; }
+.sv-ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+.sv-ask-opt {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.sv-ask-opt input { accent-color: var(--sv-ink); }
+.sv-ask-opt:hover { border-color: var(--sv-ink); }
+.sv-ask-opt:has(input:checked) {
+  border-color: var(--sv-ink);
+  background: color-mix(in srgb, var(--sv-ink) 7%, var(--bs-body-bg));
+}
+.sv-ask-rider {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: inherit;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  resize: vertical;
+}
+.sv-ask-rider:focus { outline: none; border-color: var(--sv-ink); }
+.sv-ask-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.sv-ask-verdicts .sv-ask-opt { flex-direction: row; align-items: center; }
+.sv-ask-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.sv-ask-sent {
+  font-family: var(--sv-mono);
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  margin: 0.5rem 0 0;
+}
+/* The agent's suggested answer: badged AND pre-selected — what an untouched
+   question submits is exactly what the reader sees selected. */
+.sv-ask-rec {
+  font-family: var(--sv-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+  padding: 0.05rem 0.35rem;
+  margin-left: auto;
+}
+/* A sent round: complete, collapsed, never locked. The WHOLE round folds to
+   one line on its close block (round-2 drill) — question blocks leave the
+   flow until `change` brings the round back, and the ink bar marks current
+   asks only, so the folded line wears none. */
+section.sv-ask-done:not([data-sv-role="close"]) { display: none; }
+/* Doubled class on purpose: this must outrank section.sv-ask's ink border
+   above — a bare .sv-ask-done lost that specificity fight and silently
+   never applied (round-6 drill; the mobile-sheet saga's first lesson). */
+section.sv-ask.sv-ask-settled { border-left-color: transparent; }
+.sv-ask-done .sv-ask-q,
+.sv-ask-done .sv-ask-options,
+.sv-ask-done .sv-ask-rider,
+.sv-ask-done .sv-ask-verdicts,
+.sv-ask-done .sv-ask-actions,
+.sv-ask-done .sv-ask-sent { display: none; }
+.sv-ask-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  margin-top: 0.25rem;
+}
+.sv-ask-change {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.sv-ask-change:hover { color: var(--sv-ink); }
+
 /* Comment on the block as a whole. It exists *only* on blocks with no
    selectable text — an iframe, a lone image — because everywhere else
    selection already works and a second affordance would make the reader

@@ -1,0 +1,101 @@
+<sv-page label="v4: the page asks back" category="plan" order="3">
+
+<sv-prose id="intro">
+# v4: the page asks back
+
+Curated 2026-08-20, straight out of the vision grill that produced [VISION.sv](VISION.sv):
+the author cut the primary list to exactly this In list and said "v4 should be started
+with that list" (grill page, thread 61). Rationale lives in the design docs and the
+grill page; this page holds only what v4 commits to.
+
+Carried principles, not up for re-decision: sv files are canon and the db holds what
+should not be versioned · the page file has one author and everything multi-writer goes
+through SQLite · reference, never embed · dogfood first.
+</sv-prose>
+
+<sv-prose id="in">
+## In
+
+- **The ask block (`sv-ask`).** ✓ **Accepted by the author through this page's own
+  machinery, 2026-08-21, thread 73 — seven drill rounds, run on the feature itself.**
+  Agent-led questions answered *at the block*, not hunted
+  for in the bar. Shape settled by grill, 2026-08-19: one tag, `role="close"` for the
+  "finish grilling" button; enumerated options plus one free-text rider per question;
+  drafts client-side and freely revisitable, completion per-round never per-question;
+  the finish press submits **one comment per round**, so
+  today's `watch` covers it unchanged; asks share a `round="N"` attribute; the agent
+  folds the round into canon. Core, zero migration. Two details adopted from the
+  plannotator comparison: a close vocabulary that distinguishes approved / approved with
+  notes / revise *(cut to approved / revise in round 5, thread 71: with the note field
+  always present, the middle verdict was derivable — noise)*, and a preview of what the
+  agent will receive before the round submits *(retired in round 4, thread 70:
+  machine-mail comments with suggestions visible on the page left it no audience)*.
+  Drill additions (author, 2026-08-21, threads 67–72): `pick="many"` multi-select,
+  `- * ` suggested answers badged and pre-selected, whole-round collapse on send —
+  *view*/*hide* to unfold and refold, never locked, amended sends replying into the
+  round's one thread, the ink bar marking only rounds still wanting answers — and round
+  comments as machine-mail: hidden from the bar, keyed by question block id, deltas from
+  the suggestions only, resolved by the agent once folded into canon.
+- **Editing blocks from the page, two tiers** (author, 2026-08-20, thread 62 on this
+  page). **Entry is the selection chip, and the gesture model unifies** (author,
+  2026-08-20, thread 63): double-click or select produces a *selection*, and the chip
+  that already knows how to position itself grows two verbs, comment and edit — a
+  two-button strip, never a menu. Edit opens the whole block's markdown with the cursor
+  at the bit that was clicked. The one extra tap on commenting is accepted; the retreat,
+  recorded in thread 63, is edit-inside-the-compose-card, reachable later without
+  undoing anything. *Prose: the direct splice.* Raw markdown in a plain textarea, saved
+  as a whole-block splice under the existing file lock; a from-hash guard 409s instead
+  of clobbering the agent's newer text; an `edit` event kind keeps watch honest. *Every other block type: the edit request.* The same
+  textarea affordance, the change written in markdown, landing not as a splice but as
+  an edit-marked comment (a flag or event kind on the comment machinery) that the agent
+  picks up through watch and merges into the code; the working/replied ladder covers
+  the async gap. Direct html editing rejected: one unclosed tag breaks a block, and
+  html blocks are often generated code. The split is the one-author rule applied: the
+  user writes prose and asks for code. The page's first *authoring* power, the trust
+  expansion V1.md said to make on purpose; both tiers stripped server-side under any
+  future read-only share.
+- **Daily-driver ergonomics.** `sideview restart`: kill-first (SIGTERM the recorded pid,
+  wait for the port to free, spawn on the pinned port), because supersession cannot
+  reuse a port the old daemon still holds; trigger is version skew after every upgrade,
+  and `status`, which already diagnoses the skew, names the cure. Plus louder store
+  identity in CLI output, finishing what the global `--project` flag started: two live
+  cross-project misfires argued this in.
+- **A second embedded skill: `sideview-grill`.** The grilling ritual (design tree,
+  frontier, rounds with recommended answers) run through the page, shipped beside the
+  main skill and installed alongside it by `skill install`. Separate on purpose: the
+  main skill is model-invoked and loads constantly, the ritual is user-invoked and
+  optional, so merging would bloat the core skill's context for every table and plan
+  (the v0 dogfooding lesson). Self-contained about the ritual — no Skill-tool
+  composition, which only Claude Code can do — deferring to the main skill for the
+  medium. **Sequenced after the ask block**, which carries the round conventions the
+  skill would otherwise have to teach in prose. Derived with credit from
+  mattpocock/skills (MIT; the README invites exactly this). *(added by the author,
+  2026-08-20, from the vision grill's own workflow)*
+- **The logo, wired in — and it replaces the state dot** (author, 2026-08-20, thread 64
+  on this page). `logo.svg` (the reviewer: specs glancing right, one brow soft-raised;
+  chosen through seven live iterations on the grill page) becomes the page favicon and
+  the header mark beside the wordmark, inlined so `currentColor` follows the theme. The
+  mark *is* the liveness indicator: the dot's existing client state machine toggles a
+  class on the same inline SVG — open and glancing = live, half-lidded = reconnecting,
+  lids drawn and pupils hidden = daemon gone. One indicator instead of two, no color
+  needed. Animation (a blink on reconnect) deliberately deferred: charming, and scope
+  creep.
+- **`_sv_cell_<col>` marks.** The second half of the annotated-CSV design: cell-level
+  tints beside the shipped `_sv_row`, the author's daily data-diff case. Open with it,
+  deliberately: whether the directive names alias sqlnow's, so one annotated file
+  renders in both viewers.
+</sv-prose>
+
+<sv-prose id="goal">
+## Goal
+
+v4 is done when each In item above is accepted by the author through this page's own
+machinery, and **0.4.0 is on crates.io**. Blessed by the author 2026-08-20 (thread 66),
+with a working order and a ritual attached: **the ask block ships first**, and when an
+In bullet completes, the agent drills the author — an sv-ask round over whatever the
+implementation did that the plan did not predict — on this page or a sibling. The
+machinery reviews itself. *(It did: the ask block's own acceptance took seven rounds
+through the ask block, threads 67–73.)*
+</sv-prose>
+
+</sv-page>

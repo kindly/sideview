@@ -110,7 +110,8 @@ pub fn load_extensions(root: &Path, cfg: &Config) -> (Vec<Extension>, Vec<(Strin
         }
         // Core block tags are not claimable — sv-csv arriving in core made
         // the collision real rather than theoretical.
-        const RESERVED: &[&str] = &["prose", "markup", "html", "diff", "note", "csv", "stray", "page"];
+        const RESERVED: &[&str] =
+            &["prose", "markup", "html", "diff", "note", "csv", "stray", "page", "ask"];
         if RESERVED.contains(&m.name.as_str()) {
             problems.push((e.path.clone(), format!("name {:?} is a core block tag", m.name)));
             continue;
