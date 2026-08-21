@@ -250,3 +250,8 @@ be started from inside the sandbox (its network namespace is unreachable). Offer
 run `sideview --detach` with the sandbox disabled; that is one approval and blocks
 written so far appear the moment it starts. If declined, relay the printed
 instruction (`run \`sideview\` in <project>`) to the user and continue.
+
+**`sideview restart` is the user's command, never yours.** It kills the running
+daemon, and that call belongs to the person whose tabs are on it. If you see
+version skew or a stale daemon, say "run `sideview restart`" and keep working —
+your writes land in the file either way.

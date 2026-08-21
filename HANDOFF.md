@@ -55,10 +55,24 @@ send landed as a reply on the round's one thread, as designed). **Round 7 approv
 2026-08-21 (thread 73): the ask block is the first In bullet accepted through the
 page's own machinery** — seven rounds, run on the feature itself, each revision
 argued, shipped and re-drilled the same day. The drill scaffolding is folded off
-V4.sv (every decision is recorded in the bullet with its thread); committed as one
-change. Next bullet by the blessed order: `sideview restart` — whose trigger this
-session re-proved five times by hand-rolling kill/rm/cp/--detach cycles after every
-upgrade.
+V4.sv (every decision is recorded in the bullet with its thread); committed as
+409647a. The commit also brought V4.sv and VISION.sv into the repo for the first
+time — HANDOFF had called VISION.sv committed before it actually was.
+
+**The daily-driver bullet followed the same day: `sideview restart` + louder store
+identity, built and proved live 2026-08-21.** Kill-first exactly as the bullet
+specifies — SIGTERM the recorded pid, wait up to 10s for the row to clear AND the
+port to actually free (never escalating to SIGKILL; the bail is honest), then spawn
+detached on the remembered port. The reachability probe runs BEFORE the kill, so
+inside a sandbox restart refuses up front instead of trading a working daemon for an
+unreachable one. It performed its own first restart (stopped pid 626153, came back on
+the same port 46423) and refused correctly from the sandbox with the daemon
+untouched. Skew cure texts in `status` and bare `sideview` now name it. Identity:
+every write ends with `→ <project root>` on stderr (prose/markup/html/diff/update/rm
+joining comment/working); reads stay quiet. **Round 8 approved same day (thread 74),
+one rider folded: restart is the user's command, never the agent's — the skill now
+says so** (an agent that sees skew relays the command instead of running it; its
+writes land in the file either way). Committed.
 
 **v4 curated and the vision settled, 2026-08-20, through a grill run on the machinery
 itself.** [VISION.sv](VISION.sv) (committed, registered) now holds the north-star — "a

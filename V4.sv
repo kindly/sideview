@@ -54,12 +54,17 @@ through SQLite · reference, never embed · dogfood first.
   user writes prose and asks for code. The page's first *authoring* power, the trust
   expansion V1.md said to make on purpose; both tiers stripped server-side under any
   future read-only share.
-- **Daily-driver ergonomics.** `sideview restart`: kill-first (SIGTERM the recorded pid,
+- **Daily-driver ergonomics.** ✓ **Accepted by the author, 2026-08-21, thread 74
+  (drill round 8).** `sideview restart`: kill-first (SIGTERM the recorded pid,
   wait for the port to free, spawn on the pinned port), because supersession cannot
   reuse a port the old daemon still holds; trigger is version skew after every upgrade,
   and `status`, which already diagnoses the skew, names the cure. Plus louder store
   identity in CLI output, finishing what the global `--project` flag started: two live
-  cross-project misfires argued this in.
+  cross-project misfires argued this in. Drill decisions (thread 74): the reachability
+  probe runs *before* the kill (a sandboxed restart refuses with the daemon untouched);
+  no browser open — tabs reconnect to the same port; honest bail after 10s, never
+  SIGKILL; the identity line rides every write and only writes; and **restart is the
+  user's command, never the agent's** — the skill says so.
 - **A second embedded skill: `sideview-grill`.** The grilling ritual (design tree,
   frontier, rounds with recommended answers) run through the page, shipped beside the
   main skill and installed alongside it by `skill install`. Separate on purpose: the

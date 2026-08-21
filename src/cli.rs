@@ -127,6 +127,11 @@ pub fn author(kind: Kind, explicit_session: Option<&str>, extra: &[(&str, &str)]
         Ok(append_block(current, &block))
     })?;
     println!("{assigned}");
+    // Louder store identity (V4.sv's daily-driver bullet): two live
+    // cross-project misfires argued this in — every write says where it
+    // landed, so a resetting shell resolving the wrong store is visible on
+    // the very next line instead of at debugging time.
+    eprintln!("→ {}", store.root.display());
     ensure_daemon(&mut store)?;
     Ok(())
 }
@@ -178,6 +183,7 @@ pub fn update(short_id: &str, kind: Kind, explicit_session: Option<&str>) -> Res
         let block = format::block_text(kind.type_name(), &attrs, &body);
         Ok(splice(&current, b.lines, Some(&block)))
     })?;
+    eprintln!("→ {}", store.root.display());
     ensure_daemon(&mut store)?;
     Ok(())
 }
@@ -194,6 +200,7 @@ pub fn rm(short_id: &str, explicit_session: Option<&str>) -> Result<()> {
         };
         Ok(splice(&current, b.lines, None))
     })?;
+    eprintln!("→ {}", store.root.display());
     ensure_daemon(&mut store)?;
     Ok(())
 }
@@ -297,7 +304,7 @@ pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
         if d.reachable {
             if d.version != env!("CARGO_PKG_VERSION") {
                 eprintln!(
-                    "daemon is running v{}, this is v{} — Ctrl-C it and run `sideview` again",
+                    "daemon is running v{}, this is v{} — run `sideview restart`",
                     d.version,
                     env!("CARGO_PKG_VERSION")
                 );
@@ -356,6 +363,77 @@ pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
     let dir = store.dir.clone();
     drop(store); // the daemon opens its own connections
     daemon::run(&dir, &daemon::Opts { bind_auto, open_browser: true, port })
+}
+
+/// `sideview restart` — kill-first, then spawn (V4.sv's daily-driver
+/// bullet). Kill-first because supersession cannot reuse a port the old
+/// daemon still holds at bind time: only a full stop lets the new daemon
+/// keep the remembered port, which is what lets every open tab's SSE simply
+/// reconnect. The trigger is version skew after an upgrade; `status` and
+/// bare `sideview` both name this command as the cure.
+pub fn restart(bind: &str) -> Result<()> {
+    let bind_auto = parse_bind(bind)?;
+    let store = open_project_store()?;
+    // Check reachability BEFORE killing anything: replacing a working
+    // daemon with one no browser can reach is strictly worse than skew.
+    let verdict = netcheck::verdict();
+    if !verdict.reachable {
+        bail!(
+            "a daemon started here could never be reached by a browser ({}).\n\
+             Run `sideview restart` in {} from outside the sandbox.",
+            verdict.reasons.join(", "),
+            store.root.display()
+        );
+    }
+
+    if let Some(d) = store.daemon()? {
+        let old = format!("v{} (pid {})", d.version, d.pid);
+        // ESRCH just means it's already gone — a stale row, not an error.
+        unsafe { libc::kill(d.pid as libc::pid_t, libc::SIGTERM) };
+        // Gone means: row cleared (graceful shutdown does this) AND the
+        // port actually free — the whole reason this command exists.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let row_gone = store.daemon()?.map_or(true, |now| now.pid != d.pid);
+            let port_free =
+                std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, d.port)).is_ok();
+            if row_gone && port_free {
+                break;
+            }
+            if Instant::now() > deadline {
+                bail!(
+                    "old daemon {old} has not released port {} after 10s — \
+                     check it yourself, then run `sideview restart` again",
+                    d.port
+                );
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        eprintln!("stopped {old}");
+    } else {
+        eprintln!("no daemon recorded — starting one");
+    }
+
+    if !spawn_detached(&store, false, bind_auto)? {
+        eprintln!("another sideview is already starting the daemon");
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(d) = store.daemon_alive()? {
+            if d.reachable {
+                eprintln!("running v{} (pid {})", d.version, d.pid);
+                print_urls(&store, d.port);
+                return Ok(());
+            }
+        }
+        if Instant::now() > deadline {
+            bail!(
+                "daemon did not come up within 5s — check {}",
+                store.dir.join("daemon.log").display()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// `sideview session set` — page properties now live in the file itself, on
@@ -916,7 +994,7 @@ pub fn status() -> Result<()> {
             );
             if d.version != env!("CARGO_PKG_VERSION") {
                 println!(
-                    "         version skew: this binary is v{} — Ctrl-C the daemon and run `sideview` again",
+                    "         version skew: this binary is v{} — run `sideview restart`",
                     env!("CARGO_PKG_VERSION")
                 );
             }

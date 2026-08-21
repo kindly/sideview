@@ -170,6 +170,13 @@ enum Cmd {
     Sessions,
     /// Is the daemon alive, on which port, at which version
     Status,
+    /// Stop the recorded daemon and start this binary on the same port
+    /// (the cure for version skew after an upgrade)
+    Restart {
+        /// `auto` (tailnet if present) or `loopback`
+        #[arg(long, default_value = "auto")]
+        bind: String,
+    },
     /// Print the class vocabulary
     Styles,
     /// Delete the store and start again (pre-1.0 escape hatch)
@@ -358,6 +365,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),
+        Some(Cmd::Restart { bind }) => cli::restart(&bind),
         Some(Cmd::Styles) => cli::styles(),
         Some(Cmd::Reset) => cli::reset(),
         Some(Cmd::Attachments { action: AttachmentsCmd::Gc { resolved } }) => {
