@@ -136,6 +136,15 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX attachments_by_comment ON attachments(comment_id);
     CREATE INDEX attachments_by_sha ON attachments(sha256);
     "#,
+    // v5: block editing from the page (V4.sv, threads 62–63). A comment's
+    // kind separates conversation from the editing machinery riding it:
+    // 'comment' (the default, every utterance so far), 'edit' (a proposed
+    // markdown change to a non-prose block, fenced in the body, for the
+    // agent to merge), 'edited' (the machine-mail record that a prose block
+    // was spliced directly — how watch stays honest about the file moving).
+    r#"
+    ALTER TABLE comments ADD COLUMN kind TEXT NOT NULL DEFAULT 'comment';
+    "#,
 ];
 
 pub fn now_ms() -> i64 {
@@ -238,6 +247,9 @@ pub struct Comment {
     pub created_at: i64,
     pub seen_at: Option<i64>,
     pub seen_by: Option<String>,
+    /// 'comment' | 'edit' (a proposed change awaiting the agent's merge) |
+    /// 'edited' (the record of a direct prose splice). See migration v5.
+    pub kind: String,
 }
 
 /// A file riding a comment: metadata here, bytes on disk (V3.sv). The
@@ -293,7 +305,7 @@ const THREAD_COLS: &str = "threads.id, threads.page, threads.target, threads.anc
      threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by, \
      threads.working_at, threads.working_by";
 const COMMENT_COLS: &str = "comments.id, comments.thread_id, comments.body, comments.author, \
-     comments.created_at, comments.seen_at, comments.seen_by";
+     comments.created_at, comments.seen_at, comments.seen_by, comments.kind";
 
 fn thread_row(r: &rusqlite::Row) -> rusqlite::Result<Thread> {
     thread_row_at(r, 0)
@@ -324,6 +336,7 @@ fn comment_row(r: &rusqlite::Row) -> rusqlite::Result<Comment> {
         created_at: r.get(4)?,
         seen_at: r.get(5)?,
         seen_by: r.get(6)?,
+        kind: r.get(7)?,
     })
 }
 
@@ -551,6 +564,7 @@ impl Store {
         context: Option<&str>,
         body: &str,
         author: Option<&str>,
+        kind: &str,
         attachments: &[NewAttachment],
     ) -> Result<(i64, i64)> {
         let now = now_ms();
@@ -562,8 +576,8 @@ impl Store {
         )?;
         let thread_id = tx.last_insert_rowid();
         tx.execute(
-            "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![thread_id, body, author, now],
+            "INSERT INTO comments(thread_id, body, author, created_at, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![thread_id, body, author, now, kind],
         )?;
         let comment_id = tx.last_insert_rowid();
         insert_attachments(&tx, comment_id, attachments, now)?;
@@ -579,13 +593,14 @@ impl Store {
         thread_id: i64,
         body: &str,
         author: Option<&str>,
+        kind: &str,
         attachments: &[NewAttachment],
     ) -> Result<i64> {
         let now = now_ms();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
-            "INSERT INTO comments(thread_id, body, author, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![thread_id, body, author, now],
+            "INSERT INTO comments(thread_id, body, author, created_at, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![thread_id, body, author, now, kind],
         )
         .with_context(|| format!("no thread {thread_id}?"))?;
         let id = tx.last_insert_rowid();
@@ -753,7 +768,7 @@ impl Store {
              WHERE comments.id > ?1 ORDER BY comments.id ASC"
         ))?;
         let rows = stmt
-            .query_map([cursor], |r| Ok((comment_row(r)?, thread_row_at(r, 7)?)))?
+            .query_map([cursor], |r| Ok((comment_row(r)?, thread_row_at(r, 8)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -1055,26 +1070,26 @@ mod tests {
     fn threads_carry_placement_and_comments_are_utterances() {
         let mut store = test_store();
         let (t1, c1) = store
-            .create_thread("v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None, &[])
+            .create_thread("v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None, "comment", &[])
             .unwrap();
-        let c2 = store.reply(t1, "second thoughts", None, &[]).unwrap();
+        let c2 = store.reply(t1, "second thoughts", None, "comment", &[]).unwrap();
         assert!(c2 > c1);
         let threads = store.threads_for_page("v2").unwrap();
         assert_eq!(threads.len(), 1);
         assert_eq!(threads[0].quote.as_deref(), Some("the paragraph…"));
         let comments = store.comments_for_page("v2").unwrap();
         assert_eq!(comments.len(), 2, "replies join their thread, not a new one");
-        assert!(store.reply(999, "into the void", None, &[]).is_err(), "FK: no orphan utterances");
+        assert!(store.reply(999, "into the void", None, "comment", &[]).is_err(), "FK: no orphan utterances");
     }
 
     #[test]
     fn threads_succeed_each_other_at_an_anchor_and_resolve_is_undoable() {
         let mut store = test_store();
-        let (t1, _) = store.create_thread("v2", "b3", "", None, None, "first concern", None, &[]).unwrap();
+        let (t1, _) = store.create_thread("v2", "b3", "", None, None, "first concern", None, "comment", &[]).unwrap();
         assert!(store.resolve_thread(t1, None, false).unwrap());
         assert!(!store.resolve_thread(t1, None, false).unwrap(), "already resolved: no-op");
         // A fresh thread at the same spot — no uniqueness in the way…
-        let (t2, _) = store.create_thread("v2", "b3", "", None, None, "new concern", None, &[]).unwrap();
+        let (t2, _) = store.create_thread("v2", "b3", "", None, None, "new concern", None, "comment", &[]).unwrap();
         assert_ne!(t1, t2);
         // …and unresolving the first can never fail on an index.
         assert!(store.resolve_thread(t1, None, true).unwrap());
@@ -1104,13 +1119,13 @@ mod tests {
             sha256: "aa".into(),
         };
         let (_, c1) =
-            store.create_thread("v3", "b1", "", None, None, "see", None, &[a.clone()]).unwrap();
+            store.create_thread("v3", "b1", "", None, None, "see", None, "comment", &[a.clone()]).unwrap();
         assert_eq!(store.attachments_for_comment(c1).unwrap().len(), 1);
         assert_eq!(store.attachments_for_page("v3").unwrap().len(), 1);
 
         // Deduped file shared with another page's conversation: the first
         // page's death must not take bytes a remaining row still protects.
-        store.create_thread("other", "b1", "", None, None, "also", None, &[a.clone()]).unwrap();
+        store.create_thread("other", "b1", "", None, None, "also", None, "comment", &[a.clone()]).unwrap();
         store.delete_binding("v3").unwrap();
         assert!(abs.exists(), "a remaining row protects its bytes");
         store.delete_binding("other").unwrap();
@@ -1119,7 +1134,7 @@ mod tests {
         // Confinement: a row is a future deletion, so nothing outside the
         // attachments home may ever be recorded as one.
         let evil = NewAttachment { path: "src/main.rs".into(), ..a };
-        assert!(store.create_thread("v3", "b1", "", None, None, "x", None, &[evil]).is_err());
+        assert!(store.create_thread("v3", "b1", "", None, None, "x", None, "comment", &[evil]).is_err());
     }
 
     #[test]
@@ -1147,14 +1162,14 @@ mod tests {
             sha256: "bb".into(),
         };
         let (t1, _) =
-            store.create_thread("v3", "b1", "", None, None, "csv", None, &[a.clone()]).unwrap();
+            store.create_thread("v3", "b1", "", None, None, "csv", None, "comment", &[a.clone()]).unwrap();
         store.resolve_thread(t1, None, false).unwrap();
         assert_eq!(
             store.attachment_refs().unwrap(),
             vec![(rel.clone(), false)],
             "held only by a resolved thread — what --resolved widens to"
         );
-        store.create_thread("v3", "b2", "", None, None, "again", None, &[a]).unwrap();
+        store.create_thread("v3", "b2", "", None, None, "again", None, "comment", &[a]).unwrap();
         assert_eq!(
             store.attachment_refs().unwrap(),
             vec![(rel.clone(), true)],
@@ -1177,9 +1192,9 @@ mod tests {
             }
             last = g;
         };
-        let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None, &[]).unwrap();
+        let (t, _) = store.create_thread("v2", "b1", "", None, None, "hi", None, "comment", &[]).unwrap();
         step(&store, "create_thread", true);
-        store.reply(t, "again", None, &[]).unwrap();
+        store.reply(t, "again", None, "comment", &[]).unwrap();
         step(&store, "reply", true);
         store.resolve_thread(t, None, false).unwrap();
         step(&store, "resolve", true);
@@ -1198,7 +1213,7 @@ mod tests {
     fn claims_are_exactly_once_and_page_rm_cascades_conversation() {
         let mut store = test_store();
         store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
-        let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None, &[]).unwrap();
+        let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None, "comment", &[]).unwrap();
         assert!(store.claim_comment(c1, "watch:1").unwrap());
         assert!(!store.claim_comment(c1, "watch:2").unwrap(), "second watcher sees zero rows");
         assert_eq!(store.comments_after(0).unwrap().len(), 1);

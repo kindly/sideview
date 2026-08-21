@@ -6,6 +6,63 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**Editing from the page is in, 2026-08-21 — the fourth bullet built, drill open.**
+Both tiers exactly as V4.sv specifies. Migration v5 adds `comments.kind`
+('comment' | 'edit' | 'edited'). Tier one, prose: GET `/api/source` hands the editor
+raw canon plus a hash; POST `/api/edit` splices under the same sidecar flock the CLI
+takes, 409s with current canon when the hash is stale (the agent moved the text —
+warn once, then the human wins), and mints a `kind='edited'` machine-mail record so
+watch stays honest ('edited' is never postable through /api/comments — forgery
+refused, test-pinned). Tier two, everything else: the same editor posts a
+`kind='edit'` comment, the proposal fenced in ```md, a visible thread the agent
+merges/replies/resolves. Client: the selection chip grew the second verb (comment ·
+edit, a strip, never a menu); double-click now produces a selection + chip rather
+than straight-to-draft (thread 63's unified model — one extra tap on commenting,
+accepted); SSE patches for a block are held while its editor is open; 'edited'
+threads join ask rounds as machine-mail the bar never shows. The skill teaches both
+kinds. 69 tests. Round 11 came back from the author's *phone* (thread 77): receipts,
+request-threads and warn-then-human-wins all as suggested, the unified-chip verdict
+deferred until desktop — and edit-on-touch pulled into v4 ("only testing on mobile
+now so need it"). Shipped same day: while a selection is active a pencil rides a
+second fixed corner button below the comment bubble (the corner-chip law: never
+fight the OS toolbar's airspace; visibility is pure CSS off body.sv-selecting), and
+the editor textarea is 16px on touch so iOS doesn't zoom-jump (comment-sheet saga,
+lessons 7 and 4). En route the author spliced a heading from the phone — the first
+real prose edit through the page, receipt on watch, loop verified. Round 12 (thread
+79) reported two mobile UX gaps, both fixed same day: a double-tap's selection
+collapses almost instantly on mobile and the 700ms remembered-selection grace killed
+the corner buttons before a choice could be made (touch now holds 5s), and with
+straight-to-draft retired the corner strip is the next step and has to read like it
+— both verbs go filled ink while a selection is held. Round 13 (thread 80) then
+caught the opposite failure, stuck-forever highlights, and its cause was structural:
+two paths set the selecting state and only one armed the clearing timer (a
+double-tap that produced no follow-up selection event never expired). The fix is one
+rule, `armSelClear()`: a live selection holds the state with no expiry; collapse or
+an eventless double-tap arms 5s on touch / 700ms on desktop; a verb tap consumes it.
+Every path re-arms through the one function — the same prefer-structure lesson as
+the mobile sheet. Round 14 (thread 82) revised the request editor's UX: it no longer
+replaces the block but opens *under* it with the block outlined in ink (prose keeps
+the replace — there the editor IS the block's text), and a request's quote is now
+the selected text rather than `edit <id>` (kind, not the quote, marks it a request;
+block-id fallback only when nothing was selected). Both editing tiers carried real
+phone traffic en route: a prose splice of a drill heading (receipt on watch) and a
+test edit request (merged-nothing, replied, resolved). Round 15 asks the author's
+floated question — should requests hide from the bar like machine-mail? (my lean:
+no — an unmerged request needs a visible pending state); approval accepts the
+bullet. Uncommitted.
+
+Round 15 settled requests-stay-visible (author, all as suggested) and caught the
+last UX gap: a tall prose block swaps for a shorter textarea on edit and the
+viewport stays put, stranding the editor's top off-screen above. Fixed: the editor
+scrolls itself into view on open when its top isn't visible, landing below the
+sticky header (scroll-margin, the rail-jump law). **Round 16 approved, 2026-08-22
+(thread 87): the editing bullet is the fifth accepted** — six drill rounds (11–16),
+a genuine field test from phone and desktop with both tiers carrying real edits
+mid-drill. The approval's rider fixed a long-standing bar bug in the same change: a
+new comment draft now scrolls the bar to the top, where draft cards are born,
+instead of leaving them hidden under a scrolled conversation. Committed. Remaining
+In bullets: the `sideview-grill` skill and `_sv_cell` marks — then 0.4.0.
+
 **v4 underway: the ask block is in, 2026-08-21** — the first In bullet, built the day
 after blessing. `sv-ask` renders questions (column-0 `- ` lines become single-choice
 options; every question carries a free-text rider) and `role="close"` renders the

@@ -37,7 +37,18 @@ through SQLite · reference, never embed · dogfood first.
   comments as machine-mail: hidden from the bar, keyed by question block id, deltas from
   the suggestions only, resolved by the agent once folded into canon.
 - **Editing blocks from the page, two tiers** (author, 2026-08-20, thread 62 on this
-  page). **Entry is the selection chip, and the gesture model unifies** (author,
+  page). ✓ **Accepted by the author, 2026-08-22, thread 87 — drill rounds 11–16, a
+  five-round field test from phone and desktop, both tiers carrying real edits
+  mid-drill.** Drill decisions: migration v5 (`comments.kind`: comment / edit /
+  edited); splice receipts and ask rounds are machine-mail, edit requests stay
+  visible in the bar (round 15) with the selected text as their quote (round 14);
+  the request editor opens *under* the outlined block while prose replaces (round
+  14); conflicts warn once then the human wins (round 11); edit-on-touch pulled into
+  v4 (round 12: a corner pencil below the bubble, 16px textarea against iOS zoom);
+  one selection-lifetime rule after the stuck-highlight saga (rounds 12–14: live
+  selection holds, collapse arms 5s on touch, a verb tap consumes); the editor
+  scrolls itself into view (round 16); and 'edited' is unforgeable through the
+  comment door. **Entry is the selection chip, and the gesture model unifies** (author,
   2026-08-20, thread 63): double-click or select produces a *selection*, and the chip
   that already knows how to position itself grows two verbs, comment and edit — a
   two-button strip, never a menu. Edit opens the whole block's markdown with the cursor

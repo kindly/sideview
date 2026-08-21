@@ -247,6 +247,20 @@ pub fn block_text(type_name: &str, attrs: &[(&str, &str)], body: &str) -> String
 /// An attribute value the grammar can hold: no double quotes (no escapes
 /// exist), no newlines. The CLI bails with this message rather than writing
 /// a file it couldn't re-read.
+/// FNV-1a 64 over the block body's raw bytes, as 16 hex — the from-hash
+/// guard for editing from the page (V4.sv): the client echoes the hash it
+/// was served, and a mismatch at save time means the agent moved the text
+/// meanwhile, so the splice 409s instead of clobbering. A guard, not
+/// crypto; the same family as the client's anchorHash.
+pub fn body_hash(body: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in body.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
+}
+
 pub fn check_attr_value(v: &str) -> Result<(), String> {
     if v.contains('"') || v.contains('\n') {
         return Err("attribute values cannot contain double quotes or newlines".into());

@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-21H closed eyes rest symmetric';
+const CLIENT_STAMP = '2026-08-22F new draft tops the bar';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -933,6 +933,151 @@ $blocks.addEventListener('click', async (e) => {
   }
 });
 
+// ---- editing blocks from the page (V4.sv, threads 62–63) -----------------------
+// Two tiers, the one-author rule applied: prose splices straight into the
+// file (from-hash guard — a 409 means the agent moved the text meanwhile),
+// while every other type sends a kind='edit' comment the agent merges.
+// Entry is the chip's second verb; while an editor is open, SSE patches for
+// that block are held, and the guard turns the remaining race into a
+// warning instead of lost work.
+
+const pendingBlockEv = new Map(); // block id -> the SSE patch held while its editor is open
+
+async function startEdit(spot, at) {
+  const block = spot?.closest('[data-block]');
+  if (!block) return;
+  let src;
+  try {
+    const res = await fetch(
+      '/api/source?page=' +
+        encodeURIComponent(state.selected) +
+        '&block=' +
+        encodeURIComponent(block.dataset.block)
+    );
+    if (!res.ok) throw new Error(await res.text());
+    src = await res.json();
+  } catch (err) {
+    console.warn('sideview: could not open the editor', err);
+    return;
+  }
+  openEditor(block, src, at);
+}
+
+function openEditor(blockEl, src, at) {
+  if (blockEl.querySelector('.sv-editor')) return;
+  const prose = src.type === 'sv-prose';
+  const ed = document.createElement('div');
+  ed.className = 'sv-editor';
+  const note = document.createElement('div');
+  note.className = 'sv-editor-note';
+  note.textContent = prose
+    ? 'editing ' + blockEl.dataset.block + ' — saves straight into the page file'
+    : 'this block is ' +
+      (src.type || 'code').replace('sv-', '') +
+      ' — describe the change in markdown; it reaches the agent as an edit request to merge';
+  const ta = document.createElement('textarea');
+  ta.className = 'sv-editor-text';
+  ta.value = prose ? src.body : '';
+  ta.rows = Math.min(24, Math.max(6, src.body.split('\n').length + 2));
+  if (!prose) ta.placeholder = 'what should change?';
+  const warn = document.createElement('div');
+  warn.className = 'sv-editor-warn';
+  warn.hidden = true;
+  const actions = document.createElement('div');
+  actions.className = 'sv-editor-actions';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'btn btn-sm btn-primary';
+  save.textContent = prose ? 'save' : 'send to the agent';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn btn-sm btn-outline-secondary';
+  cancel.textContent = 'cancel';
+  actions.append(save, cancel);
+  ed.append(note, ta, warn, actions);
+  // Prose replaces the block (the editor IS its text); a request opens
+  // UNDER the still-visible block, outlined so what's being asked about
+  // stays on screen (round-14 drill, thread 82).
+  blockEl.classList.add(prose ? 'sv-editing' : 'sv-editing-request');
+  blockEl.appendChild(ed);
+  let fromHash = src.hash;
+  // The cursor lands at the bit that was clicked (thread 63): find the
+  // clicked text in the source, since rendered text ≈ its markdown.
+  ta.focus({ preventScroll: true });
+  if (prose && at) {
+    const idx = src.body.indexOf(at.slice(0, 80));
+    if (idx >= 0) ta.setSelectionRange(idx, idx);
+  }
+  // A tall rendered block swaps for a shorter textarea and the viewport
+  // stays put, leaving the editor's top off-screen above (round-15 drill,
+  // thread 86): bring it into view unless it already is.
+  const r = ed.getBoundingClientRect();
+  if (r.top < 60 || r.top > innerHeight - 160) ed.scrollIntoView({ block: 'start' });
+  cancel.addEventListener('click', () => closeEditor(blockEl));
+  save.addEventListener('click', async () => {
+    if (!ta.value.trim() && !prose) {
+      warn.textContent = 'describe the change first';
+      warn.hidden = false;
+      return;
+    }
+    save.disabled = true;
+    try {
+      if (prose) {
+        const res = await fetch('/api/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page: state.selected,
+            block: blockEl.dataset.block,
+            from_hash: fromHash,
+            body: ta.value,
+          }),
+        });
+        if (res.status === 409) {
+          const fresh = await res.json();
+          fromHash = fresh.hash;
+          warn.textContent =
+            'the agent changed this block while you edited — your text is kept; ' +
+            'save again to overwrite theirs, or cancel to see their version';
+          warn.hidden = false;
+          save.disabled = false;
+          return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        closeEditor(blockEl); // the SSE patch brings the new rendering
+      } else {
+        // The quote is the text that was selected — the card reads "about
+        // this bit", like any comment; kind (not the quote) marks it an
+        // edit request. Block-id fallback only when nothing was selected.
+        await postComment({
+          page: state.selected,
+          target: blockEl.dataset.block,
+          anchor: '',
+          quote: (at || '').trim().slice(0, 300) || 'edit ' + blockEl.dataset.block,
+          context: null,
+          body: '```md\n' + ta.value + '\n```',
+          kind: 'edit',
+        });
+        closeEditor(blockEl); // lands in the bar; the agent merges via watch
+      }
+    } catch (err) {
+      warn.textContent = 'save failed: ' + err.message;
+      warn.hidden = false;
+      save.disabled = false;
+    }
+  });
+}
+
+function closeEditor(blockEl) {
+  blockEl.querySelector('.sv-editor')?.remove();
+  blockEl.classList.remove('sv-editing', 'sv-editing-request');
+  const held = pendingBlockEv.get(blockEl.dataset.block);
+  if (held) {
+    pendingBlockEv.delete(blockEl.dataset.block);
+    applyBlock(held);
+  }
+}
+
 // ---- blocks -----------------------------------------------------------------
 
 function elementFor(blockId, html, ord) {
@@ -1028,6 +1173,13 @@ function applyBlock(ev) {
   // Genuinely live, as opposed to the replay burst after every (re)connect.
   const live = Date.now() - state.connectedAt > 1500;
   const existing = blockEl(ev.block);
+  // Never yank a block out from under its open editor: hold the patch and
+  // apply it when the editor closes (the from-hash guard keeps saves honest
+  // meanwhile).
+  if (existing && existing.querySelector('.sv-editor')) {
+    pendingBlockEv.set(ev.block, ev);
+    return;
+  }
   if (ev.action === 'remove') {
     if (existing) keepReading(() => existing.remove());
     return;
@@ -1292,10 +1444,12 @@ function syncConversation() {
   if (!svc) return;
   const conv = conversation();
   svc.page = state.selected;
-  // Round threads are machine-mail: the bar, its badge, the count dots and
-  // the turn indicator all pretend they don't exist (round-3 drill). The
-  // sent state at the block reads them via conversation() directly.
-  svc.threads = conv.threads.filter((t) => !isAskThread(t));
+  // Machine-mail never reaches the bar: ask-round threads (round-3 drill)
+  // and 'edited' records (a prose splice's watch receipt) — the badge, the
+  // count dots and the turn indicator all pretend they don't exist. Edit
+  // *requests* (kind 'edit') stay visible: they are conversation.
+  const kindOf = (t) => (conv.comments.find((c) => c.thread_id === t.id) || {}).kind;
+  svc.threads = conv.threads.filter((t) => !isAskThread(t) && kindOf(t) !== 'edited');
   svc.comments = conv.comments;
   svc.attachments = conv.attachments || [];
   const attach = {};
@@ -1762,14 +1916,50 @@ const BUBBLE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden=
 // job instead, the one spot the native toolbar never covers.
 const TOUCH = matchMedia('(hover: none)').matches;
 
-const $chip = document.createElement('button');
+// The chip grew a second verb (V4.sv, thread 63): comment and edit, a
+// two-button strip, never a menu.
+const PENCIL_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+  stroke-linejoin="round"><path d="M17 3l4 4L8 20l-5 1 1-5z"/></svg>`;
+const $chip = document.createElement('div');
 $chip.id = 'sv-cchip';
-$chip.type = 'button';
-$chip.setAttribute('aria-label', 'comment on the selection');
-$chip.title = 'comment on the selection';
-$chip.innerHTML = BUBBLE_SVG;
 $chip.hidden = true;
+const $chipComment = document.createElement('button');
+$chipComment.type = 'button';
+$chipComment.className = 'sv-chip-btn';
+$chipComment.setAttribute('aria-label', 'comment on the selection');
+$chipComment.title = 'comment on the selection';
+$chipComment.innerHTML = BUBBLE_SVG;
+const $chipEdit = document.createElement('button');
+$chipEdit.type = 'button';
+$chipEdit.className = 'sv-chip-btn';
+$chipEdit.setAttribute('aria-label', 'edit this block');
+$chipEdit.title = 'edit this block';
+$chipEdit.innerHTML = PENCIL_SVG;
+$chip.append($chipComment, $chipEdit);
 document.body.appendChild($chip);
+
+// Touch gets edit too (round-11 drill, thread 77): a second fixed corner
+// button while a selection is active — the same law the corner chip was
+// born from: never compete with the OS selection toolbar's airspace.
+// Visibility is pure CSS off body.sv-selecting; the lastSel grace window
+// covers the tap collapsing the selection first.
+const $ceditToggle = document.createElement('button');
+$ceditToggle.id = 'sv-cedit-toggle';
+$ceditToggle.type = 'button';
+$ceditToggle.title = 'edit the selected block';
+$ceditToggle.setAttribute('aria-label', 'edit the selected block');
+$ceditToggle.innerHTML = PENCIL_SVG;
+document.body.appendChild($ceditToggle);
+$ceditToggle.addEventListener('mousedown', (e) => e.preventDefault());
+$ceditToggle.addEventListener('click', () => {
+  if (!lastSel) return;
+  const held = lastSel;
+  lastSel = null;
+  document.body.classList.remove('sv-selecting');
+  syncToggle();
+  startEdit(held.spot, held.text);
+});
 
 let chipTimer = 0;
 document.addEventListener('selectionchange', () => {
@@ -1778,10 +1968,24 @@ document.addEventListener('selectionchange', () => {
 });
 
 // The selection, remembered: tapping any affordance collapses the live
-// selection first on touch, so drafts read from here. A grace timer keeps
-// it briefly after collapse — long enough for the in-flight tap.
+// selection first on touch, so drafts read from here.
 let lastSel = null;
 let selClearTimer = 0;
+
+// The one rule for the remembered selection's lifetime (rounds 12–13, the
+// stuck-forever bug: two paths set the state and only one armed the clear).
+// EVERY path that touches the state re-arms this: ~5s on touch after the
+// last selection activity — long enough to read two corner buttons and
+// choose, never stuck; 700ms on desktop, where the floating chip does the
+// offering and only the in-flight click needs covering.
+function armSelClear() {
+  clearTimeout(selClearTimer);
+  selClearTimer = setTimeout(() => {
+    lastSel = null;
+    document.body.classList.remove('sv-selecting');
+    syncToggle();
+  }, TOUCH ? 5000 : 700);
+}
 
 function placeChip() {
   // Typing or selecting inside an ask control is answering, not commenting.
@@ -1799,14 +2003,13 @@ function placeChip() {
   }
   if (!spot) {
     $chip.hidden = true;
-    clearTimeout(selClearTimer);
-    selClearTimer = setTimeout(() => {
-      lastSel = null;
-      document.body.classList.remove('sv-selecting');
-      syncToggle();
-    }, 700);
+    armSelClear();
     return;
   }
+  // A LIVE selection holds the state with no expiry (the user is mid-
+  // gesture; desktop's chip click must find lastSel however long they
+  // think). The expiry arms when the selection collapses (!spot above) or
+  // when double-tap set the state without any selection event to follow.
   clearTimeout(selClearTimer);
   lastSel = { spot, text: sel.toString().trim() };
   if (TOUCH) {
@@ -1819,7 +2022,7 @@ function placeChip() {
   const rects = range.getClientRects();
   const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
   $chip.style.top = scrollY + r.bottom + 8 + 'px';
-  $chip.style.left = Math.min(scrollX + r.right + 4, scrollX + innerWidth - 44) + 'px';
+  $chip.style.left = Math.min(scrollX + r.right + 4, scrollX + innerWidth - 92) + 'px';
   $chip.hidden = false;
 }
 
@@ -1876,6 +2079,11 @@ function startDraft(spot, quote) {
   $chip.hidden = true;
   document.body.classList.add('sv-cbar-open');
   vue.nextTick(() => {
+    // Drafts render at the top of the bar: bring the bar there, or a new
+    // card is born out of view under a scrolled conversation (thread 87 —
+    // a long-standing one).
+    const scroll = $bar.querySelector('.sv-cbar-scroll');
+    if (scroll) scroll.scrollTop = 0;
     $bar.querySelector(`textarea[data-draft="${key}"]`)?.focus({ preventScroll: true });
   });
 }
@@ -1889,22 +2097,40 @@ function spotFrom(node) {
 }
 
 $chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
-$chip.addEventListener('click', () => {
+$chipComment.addEventListener('click', () => {
   if (!lastSel) return;
   const held = lastSel;
   lastSel = null;
   startDraft(held.spot, held.text);
 });
+$chipEdit.addEventListener('click', () => {
+  if (!lastSel) return;
+  const held = lastSel;
+  lastSel = null;
+  getSelection()?.removeAllRanges();
+  $chip.hidden = true;
+  startEdit(held.spot, held.text);
+});
 
-// Double-click is the primary gesture (author, 2026-08-08 — the selection
-// chip's position fought the browser's own selection UI): straight to a
-// draft on the clicked bit, its whole text as the quote — unless a larger
-// selection exists, which wins for precision.
+// Double-click produces a *selection*, and the chip offers the verbs —
+// the unified gesture model (author, 2026-08-20, thread 63 on V4.sv). The
+// straight-to-draft shortcut retired with it: one extra tap on commenting,
+// accepted, in exchange for edit and comment sharing one entry.
 $blocks.addEventListener('dblclick', (e) => {
   if (e.target.closest('a, button, input, textarea, iframe, #sv-comments')) return;
   const spot = spotFrom(e.target);
   if (!spot) return;
   const sel = getSelection();
   const selText = sel && !sel.isCollapsed ? sel.toString().trim() : '';
-  startDraft(spot, selText.length > 20 ? selText : textOf(spot).trim());
+  lastSel = { spot, text: selText.length > 20 ? selText : textOf(spot).trim() };
+  armSelClear();
+  if (TOUCH) {
+    document.body.classList.add('sv-selecting');
+    $cbarToggle.classList.add('sv-sel');
+    $cbarToggle.title = 'comment on the selection';
+    return;
+  }
+  $chip.style.top = scrollY + e.clientY + 12 + 'px';
+  $chip.style.left = Math.min(scrollX + e.clientX + 4, scrollX + innerWidth - 92) + 'px';
+  $chip.hidden = false;
 });

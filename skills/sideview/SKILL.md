@@ -243,6 +243,19 @@ concern started the thread decides when it is settled. Reply, then stop.
 standing instruction ("resolve these once fixed"), or bulk cleanup they have
 requested. `--undo` reopens anything resolved by mistake.
 
+## The page edits back — two tiers on watch
+
+Readers edit blocks from the page (select text, then the chip's pencil).
+**Prose blocks splice straight into your page file** under the same lock your
+writes take; watch tells you with a `kind: "edited"` comment naming the page
+and block — re-read the file before your next `update` or `rm` there (block
+ids are stable; only the text moved). **Every other block type arrives as an
+edit request**: a `kind: "edit"` comment whose body is the proposed change
+fenced in ```` ```md ````. Merge it into the block yourself, reply on the
+thread, and resolve once merged — `working` covers the gap if it will take a
+while. Ordinary comments carry `kind: "comment"`; `edited` records never
+appear in the page's comment bar, so replying to one reaches nobody.
+
 ## If it says "no daemon running"
 
 Your block is saved — nothing is lost — but no page is showing it. The daemon cannot

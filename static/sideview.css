@@ -1738,20 +1738,105 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
 
 /* The selection chip: appears beside selected text, the one way to start a
    thread. Mousedown is prevented so clicking it keeps the selection. */
+/* The selection chip: two verbs, comment and edit — a strip, never a menu
+   (V4.sv, thread 63). */
 #sv-cchip {
   position: absolute;
   z-index: 45;
+  display: flex;
+  border: 1px solid var(--sv-ink);
+  background: var(--bs-body-bg);
+  color: var(--sv-ink);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+}
+#sv-cchip .sv-chip-btn {
   padding: 0.25rem 0.45rem;
+  line-height: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+#sv-cchip .sv-chip-btn + .sv-chip-btn { border-left: 1px solid var(--bs-border-color); }
+#sv-cchip .sv-chip-btn:hover { background: color-mix(in srgb, var(--sv-ink) 10%, var(--bs-body-bg)); }
+
+/* The block editor (V4.sv, threads 62–63): prose saves straight into the
+   file, everything else sends an edit request. While it's open the block's
+   rendering hides and SSE patches for the block are held. */
+.sv-editing > :not(.sv-editor) { display: none; }
+/* A request keeps its block visible and outlined — the editor opens under
+   what it's asking about (round-14 drill). */
+.sv-editing-request { outline: 2px solid var(--sv-ink); outline-offset: 8px; }
+.sv-editing-request .sv-editor {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--bs-border-color);
+}
+.sv-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* scrollIntoView lands below the sticky header — same law as rail jumps */
+  scroll-margin-top: calc(var(--sv-header-h) + 1rem);
+}
+.sv-editor-note {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+}
+.sv-editor-text {
+  width: 100%;
+  font-family: var(--sv-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: inherit;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--sv-ink);
+  padding: 0.6rem;
+  resize: vertical;
+}
+.sv-editor-text:focus { outline: none; }
+/* iOS zooms on focus for any field under 16px (the comment-sheet saga,
+   lesson 7) — declared on the element, never inherited (lesson 4). */
+@media (hover: none) {
+  .sv-editor-text { font-size: 16px; }
+}
+/* Edit on touch (thread 77): the pencil rides above the corner chip while
+   a selection is active — fixed corner, out of the toolbar's airspace. */
+#sv-cedit-toggle {
+  display: none;
+  position: fixed;
+  right: 1rem;
+  top: calc(var(--sv-header-h) + 0.9rem + 3rem);
+  z-index: 44;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
   line-height: 0;
   border: 1px solid var(--sv-ink);
   background: var(--bs-body-bg);
   color: var(--sv-ink);
-  font-family: var(--sv-mono);
-  font-size: 0.72rem;
   cursor: pointer;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
 }
-#sv-cchip:hover { background: color-mix(in srgb, var(--sv-ink) 10%, var(--bs-body-bg)); }
+body.sv-selecting #sv-cedit-toggle { display: block; }
+/* While a selection is held, both verbs go filled ink — equally prominent
+   (round-12 drill: with straight-to-draft retired, the corner strip is the
+   next step and has to read like it). */
+body.sv-selecting #sv-cbar-toggle,
+body.sv-selecting #sv-cedit-toggle {
+  background: var(--sv-ink);
+  color: var(--bs-body-bg);
+  border-color: var(--sv-ink);
+}
+.sv-editor-warn {
+  font-family: var(--sv-mono);
+  font-size: 0.75rem;
+  color: #c98a2b;
+  border-left: 3px solid #c98a2b;
+  padding-left: 0.6rem;
+}
+.sv-editor-actions { display: flex; gap: 0.5rem; }
 
 /* Jump-back lands with a fading ink ring on the target. */
 .sv-flash { animation: sv-flash 1.4s ease-out forwards; }

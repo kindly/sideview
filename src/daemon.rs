@@ -254,6 +254,8 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 // The old noun, one release of grace — same handler.
                 .route("/api/sessions/{session}", web::delete().to(delete_session))
                 .route("/api/comments", web::post().to(post_comment))
+                .route("/api/source", web::get().to(block_source))
+                .route("/api/edit", web::post().to(edit_block))
                 .route("/api/attachments", web::post().to(upload_attachment))
                 // Extensions (EXTENSIONS.md): the entry with its injections,
                 // the extension's own files, and the two call endpoints.
@@ -503,6 +505,12 @@ struct CommentBody {
     quote: Option<String>,
     context: Option<String>,
     body: String,
+    /// 'comment' (default) or 'edit' — an edit request on a non-prose block,
+    /// the proposal fenced in the body, merged by the agent (V4.sv). The
+    /// 'edited' kind is never accepted here: only the splice endpoint mints
+    /// those, or a request could forge a "the file changed" record.
+    #[serde(default)]
+    kind: Option<String>,
     #[serde(default)]
     attachments: Vec<crate::store::NewAttachment>,
 }
@@ -512,6 +520,13 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     if b.body.trim().is_empty() {
         return HttpResponse::BadRequest().body("empty comment body");
     }
+    let kind = match b.kind.as_deref() {
+        None | Some("comment") => "comment",
+        Some("edit") => "edit",
+        Some(other) => {
+            return HttpResponse::BadRequest().body(format!("kind {other:?} is not postable"))
+        }
+    };
     let mut store = state.store.lock().unwrap();
     // A row is a future deletion (page rm, gc), so verify each claimed
     // attachment is a real file in the attachments home before binding it.
@@ -523,7 +538,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     }
     let result = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
         (Some(tid), _, _) => {
-            store.reply(tid, &b.body, Some("user"), &b.attachments).map(|cid| (tid, cid))
+            store.reply(tid, &b.body, Some("user"), kind, &b.attachments).map(|cid| (tid, cid))
         }
         (None, Some(page), Some(target)) => store.create_thread(
             page,
@@ -533,6 +548,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
             b.context.as_deref(),
             &b.body,
             Some("user"),
+            kind,
             &b.attachments,
         ),
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
@@ -543,6 +559,118 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         })),
         Err(e) => HttpResponse::BadRequest().body(format!("{e:#}")),
     }
+}
+
+// ---- editing from the page (V4.sv, threads 62–63) ------------------------------
+
+#[derive(serde::Deserialize)]
+struct SourceQuery {
+    page: String,
+    block: String,
+}
+
+/// The editor's opening move: the block's raw markdown source plus the hash
+/// the save must echo. The page shows rendered HTML; editing needs canon.
+async fn block_source(q: web::Query<SourceQuery>, state: Data<AppState>) -> impl Responder {
+    let (root, rel) = {
+        let store = state.store.lock().unwrap();
+        match store.binding(&q.page) {
+            Ok(Some(b)) => (store.root.clone(), b.path),
+            _ => return HttpResponse::NotFound().body("no such page"),
+        }
+    };
+    let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
+        return HttpResponse::NotFound().body("page file unreadable");
+    };
+    let page = crate::format::parse(&text);
+    let Some(b) = page.blocks.iter().find(|b| b.id() == Some(q.block.as_str())) else {
+        return HttpResponse::NotFound().body("no such block");
+    };
+    HttpResponse::Ok().json(serde_json::json!({
+        "type": b.type_name,
+        "body": b.body,
+        "hash": crate::format::body_hash(&b.body),
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct EditBody {
+    page: String,
+    block: String,
+    from_hash: String,
+    body: String,
+}
+
+/// The direct splice — prose only (V4.sv's two tiers: one unclosed tag
+/// breaks an html block and html blocks are often generated code, so
+/// everything non-prose arrives as a kind='edit' comment instead). Runs
+/// under the same sidecar flock the CLI takes, so a browser save and an
+/// agent write serialize; the from-hash guard turns the remaining race into
+/// a 409 carrying current canon, never a clobber. The page's first
+/// authoring power — strip this and /api/comments' kind under any future
+/// read-only share.
+async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Responder {
+    use std::os::fd::AsRawFd as _;
+    let e = body.into_inner();
+    let (root, rel) = {
+        let store = state.store.lock().unwrap();
+        match store.binding(&e.page) {
+            Ok(Some(b)) => (store.root.clone(), b.path),
+            _ => return HttpResponse::NotFound().body("no such page"),
+        }
+    };
+    let path = root.join(&rel);
+    let lock_path = path.with_extension("sv.lock");
+    let Ok(lock) = std::fs::File::create(&lock_path) else {
+        return HttpResponse::InternalServerError().body("could not create the page lock");
+    };
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        return HttpResponse::InternalServerError().body("could not lock the page");
+    }
+    let Ok(current) = std::fs::read_to_string(&path) else {
+        return HttpResponse::NotFound().body("page file unreadable");
+    };
+    let page = crate::format::parse(&current);
+    let Some(b) = page.blocks.iter().find(|b| b.id() == Some(e.block.as_str())) else {
+        return HttpResponse::NotFound().body("no such block");
+    };
+    if b.type_name != "sv-prose" {
+        return HttpResponse::BadRequest()
+            .body("only prose splices directly — send the change as an edit comment");
+    }
+    if crate::format::body_hash(&b.body) != e.from_hash {
+        // The agent moved the text meanwhile: hand back current canon so
+        // the editor can re-merge — never clobber.
+        return HttpResponse::Conflict().json(serde_json::json!({
+            "body": b.body,
+            "hash": crate::format::body_hash(&b.body),
+        }));
+    }
+    let attrs: Vec<(&str, &str)> = b.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let block_text = crate::format::block_text("sv-prose", &attrs, &e.body);
+    let next = crate::cli::splice(&current, b.lines, Some(&block_text));
+    let tmp = path.with_extension("sv.tmp");
+    if std::fs::write(&tmp, &next).is_err() || std::fs::rename(&tmp, &path).is_err() {
+        return HttpResponse::InternalServerError().body("could not write the page");
+    }
+    drop(lock);
+    // The machine-mail record: how watch stays honest about the file moving
+    // under the agent. Only this endpoint mints kind='edited'.
+    let mut store = state.store.lock().unwrap();
+    if let Err(err) = store.create_thread(
+        &e.page,
+        &e.block,
+        "",
+        Some(&format!("edit {}", e.block)),
+        None,
+        "edited from the page",
+        Some("user"),
+        "edited",
+        &[],
+    ) {
+        return HttpResponse::InternalServerError().body(format!("{err:#}"));
+    }
+    HttpResponse::Ok().json(serde_json::json!({ "hash": crate::format::body_hash(&e.body) }))
 }
 
 // ---- extensions (EXTENSIONS.md) -----------------------------------------------
@@ -1564,6 +1692,104 @@ mod tests {
         let store = state.store.lock().unwrap();
         assert_eq!(store.comments_for_page("v2").unwrap().len(), 2);
         assert!(store.threads_for_page("v2").unwrap()[0].resolved_at.is_none());
+    }
+
+    #[actix_web::test]
+    async fn edit_endpoints_source_splice_guard_and_request() {
+        let dir = std::env::temp_dir().join(format!("sv-ed-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        std::fs::write(
+            store.root.join("plan.sv"),
+            "<sv-page>\n\n<sv-prose id=\"b1\">\nold text\n</sv-prose>\n\n<sv-markup id=\"b2\">\n<div>card</div>\n</sv-markup>\n\n</sv-page>\n",
+        )
+        .unwrap();
+        store.bind_session("plan", "plan.sv", "/tmp", "test").unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/api/source", web::get().to(block_source))
+                .route("/api/edit", web::post().to(edit_block))
+                .route("/api/comments", web::post().to(post_comment)),
+        )
+        .await;
+
+        // The editor's opening move: raw source plus the hash to echo.
+        let req = actix_web::test::TestRequest::get()
+            .uri("/api/source?page=plan&block=b1")
+            .to_request();
+        let src: serde_json::Value = actix_web::test::call_and_read_body_json(&app, req).await;
+        assert_eq!(src["type"], "sv-prose");
+        assert_eq!(src["body"], "old text");
+        let hash = src["hash"].as_str().unwrap().to_string();
+
+        // A stale hash 409s with current canon — never a clobber.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/edit")
+            .set_json(serde_json::json!({
+                "page": "plan", "block": "b1", "from_hash": "0000000000000000", "body": "clobber"
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status().as_u16(), 409);
+
+        // The honest hash splices, and the machine-mail record is minted.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/edit")
+            .set_json(serde_json::json!({
+                "page": "plan", "block": "b1", "from_hash": hash, "body": "new **text**"
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert!(res.status().is_success());
+        {
+            let store = state.store.lock().unwrap();
+            let file = std::fs::read_to_string(store.root.join("plan.sv")).unwrap();
+            assert!(file.contains("new **text**") && !file.contains("old text"));
+            let comments = store.comments_for_page("plan").unwrap();
+            assert_eq!(comments.len(), 1);
+            assert_eq!(comments[0].kind, "edited", "only the splice endpoint mints these");
+        }
+
+        // Non-prose refuses the splice — that tier is the edit request…
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/edit")
+            .set_json(serde_json::json!({
+                "page": "plan", "block": "b2", "from_hash": "x", "body": "nope"
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status().as_u16(), 400);
+
+        // …which posts as kind='edit' through the ordinary comment door.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({
+                "page": "plan", "target": "b2", "quote": "edit b2",
+                "body": "```md\nmake the card an alert\n```", "kind": "edit"
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert!(res.status().is_success());
+        // 'edited' is never postable: a request must not forge the record.
+        let req = actix_web::test::TestRequest::post()
+            .uri("/api/comments")
+            .set_json(serde_json::json!({
+                "page": "plan", "target": "b2", "body": "forged", "kind": "edited"
+            }))
+            .to_request();
+        let res = actix_web::test::call_service(&app, req).await;
+        assert_eq!(res.status().as_u16(), 400);
+        let store = state.store.lock().unwrap();
+        let kinds: Vec<String> =
+            store.comments_for_page("plan").unwrap().into_iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, vec!["edited".to_string(), "edit".to_string()]);
     }
 
     #[actix_web::test]

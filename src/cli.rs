@@ -207,7 +207,7 @@ pub fn rm(short_id: &str, explicit_session: Option<&str>) -> Result<()> {
 
 /// Replace (or with None, delete) a half-open line range. Collapses the
 /// doubled blank line a deletion leaves behind.
-fn splice(current: &str, (start, end): (usize, usize), replacement: Option<&str>) -> String {
+pub(crate) fn splice(current: &str, (start, end): (usize, usize), replacement: Option<&str>) -> String {
     let lines: Vec<&str> = current.lines().collect();
     let mut out: Vec<String> = lines[..start].iter().map(|s| s.to_string()).collect();
     if let Some(r) = replacement {
@@ -653,7 +653,7 @@ pub fn comment(
                     bail!("thread {tid} is on page {:?}, not {p:?} — wrong project?", t.page);
                 }
             }
-            store.reply(tid, body, Some("agent"), &[])?;
+            store.reply(tid, body, Some("agent"), "comment", &[])?;
             tid
         }
         (None, Some(target)) => {
@@ -671,6 +671,7 @@ pub fn comment(
                 None,
                 body,
                 Some("agent"),
+                "comment",
                 &[],
             )?;
             tid
@@ -814,6 +815,10 @@ pub fn watch(
                 }
                 let line = serde_json::json!({
                     "type": "comment",
+                    // 'comment' | 'edit' (a proposed change to merge) |
+                    // 'edited' (a prose block was spliced from the page —
+                    // re-read the file before your next update/rm there).
+                    "kind": c.kind,
                     "id": c.id,
                     "thread": t.id,
                     "page": t.page,
