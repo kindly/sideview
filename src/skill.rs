@@ -20,8 +20,17 @@ pub const SKILL_MD: &str = include_str!("../skills/sideview/SKILL.md");
 /// credit from mattpocock/skills (MIT).
 pub const GRILL_MD: &str = include_str!("../skills/sideview-grill/SKILL.md");
 
+/// The Pi watcher recipe: agents generate a project-local extension instead
+/// of Sideview shipping a resident Pi package before the integration is
+/// dogfooded.
+pub const PI_WATCH_MD: &str = include_str!("../skills/sideview-pi-watch/SKILL.md");
+
 /// Everything `skill install` ships, installed and removed as one set.
-const SKILLS: &[(&str, &str)] = &[("sideview", SKILL_MD), ("sideview-grill", GRILL_MD)];
+const SKILLS: &[(&str, &str)] = &[
+    ("sideview", SKILL_MD),
+    ("sideview-grill", GRILL_MD),
+    ("sideview-pi-watch", PI_WATCH_MD),
+];
 
 /// What `sideview styles` prints. Deliberately small: the point of shipping a
 /// framework the model already knows is that almost nothing needs documenting.
