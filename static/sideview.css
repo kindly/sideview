@@ -484,6 +484,13 @@ iframe.sv-ext {
 .sv-csv tr.sv-csv-add td { background: color-mix(in srgb, var(--sv-ink) 12%, var(--bs-body-bg)); }
 .sv-csv tr.sv-csv-del td { background: color-mix(in srgb, #c98a2b 14%, var(--bs-body-bg)); }
 .sv-csv tr.sv-csv-mod td { background: color-mix(in srgb, var(--sv-ink) 5%, var(--bs-body-bg)); }
+/* Cell marks (`_sv_cell_<col>`, V4.sv): a deeper wash of the same duotone —
+   the changed cell stands out inside its tinted row. `tr >` keeps these at
+   the row rules' specificity so file order decides (the round-6 lesson:
+   a bare td.class would silently LOSE to `tr.x td` above). */
+.sv-csv tr > td.sv-csv-add { background: color-mix(in srgb, var(--sv-ink) 26%, var(--bs-body-bg)); }
+.sv-csv tr > td.sv-csv-del { background: color-mix(in srgb, #c98a2b 28%, var(--bs-body-bg)); }
+.sv-csv tr > td.sv-csv-mod { background: color-mix(in srgb, var(--sv-ink) 14%, var(--bs-body-bg)); }
 .sv-csv figcaption {
   font-family: var(--sv-mono);
   font-size: 0.72rem;
