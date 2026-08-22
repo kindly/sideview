@@ -6,6 +6,24 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**A real Codex queue monitor is implemented, live, and accepted, 2026-08-22.** Round 32
+(thread 104) authorized project modification after the queue prototype
+proved that Sideview feedback can start a new turn in this exact ChatGPT desktop
+conversation. `sideview monitor codex` is now the product surface: foreground by default,
+explicit `--detach`, exact UUID binding (`CODEX_THREAD_ID` convenience or `--thread`),
+best-effort compatible Codex binary discovery, durable project-local cursor/delivery JSON,
+lifetime lock plus PID start-token ownership, readable queue prompts, agent-echo filtering,
+post-success receipts, retry without cursor advance, and `monitor status` / verified
+`monitor stop`. Five focused tests bring the full suite to 76 green; an isolated detached
+start/status/stop test passed. The shell watcher was retired and the built monitor is now
+serving this conversation with the desktop-bundled Codex binary (PID 1069591 after the
+final lifecycle-race hardening restart). Round 33 (thread 105) accepted at-least-once
+delivery: ambiguous post-acceptance crashes may rarely replay an event rather than silently
+lose feedback, and retained pending state remains visible in status. Event 288 was the live
+product-monitor acceptance test; it queued into this same desktop conversation, left no
+pending event or error, and advanced the durable cursor to 288. The hardening pass is
+complete. Nothing is published yet.
+
 **v4 feature-complete, 2026-08-22: all six In bullets accepted through the page's
 own machinery — six bullets, twenty drill rounds, threads 67–91, roughly 48 hours
 from blessing to done.** Round 20 (thread 91) accepted the last one (cell marks).

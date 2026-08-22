@@ -3,9 +3,10 @@ mod cli;
 mod config;
 mod csv;
 mod daemon;
-mod ext;
 mod diff;
+mod ext;
 mod format;
+mod monitor;
 mod netcheck;
 mod render;
 mod session;
@@ -166,6 +167,11 @@ enum Cmd {
         #[arg(long)]
         ack: bool,
     },
+    /// Queue Sideview feedback into an agent harness
+    Monitor {
+        #[command(subcommand)]
+        action: MonitorCmd,
+    },
     /// What's running here, and at which URLs
     Sessions,
     /// Is the daemon alive, on which port, at which version
@@ -202,6 +208,36 @@ enum Cmd {
         #[arg(long, env = "SIDEVIEW_PORT")]
         port: Option<u16>,
     },
+    /// Run the Codex monitor in this process (internal; used by --detach)
+    #[command(name = "__monitor-codex", hide = true)]
+    InternalMonitorCodex {
+        #[arg(long)]
+        thread: String,
+        #[arg(long)]
+        codex_path: std::path::PathBuf,
+        #[arg(long)]
+        instance: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MonitorCmd {
+    /// Watch this project and queue each new event into one exact Codex thread
+    Codex {
+        /// Target thread UUID (defaults to CODEX_THREAD_ID)
+        #[arg(long)]
+        thread: Option<String>,
+        /// Codex executable (otherwise SIDEVIEW_CODEX_PATH, PATH, then desktop bundles)
+        #[arg(long, env = "SIDEVIEW_CODEX_PATH")]
+        codex_path: Option<std::path::PathBuf>,
+        /// Run in the background; foreground is the default
+        #[arg(long = "detach")]
+        monitor_detach: bool,
+    },
+    /// Show the recorded monitor, exact target, cursor, and last failure
+    Status,
+    /// Stop only the recorded monitor process after verifying its identity
+    Stop,
 }
 
 #[derive(Subcommand)]
@@ -331,8 +367,11 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref(), &[]),
         Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref(), &[]),
         Some(Cmd::Html { height, author }) => {
-            let extra: Vec<(&str, &str)> =
-                height.as_deref().map(|h| ("height", h)).into_iter().collect();
+            let extra: Vec<(&str, &str)> = height
+                .as_deref()
+                .map(|h| ("height", h))
+                .into_iter()
+                .collect();
             cli::author(cli::Kind::Html, author.session.as_deref(), &extra)
         }
         Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.session.as_deref(), &[]),
@@ -340,51 +379,97 @@ fn main() -> anyhow::Result<()> {
             cli::update(&id, kind(&r#type)?, author.session.as_deref())
         }
         Some(Cmd::Rm { id, author }) => cli::rm(&id, author.session.as_deref()),
-        Some(Cmd::Page { action: PageCmd::Set { label, outline, author } })
-        | Some(Cmd::Session { action: SessionCmd::Set { label, outline, author } }) => {
-            cli::session_set(author.session.as_deref(), label.as_deref(), outline.as_deref())
-        }
-        Some(Cmd::Page { action: PageCmd::Rm { id, file, author } }) => {
-            cli::session_rm(author.session.as_deref(), id.as_deref(), file)
-        }
-        Some(Cmd::Session { action: SessionCmd::Rm { id, author } }) => {
-            cli::session_rm(author.session.as_deref(), id.as_deref(), false)
-        }
-        Some(Cmd::Page { action: PageCmd::Promote { dest, author } }) => {
-            cli::page_promote(author.session.as_deref(), &dest)
-        }
+        Some(Cmd::Page {
+            action:
+                PageCmd::Set {
+                    label,
+                    outline,
+                    author,
+                },
+        })
+        | Some(Cmd::Session {
+            action:
+                SessionCmd::Set {
+                    label,
+                    outline,
+                    author,
+                },
+        }) => cli::session_set(
+            author.session.as_deref(),
+            label.as_deref(),
+            outline.as_deref(),
+        ),
+        Some(Cmd::Page {
+            action: PageCmd::Rm { id, file, author },
+        }) => cli::session_rm(author.session.as_deref(), id.as_deref(), file),
+        Some(Cmd::Session {
+            action: SessionCmd::Rm { id, author },
+        }) => cli::session_rm(author.session.as_deref(), id.as_deref(), false),
+        Some(Cmd::Page {
+            action: PageCmd::Promote { dest, author },
+        }) => cli::page_promote(author.session.as_deref(), &dest),
         Some(Cmd::Open { file }) => cli::open_page(&file),
-        Some(Cmd::Comment { block, at, thread, page }) => {
-            cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref())
-        }
+        Some(Cmd::Comment {
+            block,
+            at,
+            thread,
+            page,
+        }) => cli::comment(block.as_deref(), at.as_deref(), thread, page.as_deref()),
         Some(Cmd::Resolve { thread, undo, page }) => cli::resolve(thread, undo, page.as_deref()),
         Some(Cmd::Working { thread, page }) => cli::working(thread, page.as_deref()),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
-        Some(Cmd::Watch { timeout, since, claim, skip_author, ack }) => {
-            cli::watch(timeout, since, claim, skip_author.as_deref(), ack)
-        }
+        Some(Cmd::Watch {
+            timeout,
+            since,
+            claim,
+            skip_author,
+            ack,
+        }) => cli::watch(timeout, since, claim, skip_author.as_deref(), ack),
+        Some(Cmd::Monitor {
+            action:
+                MonitorCmd::Codex {
+                    thread,
+                    codex_path,
+                    monitor_detach,
+                },
+        }) => monitor::start(thread.as_deref(), codex_path.as_deref(), monitor_detach),
+        Some(Cmd::Monitor {
+            action: MonitorCmd::Status,
+        }) => monitor::status(),
+        Some(Cmd::Monitor {
+            action: MonitorCmd::Stop,
+        }) => monitor::stop(),
         Some(Cmd::Sessions) => cli::sessions(),
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Restart { bind }) => cli::restart(&bind),
         Some(Cmd::Styles) => cli::styles(),
         Some(Cmd::Reset) => cli::reset(),
-        Some(Cmd::Attachments { action: AttachmentsCmd::Gc { resolved } }) => {
-            cli::attachments_gc(resolved)
-        }
-        Some(Cmd::Skill { action: SkillCmd::Install { repo, agent } }) => {
-            skill::install(repo, agent.as_deref())
-        }
-        Some(Cmd::Skill { action: SkillCmd::Uninstall { repo, agent } }) => {
-            skill::uninstall(repo, agent.as_deref())
-        }
+        Some(Cmd::Attachments {
+            action: AttachmentsCmd::Gc { resolved },
+        }) => cli::attachments_gc(resolved),
+        Some(Cmd::Skill {
+            action: SkillCmd::Install { repo, agent },
+        }) => skill::install(repo, agent.as_deref()),
+        Some(Cmd::Skill {
+            action: SkillCmd::Uninstall { repo, agent },
+        }) => skill::uninstall(repo, agent.as_deref()),
         Some(Cmd::InternalDaemon { open, bind, port }) => {
             let cwd = std::env::current_dir()?;
             let dir = store::find_store_dir(&cwd);
             daemon::run(
                 &dir,
-                &daemon::Opts { bind_auto: bind != "loopback", open_browser: open, port },
+                &daemon::Opts {
+                    bind_auto: bind != "loopback",
+                    open_browser: open,
+                    port,
+                },
             )
         }
+        Some(Cmd::InternalMonitorCodex {
+            thread,
+            codex_path,
+            instance,
+        }) => monitor::run_internal(thread, codex_path, instance),
     }
 }
 
@@ -403,6 +488,25 @@ mod tests {
         Cli::command().debug_assert();
         Cli::try_parse_from(["sideview", "skill", "install", "--agent", "claude"]).unwrap();
         Cli::try_parse_from(["sideview", "skill", "install"]).unwrap();
-        Cli::try_parse_from(["sideview", "--project", "/tmp", "skill", "install", "--repo"]).unwrap();
+        Cli::try_parse_from([
+            "sideview",
+            "--project",
+            "/tmp",
+            "skill",
+            "install",
+            "--repo",
+        ])
+        .unwrap();
+        Cli::try_parse_from([
+            "sideview",
+            "monitor",
+            "codex",
+            "--thread",
+            "01a028f9-09d4-7380-b80a-6e57a287fb45",
+            "--detach",
+        ])
+        .unwrap();
+        Cli::try_parse_from(["sideview", "monitor", "status"]).unwrap();
+        Cli::try_parse_from(["sideview", "monitor", "stop"]).unwrap();
     }
 }

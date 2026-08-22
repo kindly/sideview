@@ -223,6 +223,28 @@ and act on what comes back. A page delivered without a watcher is a question
 with nobody listening for the answer. (`--timeout N` and re-arm if your
 harness can't block open-endedly.)
 
+For a Codex conversation that should wake only when feedback arrives, use the
+product monitor instead of maintaining a shell wrapper:
+
+```bash
+sideview monitor codex                         # foreground; CODEX_THREAD_ID
+sideview monitor codex --thread <uuid> --detach
+sideview monitor status
+sideview monitor stop
+```
+
+The monitor starts at the current latest event on first use, then persists its
+exact target UUID and delivered cursor under this project's `.sideview/` so a
+restart resumes without replaying history. It skips agent echoes, queues readable
+event messages with `codex queue`, and acknowledges a comment only after queue
+delivery succeeds. `--codex-path <path>` (or `SIDEVIEW_CODEX_PATH`) overrides
+best-effort discovery; discovery checks `PATH` and known desktop bundles, verifies
+the candidate has a compatible `queue` command, and otherwise tells the user or
+agent how to point at or install the correct binary. Foreground is the default;
+`--detach` is explicit, and `stop` verifies the recorded process identity before
+signalling it. Keep raw `sideview watch` for other harnesses, custom consumers,
+and cases where JSON-lines are the desired interface.
+
 Readers comment by double-clicking any text bit (its text becomes the quote)
 or selecting exact words and clicking the bubble chip; every conversation
 lives in the right-hand comment bar (open threads as cards, resolved folded

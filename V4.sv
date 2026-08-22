@@ -133,6 +133,138 @@ implementation did that the plan did not predict — on this page or a sibling. 
 machinery reviews itself. *(It did: the ask block's own acceptance took seven rounds
 through the ask block, threads 67–73 — and every other bullet followed the same
 road: six bullets, twenty rounds, threads 67–91.)*
+
+Release frontier, reopened by round 21: the comment transport worked, but the harness
+lifecycle did not. Claude Code has carried a chat-silent `watch` loop in this repo;
+this Codex/API session instead buffered the live event until a new chat turn caused the
+watcher PTY to be polled. The OpenCode and Pi matrix proved page authoring and daemon
+access, not watcher-driven wake-up. **Round 22 expanded v4 to include the harness
+lifecycle before release** (2026-08-22, thread 93), beginning with a Codex experiment.
+Official OpenAI guidance identifies a durable goal as the native way for Codex to keep
+working across turns toward a verifiable condition; the active experiment's condition
+is deliberately visible: a submitted ask round must cause the next round to appear on
+this page with no chat prompt. **The Codex leg passed in round 23** (2026-08-22,
+thread 94): its answer arrived through `sideview watch` during an automatic durable-goal
+continuation, and round 24 below was appended without a new chat message. The division
+of labour is now measured: the goal keeps Codex taking turns; `watch` blocks within a
+turn and delivers the page event. **Round 24 kept the harness branch open** (2026-08-22,
+thread 95): once asked to watch, a harness should keep watching until explicitly told
+to stop; completing a one-event proof is not the lifecycle contract. **Round 25 kept
+one canonical skill with conditional harness recipes** (2026-08-22, thread 96), and
+set the release evidence bar: Claude Code and Codex may document only their proven
+paths; OpenCode and Pi need focused chat-silent wake tests before release. The standing
+Codex goal then exposed its own UX cost live: the app continuously flashes working and
+interactive prompts incur a small interruption delay. That rules out an indefinite
+durable goal as the finished Codex recipe even though it proved the mechanism.
+**Round 26 selected an event-driven Codex App Server bridge for experiment** (2026-08-22,
+thread 97, all as suggested): a lightweight `sideview watch` process owns the idle
+wait, then resumes one persistent project watcher thread and starts a Codex turn only
+after an event arrives. The durable goal was stopped before the bridge test. This
+keeps watcher context across comments without keeping this interactive chat in a
+working state. **Round 27 exposed a bridge protocol fault** (2026-08-22, thread 98,
+all as suggested; rider: "lets test"): Sideview delivered event 275 immediately, but
+`turn/start` rejected the prototype's kebab-case sandbox-policy value — that field
+uses App Server's camel-case `workspaceWrite`, unlike `thread/start`'s
+`workspace-write`. The bridge retained cursor 274, so diagnosis could correct the
+request and replay the unconsumed event; the repaired turn then folded this answer and
+appended round 28. Because that repair required a chat prompt, it is recovery evidence,
+not the requested chat-silent proof. **Round 28 supplied a clean proof of quiet
+background delivery** (2026-08-22,
+thread 99, all as suggested): with the corrected bridge already idle, event 276 woke
+the persistent watcher thread and started this turn without a chat prompt or durable
+goal; folding the answer here and appending round 29 is the visible acceptance signal.
+That architecture worked, but its output lived in a separate Codex thread and was
+therefore invisible in this conversation. **Round 29 rejected the hidden bridge and
+selected the queue path** (2026-08-22, thread 100): the App Server bridge was stopped
+while handling event 277, before its cursor advanced, and that same preserved event was
+sent with `codex queue --thread <this-chat>`. The resulting turn appeared visibly in
+this conversation: no durable goal and no hidden worker thread. Its first ownership
+answer proposed a user-maintained supervisor script, but the author's immediate
+clarification rejected that as product UX: one Sideview command should encapsulate the
+watch, cursor, prompt, and queue handoff. Repository inspection supports a distinct
+`sideview monitor codex` surface: existing `watch` is deliberately a pure,
+sandbox-compatible JSON-lines reader, while monitor is side-effectful and
+harness-specific. Sideview would own the implementation; the user would only opt into
+its lifecycle. **Round 30 selected `sideview monitor codex` as that public boundary**
+(2026-08-22, thread 102, all as suggested; rider: "Do you think having a single
+command like this is the best solution?"). Yes: one product entry point is the best
+user-facing solution because thread binding, cursor durability, delivery semantics,
+and restart recovery are correctness-sensitive plumbing that should not be
+reimplemented in personal wrapper scripts. "One command" does not mean one
+monolithic primitive: `sideview watch` remains a pure JSON-lines stream, while the
+monitor composes it with Codex queue delivery and exposes explicit lifecycle and
+status controls. **Round 31 kept the exact-thread rule but qualified its environment
+input** (2026-08-22, thread 103; selected suggestion; rider: "does the
+CODEX_THREAD_ID exist in the cli as well"). In the installed `codex-cli 0.149.0`,
+this Codex task exports `CODEX_THREAD_ID`, and the native CLI binary contains both
+`CODEX_THREAD_ID` and `CODEX_SESSION_ID`; however, official OpenAI documentation does
+not publish `CODEX_THREAD_ID` as a stable CLI contract. The monitor may therefore use
+it as a convenience when present, but `--thread <id>` is the explicit supported input;
+the resolved UUID is persisted and the command refuses ambiguity rather than guessing
+"latest". **Round 32 accepted foreground-by-default plus explicit detach and authorized
+the proper project implementation** (2026-08-22, thread 104, all as suggested; note:
+"happy for you do do project modification and do the watcher properly now"). The new
+`sideview monitor codex` keeps `watch` pure while owning exact thread and executable
+discovery, a project-local JSON cursor/delivery record, a lifetime flock, PID start-token
+identity, readable queue prompts, agent-echo filtering, post-delivery receipts, retry
+without cursor advance, and `monitor status` / identity-checked `monitor stop`. Foreground
+is default; `--detach` starts an internal session leader and waits for its state+lock
+readiness. Five focused monitor tests join the full green suite (**76 tests**), and a
+temporary-project lifecycle test proved detached start → running status → verified stop →
+stopped status. The shell prototype was then stopped and the built product monitor took
+over this exact ChatGPT desktop conversation using the desktop-bundled Codex binary:
+PID 1069591, target `01a028f9-09d4-7380-b80a-6e57a287fb45`, resumed cursor 287 after
+the final lifecycle-race hardening restart. **Round 33 selected at-least-once delivery**
+(2026-08-22, thread 105, all as suggested; note: "a test of new monitor"): a rare replay
+after the ambiguous external-queue crash window is preferable to silently losing human
+feedback, and a retained pending key stays visible in `monitor status`. Event 288 was the
+live end-to-end test of the product monitor itself: it was detected, formatted, queued into
+this same desktop conversation, acknowledged only after Codex accepted it, and advanced the
+durable cursor to 288 with no pending event or error. This completed the Codex monitor
+hardening pass, but the desktop conversation stopped before asking for the ritual's distinct
+final author confirmation. **Round 34 accepted the Codex monitor addition** (2026-08-22,
+thread 106; approved with the condition "only if the monitor works to pick this up"). Event
+290 was picked up by the installed product monitor and queued into this exact CLI thread
+without another chat prompt, satisfying that condition and closing the Codex harness branch.
+The settled command, lifecycle, and delivery-policy decisions remain unchanged. Publication
+remains outside the experiment.
+</sv-prose>
+
+<sv-prose id="bridge-model">
+## What the Codex queue monitor connects
+
+| Surface | Role | What you see |
+|---|---|---|
+| **Sideview browser** | Sends a round as a Sideview event | The round folds; later, a new round appears |
+| **`sideview monitor codex`** | Encapsulates `sideview watch`, cursor state, and `codex queue` | One explicit command; idle means no model turn |
+| **This interactive Codex thread** | Receives the event as its next user turn, edits `V4.sv`, and answers | The turn appears here and its edits appear in Sideview |
+
+The path is **Sideview → `sideview monitor codex` → `codex queue` → this thread →
+`V4.sv` → Sideview**. Unlike the durable goal, no Codex turn exists while the
+monitor waits. Unlike the App Server prototype, the work and final response are
+visible in this conversation. Event 277 took this path to produce the current turn.
+
+| Client surface | Queue-monitor expectation |
+|---|---|
+| **Codex CLI queue transport** | Proven: event 277 appeared as a turn in the targeted conversation |
+| **Codex in the ChatGPT desktop app (this environment)** | **Proven:** events from the live Sideview watcher were queued into this same visible desktop conversation and started new turns |
+| **Local IDE client** | Unverified: plausible through local Codex session machinery, but needs its own focused test |
+| **Ordinary ChatGPT web or mobile chat** | Out of scope: the local `codex queue` command cannot address an arbitrary remote ChatGPT conversation |
+
+**Codex in the ChatGPT desktop app (which is what we are running in) is now proven.**
+The evidence covers both local `codex queue` delivery and visible turn creation in the
+desktop conversation. It does not establish IDE, web, or mobile behavior: each client
+surface must still prove that its visible thread can be targeted, and the packaged
+command should detect and refuse unsupported surfaces rather than infer compatibility.
+
+**Codex executable discovery.** The monitor should make a best-effort search for a
+compatible Codex command: prefer an explicit executable path, then `codex` on `PATH`,
+then known desktop-bundled locations for the current platform. Every candidate must be
+preflighted for a compatible `queue` command before use. If discovery fails, stop with
+an actionable diagnostic that lists what was checked and advises the user or agent to
+point the monitor at an existing compatible binary or install the official Codex CLI.
+Do not silently install software, guess an unrelated executable, or hard-code one
+platform's desktop path as the universal contract.
 </sv-prose>
 
 <sv-ask id="release" round="21" role="close">
@@ -140,6 +272,183 @@ road: six bullets, twenty rounds, threads 67–91.)*
 suite is green. **Approved** here is the publish order — v2's precedent, the release
 line signing itself: I tag v0.4.0 (the workflow builds the binaries) and publish to
 crates.io. **Revise** holds the release; say why in the note.
+</sv-ask>
+
+<sv-ask id="d22q1" round="22">
+**The harness boundary.** `sideview watch` delivered round 21 immediately, but this
+Codex/API harness cannot wake an idle model turn from background PTY output. Where does
+that discovery land?
+- * Keep v4 scoped: document that chat-silent continuation is harness-dependent, then return to release approval
+- Expand v4: do not release until Codex, OpenCode and Pi can all continue from a watch event without a chat prompt
+- Run a focused OpenCode/Pi/Codex wake matrix before choosing the release boundary
+</sv-ask>
+
+<sv-ask id="d22fin" round="22" role="close">
+**Round 22: watcher delivery versus harness wake-up.** Send this boundary decision;
+the next round will follow the branch you choose.
+</sv-ask>
+
+<sv-ask id="d23q1" round="23">
+**The Codex goal test.** A durable Codex goal is now active for this thread, with the
+watch-and-grill loop as its objective. What is the acceptance signal?
+- * After this send, round 24 appears here without any new chat message
+- A hidden reply on this round's machine thread is enough
+- Merely seeing this submission marked sent is enough
+</sv-ask>
+
+<sv-ask id="d23fin" round="23" role="close">
+**Round 23: chat-silent Codex continuation.** Send this round, then do not prompt in
+chat. The test passes only if the page itself visibly advances.
+</sv-ask>
+
+<sv-ask id="d24fin" round="24" role="close">
+**Round 24: the visible proof.** This block was appended after round 23 by an automatic
+Codex durable-goal continuation, with the answer delivered through `sideview watch` and
+no chat prompt. **Approved** accepts the Codex leg as proven; **revise** names any part
+of the behavior that still does not meet the intended feedback loop.
+</sv-ask>
+
+<sv-ask id="d25q1" round="25">
+**Skill shape.** Today `sideview skill install` writes the same embedded skill bytes to
+Claude Code, Codex, OpenCode and Pi, and `status` checks every copy against that one
+source. How should harness lifecycle differences be taught?
+- * Keep one canonical skill with a short conditional section per harness; the Sideview contract stays shared while only the wait/continuation recipe varies
+- Build four harness-specific skill variants, each free to describe its own watcher lifecycle
+- Keep the skill generic and leave persistent watching entirely to harness documentation
+</sv-ask>
+
+<sv-ask id="d25q2" round="25">
+**Evidence before release.** Claude Code's blocking watcher and Codex's durable-goal
+watcher are now proven here; the old OpenCode/Pi matrix tested authoring and daemon
+access, not chat-silent continuation. What should v4 require?
+- * Document the two proven recipes, label OpenCode/Pi unverified, and run their focused wake tests before release
+- Publish a generic blocking-watch recipe for OpenCode/Pi without another matrix
+- Support persistent watching only in Claude Code and Codex for v4
+</sv-ask>
+
+<sv-ask id="d25fin" round="25" role="close">
+**Round 25: one contract, four harness lifecycles.** Send the documentation shape and
+evidence bar; the next frontier will specify the chosen recipes and tests.
+</sv-ask>
+
+<sv-ask id="d26q1" round="26">
+**Codex while idle.** The finished watcher should react quickly without leaving this
+chat visibly working or delaying ordinary prompts. Which architecture should v4 pursue?
+- * Event-driven App Server bridge: a lightweight `sideview watch` process blocks with no model turn, then resumes one persistent project watcher thread and starts a Codex turn only when an event arrives
+- Background scheduled task: poll Sideview on a cadence in a dedicated chat, accepting delayed comments
+- Standing durable goal in this chat: keep today's proven path despite the continuous working state and prompt interruption
+</sv-ask>
+
+<sv-ask id="d26fin" round="26" role="close">
+**Round 26: quiet until an event.** Send the Codex wake architecture; the next frontier
+will settle ownership, lifecycle, and safety for the selected path.
+</sv-ask>
+
+<sv-ask id="d27q1" round="27">
+**Event-bridge proof.** The durable goal is stopped, and an experimental
+Sideview-to-Codex App Server bridge is now waiting without an active model turn. What
+must count as acceptance?
+- * After this send, round 28 appears here without any chat prompt and without reactivating a durable goal
+- A bridge log showing that a Codex turn started is sufficient even if this page does not advance
+- Accept the architecture from its idle behavior now and defer event delivery to implementation
+</sv-ask>
+
+<sv-ask id="d27fin" round="27" role="close">
+**Round 27: event-triggered Codex.** Send this, then stay out of chat. The proof passes
+only when the separate watcher thread folds your answer into this plan and visibly
+appends round 28.
+</sv-ask>
+
+<sv-ask id="d28q1" round="28">
+**Corrected bridge retest.** Event 275 was preserved and replayed successfully after
+fixing the rejected App Server sandbox-policy value, but diagnosis required a chat
+prompt. What now counts as the clean proof?
+- * After this send, round 29 appears here without any chat prompt and without reactivating a durable goal
+- Treat the repaired replay of round 27 as sufficient and proceed to hardening
+- Require two consecutive chat-silent rounds before proceeding
+</sv-ask>
+
+<sv-ask id="d28fin" round="28" role="close">
+**Round 28: clean event-trigger retest.** Send this, then stay out of chat. The test
+passes only if the already-running corrected bridge visibly appends round 29.
+</sv-ask>
+
+<sv-ask id="d29q1" round="29">
+**Bridge ownership.** The proven prototype holds a Sideview event cursor and one Codex
+watcher-thread identity for this project, then invokes Codex App Server only when an
+event arrives. Which product should own that long-lived boundary?
+- * Sideview owns one explicit bridge per project, keeping its cursor and Codex thread identity under `.sideview`; Codex remains the invoked harness, not the supervisor
+- Codex owns one global bridge that discovers and multiplexes every Sideview project
+- Neither product owns it; keep the bridge as a user-maintained supervisor script
+</sv-ask>
+
+<sv-ask id="d29fin" round="29" role="close">
+**Round 29: ownership of the proven bridge.** Send the ownership boundary; the next
+frontier will derive its process identity, CLI lifecycle, concurrency, and failure
+policy rather than assuming them across incompatible owners.
+</sv-ask>
+
+<sv-ask id="d30q1" round="30">
+**One-command Codex monitor.** The current proof is a small wrapper around `watch` and
+`codex queue`. Where should that behavior live for users?
+- * Add `sideview monitor codex`: one explicit, harness-specific command owns thread binding, cursor persistence, queue delivery, status, and stop; keep `sideview watch` as pure JSON-lines
+- Add Codex flags directly to `sideview watch`, making watch both an event stream and an action runner
+- Keep the wrapper as a documented external script that every user maintains
+</sv-ask>
+
+<sv-ask id="d30fin" round="30" role="close">
+**Round 30: make the monitor a product command.** Send the command boundary; the next
+frontier will derive thread selection, foreground/detached lifecycle, delivery
+acknowledgement, and restart recovery for the chosen surface.
+</sv-ask>
+
+<sv-ask id="d31q1" round="31">
+**Target-thread binding.** Which Codex conversation should `sideview monitor codex`
+queue each event into?
+- * Use `CODEX_THREAD_ID` when launched from Codex, accept an explicit `--thread <id>` elsewhere, persist the resolved UUID, and refuse ambiguous or missing targets; never guess "latest"
+- Always require `--thread <id>`, even when Codex already provides the current thread identity
+- Discover the most recently active Codex thread for the project and follow it as activity changes
+</sv-ask>
+
+<sv-ask id="d31fin" round="31" role="close">
+**Round 31: bind the visible conversation.** Send the target rule; the next frontier
+will choose foreground versus detached lifecycle and define status/stop behavior.
+</sv-ask>
+
+<sv-ask id="d32q1" round="32">
+**Monitor lifecycle.** How should the single Codex-monitor surface run and stop?
+- * Run in the foreground by default; make `--detach` explicit; persist project-local PID, cursor, target UUID, and delivery state; provide exact `status` and `stop` operations that detect stale ownership without killing unrelated processes
+- Detach by default and require `sideview monitor codex stop` to end it
+- Support foreground operation only and leave persistence/restart to an external process supervisor
+</sv-ask>
+
+<sv-ask id="d32fin" round="32" role="close">
+**Round 32: own the process lifecycle.** Send the lifecycle rule; the next frontier
+will define when an event is acknowledged, retried, or quarantined after queue failure.
+</sv-ask>
+
+<sv-ask id="d33q1" round="33">
+**Queue delivery bias.** The monitor records a pending event before invoking `codex queue`,
+advances its cursor and stamps the Sideview receipt only after exit 0, and retries ordinary
+failures with capped exponential backoff. No local transaction can be atomic with the
+external Codex queue: a process crash after Codex accepts the message but before the cursor
+write can replay that one event. Which failure bias should ship?
+- * Keep at-least-once delivery: a rare duplicate after an ambiguous crash is recoverable, while silently losing human feedback is not; retain the pending key and expose it in `monitor status`
+- Mark the cursor before invoking Codex for at-most-once delivery, accepting that a crash can silently lose the event
+- Quarantine every pending event found after restart and require a manual retry/skip decision before monitoring continues
+</sv-ask>
+
+<sv-ask id="d33fin" round="33" role="close">
+**Round 33 accepted: keep at-least-once delivery.** Event 288 also completed the live
+end-to-end test of the product monitor in this desktop conversation.
+</sv-ask>
+
+<sv-ask id="d34fin" round="34" role="close">
+**Round 34: final Codex monitor acceptance.** The product command, exact-thread binding,
+foreground/detached lifecycle, durable at-least-once delivery, CLI and desktop wake proofs,
+and installed skill instructions are now in place. **Approved** accepts the Codex monitor
+addition and closes this harness branch. **Revise** keeps it open; name what still needs work
+in the note.
 </sv-ask>
 
 </sv-page>
