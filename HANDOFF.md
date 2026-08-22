@@ -6,6 +6,16 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v4 is done except the publish, 2026-08-23.** The round-22 expansion is met on all
+three legs, each proven live: Codex via the product monitor (`sideview monitor
+codex`), OpenCode via the personal-plugin recipe (accepted round 35, skill kept
+separate and uninstalled by design), Pi via the generated project-local extension
+recipe (accepted round 36, shipped as the third embedded skill). Everything is
+committed (b0b9651, c01d897, 77c5fcf on top of the monitor commit), 76 tests green,
+version 0.4.0, skills current on all four harnesses. **The release round is back on
+V4.sv (round 37, block `release2`)**: the author's approve is the order to tag
+v0.4.0 and publish to crates.io; nothing is tagged or published before it.
+
 **A Pi watcher recipe skill exists, 2026-08-22.** `skills/sideview-pi-watch/SKILL.md`
 now tells agents to generate a project-local `.pi/extensions/sideview-watch.ts`
 instead of Sideview shipping a resident Pi package prematurely. It is embedded in

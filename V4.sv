@@ -531,4 +531,15 @@ recipe boundary above and close the Pi watcher skill test. Send **revise** to ke
 open and name the missing proof in the note.
 </sv-ask>
 
+<sv-ask id="release2" round="37" role="close">
+**The release round, resumed.** Round 21's hold is answered: v4 grew the harness
+bar and met it — Codex wakes through `sideview monitor codex`, OpenCode through the
+personal-plugin recipe (round 35), Pi through the generated extension recipe
+(round 36), each continuing from a watch event with no chat prompt. All of it is
+committed, the suite is green at 76, the binary says 0.4.0, and every skill is
+current on all four harnesses. **Approved** is the publish order: I tag v0.4.0
+(release.yml builds the binaries) and publish to crates.io. **Revise** holds it;
+say why in the note.
+</sv-ask>
+
 </sv-page>
