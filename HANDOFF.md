@@ -6,6 +6,15 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**0.4.1, 2026-08-23.** The post-release patch, the 0.2.1 tradition upheld: the
+author found the edit pencil dead on imported (.md/.html) pages minutes after
+0.4.0. Shipped same hour: the sessions event carries a `format` field, the client
+withholds the edit verb on non-sv pages (chip and touch corner both), and
+`/api/source` + `/api/edit` refuse imported pages server-side — the real hazard,
+since parsing an .md as sv would have opened stray-block soup and a save could
+have mangled the file. Test-pinned, .md bytes verified untouched. Ordered released
+directly by the author.
+
 **v4 shipped: 0.4.0 on crates.io, 2026-08-23.** The release order arrived as round
 37's approve on V4.sv (thread 111) and executed within minutes: main pushed, tag
 v0.4.0 pushed (release.yml building the binaries), `cargo publish` confirmed. Three
