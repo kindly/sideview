@@ -6,6 +6,20 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**A Pi watcher recipe skill exists, 2026-08-22.** `skills/sideview-pi-watch/SKILL.md`
+now tells agents to generate a project-local `.pi/extensions/sideview-watch.ts`
+instead of Sideview shipping a resident Pi package prematurely. It is embedded in
+`skill install` beside the main and grill skills. The recipe is explicit about Pi's
+lifecycle (`session_start`/`session_shutdown`), JSONL parsing, `pi.sendUserMessage`,
+project-wide steward claiming, and the current limit: safe page-scoped claiming needs
+a real `sideview watch --page` filter; without it, page filtering can only be an
+unclaimed demo. A live attempt with a generated extension found the first recipe gap:
+slash commands (`/sideview-watch-start`) are user-operable only; an agent cannot start
+or stop its own resident watcher unless the extension also registers model-callable
+tools. The recipe now requires `sideview_watch_start`, `sideview_watch_stop`, and
+`sideview_watch_status` tools sharing the same helpers as the commands. Static
+repository checks passed; no live subagent wake test was run in this harness.
+
 **A real Codex queue monitor is implemented, live, and accepted, 2026-08-22.** Round 32
 (thread 104) authorized project modification after the queue prototype
 proved that Sideview feedback can start a new turn in this exact ChatGPT desktop

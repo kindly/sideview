@@ -451,4 +451,84 @@ addition and closes this harness branch. **Revise** keeps it open; name what sti
 in the note.
 </sv-ask>
 
+<sv-prose id="opencode-monitor-proof">
+## OpenCode personal monitor proof
+
+The focused OpenCode test now has the evidence the earlier harness matrix lacked. A
+separate `sideview-opencode` instruction skill led a fresh agent to build a personal,
+global OpenCode plugin against the installed SDK rather than adding a Sideview-owned
+package. Its explicit start tool bound the exact OpenCode session and worktree; Sideview
+comment events 292, 294, 297, 298 and 304 each started visible turns in that same idle
+conversation without another chat prompt. Agent replies were filtered without echoing,
+status retained the last event and errors, and event 304 proved the shortened prompt shape.
+
+The boundary stays deliberately smaller than the Codex product monitor: in-memory state,
+one OpenCode process and one owner per worktree, no historical replay, no detached process,
+and a documented startup-baseline window. The generated plugin is personal configuration;
+Sideview maintains the build instructions, not a published OpenCode plugin.
+
+**Accepted in round 35, 2026-08-22 (thread 108), all as suggested.** The personal-plugin
+recipe is the proven OpenCode wake path; its instruction skill stays separate and
+uninstalled for now, and Sideview does not take on a maintained OpenCode plugin. The
+acceptance round itself returned through the compact monitor without a chat prompt, so
+the grill path passed as part of the sign-off.
+</sv-prose>
+
+<sv-ask id="d35q1" round="35">
+**OpenCode completion boundary.** What should these live results close?
+- * Accept the personal-plugin recipe as the proven OpenCode wake path, keep the instruction skill separate and uninstalled for now, and do not create a Sideview-maintained plugin
+- Keep the OpenCode branch open until busy-session, burst, and multi-process tests are complete
+- Turn the experiment into a published Sideview OpenCode plugin now
+</sv-ask>
+
+<sv-ask id="d35fin" round="35" role="close">
+**Round 35: OpenCode personal monitor acceptance.** Send **approved** to mark this
+experiment complete at the boundary above. Send **revise** to keep it open and name the
+missing proof in the note. This submission is also the grill-path test: the running
+OpenCode monitor should carry the round back into this same conversation without a chat
+prompt.
+</sv-ask>
+
+<sv-prose id="pi-watch-recipe-grill">
+## Pi watcher recipe accepted
+
+Design tree for accepting the Pi watcher skill:
+
+- Pi integration surface
+  - Settled: Sideview should not yet ship a maintained Pi extension package.
+  - Settled: agents should generate a project-local `.pi/extensions/sideview-watch.ts` from a recipe.
+  - Settled: the watcher is resident extension code, not background bash.
+  - Settled: agent control is first-class in the recipe: slash commands are for humans; model-callable tools are for agents.
+  - Settled: the live proof is enough to install and dogfood the skill.
+- Watch ownership
+  - Settled: project-wide steward claiming is common and valid when explicit.
+  - Settled: page-scoped claiming needs a real `sideview watch --page` filter before it can be exactly-once.
+- Lifecycle
+  - Settled: `session_start` may autostart when configured.
+  - Settled: `session_shutdown` always stops the child.
+  - Settled: `sideview_watch_start`, `sideview_watch_stop`, and `sideview_watch_status` tools are required when the agent should own start/stop.
+
+**Accepted in round 36, 2026-08-22 (thread 110), all as suggested.** The author's note made the condition explicit: approve only if the close event reaches Pi. It did — event 314 arrived through the tool-started project-wide watcher, so the condition is met. The `sideview-pi-watch` recipe skill is accepted for installation and dogfooding, with the remaining limitation recorded: safe page-scoped claiming awaits a real page filter.
+</sv-prose>
+
+<sv-ask id="d36q1" round="36">
+**Agent-operable Pi watcher.** The first generated Pi extension exposed only slash commands, and this live session proved an agent cannot invoke those commands for itself. What should the recipe require?
+- * Require both human slash commands and model-callable tools (`sideview_watch_start`, `sideview_watch_stop`, `sideview_watch_status`) sharing the same helpers; autostart remains optional
+- Keep slash commands only and document that the user must start/stop the watcher manually
+- Require autostart only and remove manual controls from the recipe
+</sv-ask>
+
+<sv-ask id="d36q2" round="36">
+**Acceptance proof for the Pi recipe skill.** The tool-backed watcher was started from this agent session, then delivered repeated Sideview comments, cross-thread comments, a resolution event, and an older unclaimed event 307 through `--since 0 --claim --ack`. What should that close?
+- * Accept the `sideview-pi-watch` recipe skill as good enough to install and dogfood, with a note that safe page-scoped claiming still awaits a real page filter
+- Keep the skill open until a separate subagent independently regenerates the extension from scratch
+- Turn the recipe into a maintained Sideview Pi extension package now
+</sv-ask>
+
+<sv-ask id="d36fin" round="36" role="close">
+**Round 36: Pi watcher recipe skill acceptance.** Send **approved** to accept the
+recipe boundary above and close the Pi watcher skill test. Send **revise** to keep it
+open and name the missing proof in the note.
+</sv-ask>
+
 </sv-page>
