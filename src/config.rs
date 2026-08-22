@@ -187,9 +187,10 @@ pub fn load(root: &Path) -> (Config, Option<String>) {
 
 /// How a bound file is rendered — decided by extension, with HTML's mode
 /// coming from config because a foreign file cannot declare it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Format {
     /// The composed format: typed blocks, parsed by format.rs.
+    #[default]
     Sv,
     /// Imported markdown: one prose block, fully commentable.
     Markdown,

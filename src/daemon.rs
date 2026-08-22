@@ -71,6 +71,11 @@ struct Rendered {
 #[derive(Debug, Clone, Default)]
 struct PageState {
     props: serde_json::Map<String, serde_json::Value>,
+    /// The source format (V3.sv's three formats). The sessions event carries
+    /// it so the client can withhold affordances imported pages don't have —
+    /// today, editing: block splices are an .sv concept (found live on a
+    /// bound .md, 2026-08-23).
+    fmt: crate::config::Format,
     blocks: Vec<Rendered>,
     /// (mtime, len) of the file this state was derived from.
     stamp: Option<(SystemTime, u64)>,
@@ -579,6 +584,13 @@ async fn block_source(q: web::Query<SourceQuery>, state: Data<AppState>) -> impl
             _ => return HttpResponse::NotFound().body("no such page"),
         }
     };
+    // Imported pages have no spliceable blocks — their canon is a foreign
+    // file. Refusing here (and in edit_block) keeps format::parse from ever
+    // reading an .md as sv, which would hand the editor stray-block soup.
+    if crate::config::format_of(&rel, None) != crate::config::Format::Sv {
+        return HttpResponse::BadRequest()
+            .body(format!("{rel} is an imported page — edit the source file itself"));
+    }
     let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
         return HttpResponse::NotFound().body("page file unreadable");
     };
@@ -619,6 +631,10 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
             _ => return HttpResponse::NotFound().body("no such page"),
         }
     };
+    if crate::config::format_of(&rel, None) != crate::config::Format::Sv {
+        return HttpResponse::BadRequest()
+            .body(format!("{rel} is an imported page — edit the source file itself"));
+    }
     let path = root.join(&rel);
     let lock_path = path.with_extension("sv.lock");
     let Ok(lock) = std::fs::File::create(&lock_path) else {
@@ -1132,6 +1148,7 @@ fn load_page(
             return PageState {
                 ext_blocks: HashMap::new(),
                 file_refs: Vec::new(),
+                fmt,
                 props: serde_json::Map::new(),
                 blocks: vec![Rendered {
                     id: "sv-missing".into(),
@@ -1224,7 +1241,7 @@ fn load_page(
             id,
         });
     }
-    PageState { props, blocks, stamp, ext_blocks, file_refs }
+    PageState { props, fmt, blocks, stamp, ext_blocks, file_refs }
 }
 
 /// The reparse diff: upserts for new or changed blocks, removes for gone ones.
@@ -1290,7 +1307,15 @@ fn sessions_event(shared: &Shared) -> Outgoing {
             if let Some(spec) = shared.outlines.get(id) {
                 props.insert("outline_spec".into(), spec.clone());
             }
-            serde_json::json!({ "id": id, "last_active_at": last_active_at, "props": props })
+            // "sv" pages edit from the page; imported ones don't (their
+            // canon is a foreign file, not spliceable blocks).
+            let format = match shared.pages.get(id).map(|p| p.fmt) {
+                Some(crate::config::Format::Markdown) => "markdown",
+                Some(crate::config::Format::HtmlInline) => "html-inline",
+                Some(crate::config::Format::HtmlFrame) => "html-frame",
+                _ => "sv",
+            };
+            serde_json::json!({ "id": id, "last_active_at": last_active_at, "format": format, "props": props })
         })
         .collect();
     Outgoing {
@@ -1704,6 +1729,8 @@ mod tests {
         )
         .unwrap();
         store.bind_session("plan", "plan.sv", "/tmp", "test").unwrap();
+        std::fs::write(store.root.join("NOTES.md"), "# imported\n\nnot spliceable\n").unwrap();
+        store.bind_session("NOTES", "NOTES.md", "/tmp", "test").unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -1755,6 +1782,29 @@ mod tests {
             let comments = store.comments_for_page("plan").unwrap();
             assert_eq!(comments.len(), 1);
             assert_eq!(comments[0].kind, "edited", "only the splice endpoint mints these");
+        }
+
+        // Imported pages refuse BOTH endpoints — their canon is a foreign
+        // file, and parsing .md as sv would hand the editor stray soup
+        // (found live on a bound .md, 2026-08-23). The file stays untouched.
+        for req in [
+            actix_web::test::TestRequest::get()
+                .uri("/api/source?page=NOTES&block=b1")
+                .to_request(),
+            actix_web::test::TestRequest::post()
+                .uri("/api/edit")
+                .set_json(serde_json::json!({
+                    "page": "NOTES", "block": "b1", "from_hash": "x", "body": "mangle"
+                }))
+                .to_request(),
+        ] {
+            let res = actix_web::test::call_service(&app, req).await;
+            assert_eq!(res.status().as_u16(), 400, "imported pages are not page-editable");
+        }
+        {
+            let store = state.store.lock().unwrap();
+            let md = std::fs::read_to_string(store.root.join("NOTES.md")).unwrap();
+            assert_eq!(md, "# imported\n\nnot spliceable\n", "the .md was never touched");
         }
 
         // Non-prose refuses the splice — that tier is the edit request…

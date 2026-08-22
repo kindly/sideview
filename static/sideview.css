@@ -1827,6 +1827,9 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
 }
 body.sv-selecting #sv-cedit-toggle { display: block; }
+/* Imported (md/html) pages withhold the edit verb; the hidden attribute
+   must beat the display:block above (the round-6 specificity lesson). */
+#sv-cedit-toggle[hidden] { display: none !important; }
 /* While a selection is held, both verbs go filled ink — equally prominent
    (round-12 drill: with straight-to-draft retired, the corner strip is the
    next step and has to read like it). */

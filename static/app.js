@@ -10,7 +10,7 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-22F new draft tops the bar';
+const CLIENT_STAMP = '2026-08-23A no edit verb on imported pages';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
@@ -58,6 +58,14 @@ state.selected = ROUTE.session;
 function sessionProps() {
   const s = state.sessions.find((x) => x.id === state.selected);
   return (s && s.props) || {};
+}
+
+// Editing from the page is an .sv affordance: block splices don't exist on
+// imported md/html pages (found live on a bound .md, 2026-08-23), so the
+// edit verbs are withheld there. Absent format = older daemon: assume sv.
+function pageEditable() {
+  const s = state.sessions.find((x) => x.id === state.selected);
+  return !s || !s.format || s.format === 'sv';
 }
 
 
@@ -2014,6 +2022,7 @@ function placeChip() {
   lastSel = { spot, text: sel.toString().trim() };
   if (TOUCH) {
     document.body.classList.add('sv-selecting');
+    $ceditToggle.hidden = !pageEditable();
     $cbarToggle.classList.add('sv-sel');
     $cbarToggle.title = 'comment on the selection';
     return;
@@ -2021,6 +2030,7 @@ function placeChip() {
   const range = sel.getRangeAt(0);
   const rects = range.getClientRects();
   const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+  $chipEdit.hidden = !pageEditable();
   $chip.style.top = scrollY + r.bottom + 8 + 'px';
   $chip.style.left = Math.min(scrollX + r.right + 4, scrollX + innerWidth - 92) + 'px';
   $chip.hidden = false;
@@ -2126,10 +2136,12 @@ $blocks.addEventListener('dblclick', (e) => {
   armSelClear();
   if (TOUCH) {
     document.body.classList.add('sv-selecting');
+    $ceditToggle.hidden = !pageEditable();
     $cbarToggle.classList.add('sv-sel');
     $cbarToggle.title = 'comment on the selection';
     return;
   }
+  $chipEdit.hidden = !pageEditable();
   $chip.style.top = scrollY + e.clientY + 12 + 'px';
   $chip.style.left = Math.min(scrollX + e.clientX + 4, scrollX + innerWidth - 92) + 'px';
   $chip.hidden = false;
