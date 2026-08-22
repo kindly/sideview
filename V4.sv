@@ -125,6 +125,10 @@ through SQLite · reference, never embed · dogfood first.
 <sv-prose id="goal">
 ## Goal
 
+✓ **Done, 2026-08-23: 0.4.0 is on crates.io, tag v0.4.0 pushed, the release ordered
+through this page's own release round (thread 111) — the done-when below met exactly
+as written.**
+
 v4 is done when each In item above is accepted by the author through this page's own
 machinery, and **0.4.0 is on crates.io**. Blessed by the author 2026-08-20 (thread 66),
 with a working order and a ritual attached: **the ask block ships first**, and when an

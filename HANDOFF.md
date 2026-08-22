@@ -6,7 +6,21 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
-**v4 is done except the publish, 2026-08-23.** The round-22 expansion is met on all
+**v4 shipped: 0.4.0 on crates.io, 2026-08-23.** The release order arrived as round
+37's approve on V4.sv (thread 111) and executed within minutes: main pushed, tag
+v0.4.0 pushed (release.yml building the binaries), `cargo publish` confirmed. Three
+days from blessing to release, 37 drill rounds, every feature and the release
+itself ordered through the page. What 0.4.0 carries over 0.3.1: the ask block
+(`sv-ask` rounds with suggested answers, whole-round collapse, machine-mail
+comments), editing from the page (prose splices with the from-hash guard, edit
+requests for everything else, on touch too), `sideview restart` + the `→ project`
+identity line on every write, the reviewer as favicon/header mark wearing the
+connection state, `_sv_mark_<col>` cell tints with the sqlnow bridge and the
+csvdiff shapes, the `sideview-grill` and `sideview-pi-watch` skills (plus the
+uninstalled opencode recipe), migration v5 (`comments.kind`), and `sideview
+monitor codex` — feedback that wakes the harness on all four legs.
+
+**v4 was done except the publish, 2026-08-23.** The round-22 expansion is met on all
 three legs, each proven live: Codex via the product monitor (`sideview monitor
 codex`), OpenCode via the personal-plugin recipe (accepted round 35, skill kept
 separate and uninstalled by design), Pi via the generated project-local extension
