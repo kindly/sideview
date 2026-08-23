@@ -115,8 +115,6 @@ Recorded so they aren't re-proposed as cuts:
    and idiomorph block morphing.
 </sv-prose>
 
-</sv-page>
-
 <sv-prose id="drill1">
 ## Drill: the rename (step 1, committed fc89732)
 
@@ -164,3 +162,5 @@ un-restarted 0.4.x daemon serves an old client to a 0.5 CLI until `sideview rest
 Drill round 1: the rename's four surprises. Approving closes step 1; step 2 (the
 conversation library) starts next.
 </sv-ask>
+
+</sv-page>
