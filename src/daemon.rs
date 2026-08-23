@@ -1332,7 +1332,7 @@ fn to_sse(o: Outgoing) -> sse::Event {
 /// most recently active page, which is what the client's auto-follow used
 /// to decide and the URL now simply *is*. An empty project gets the shell,
 /// which renders its honest "no pages yet".
-async fn root_redirect(state: Data<AppState>) -> HttpResponse {
+async fn root_redirect(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpResponse {
     let most_active = {
         let shared = state.shared.lock().unwrap();
         shared
@@ -1347,11 +1347,13 @@ async fn root_redirect(state: Data<AppState>) -> HttpResponse {
             // The choice changes as pages become active: never cache it.
             .insert_header(("Cache-Control", "no-store"))
             .finish(),
-        None => page().await,
+        // Empty project: serve the page shell directly ('/' has no session
+        // in its match info, so the title is just the project's).
+        None => page(req, state).await,
     }
 }
 
-async fn page() -> HttpResponse {
+async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpResponse {
     match Assets::get("index.html") {
         Some(f) => {
             // no-cache asks politely; iOS sometimes pairs a fresh script with
@@ -1361,7 +1363,42 @@ async fn page() -> HttpResponse {
             // binary arrives.
             static STAMP: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
             let v = STAMP.get_or_init(crate::store::now_ms);
+            // The title carries the page and the project, because browser
+            // history is where titles live (author, 2026-08-23): several
+            // projects' daemons all titled "sideview" were indistinguishable
+            // there. Server-side because navigation is (0.3.1): the title a
+            // page is SERVED with is the one history records.
+            let project = state
+                .root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            // A project literally named "sideview" would double the wordmark.
+            let suffix = if project == "sideview" || project.is_empty() {
+                "sideview".to_string()
+            } else {
+                format!("{project} — sideview")
+            };
+            let title = match req.match_info().get("session") {
+                Some(id) => {
+                    let label = state
+                        .shared
+                        .lock()
+                        .unwrap()
+                        .pages
+                        .get(id)
+                        .and_then(|p| p.props.get("label"))
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_else(|| id.to_string());
+                    format!("{label} · {suffix}")
+                }
+                None => suffix,
+            };
             let html = String::from_utf8_lossy(&f.data)
+                .replace(
+                    "<title>sideview</title>",
+                    &format!("<title>{}</title>", crate::render::text_escape(&title)),
+                )
                 .replace("/assets/sideview.css", &format!("/assets/sideview.css?v={v}"))
                 .replace("/assets/app.js", &format!("/assets/app.js?v={v}"));
             HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
@@ -1720,6 +1757,61 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn page_title_names_the_page_and_the_project() {
+        let dir = std::env::temp_dir().join(format!("sv-ti-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let mut shared = Shared::default();
+        let mut labeled = PageState::default();
+        labeled.props.insert("label".into(), serde_json::json!("Parser <plan>"));
+        shared.pages.insert("v9".into(), labeled);
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(shared)),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/home", web::get().to(page))
+                .route("/s/{session}", web::get().to(page)),
+        )
+        .await;
+        let project = state.root.file_name().unwrap().to_string_lossy().to_string();
+
+        // History is where titles live: every serve names the project…
+        let body = actix_web::test::call_and_read_body(
+            &app,
+            actix_web::test::TestRequest::get().uri("/home").to_request(),
+        )
+        .await;
+        let html = String::from_utf8_lossy(&body).to_string();
+        assert!(html.contains(&format!("<title>{project} — sideview</title>")), "{html:.300}");
+
+        // …a labeled page leads with its label, escaped…
+        let body = actix_web::test::call_and_read_body(
+            &app,
+            actix_web::test::TestRequest::get().uri("/s/v9").to_request(),
+        )
+        .await;
+        let html = String::from_utf8_lossy(&body).to_string();
+        assert!(
+            html.contains(&format!("<title>Parser &lt;plan&gt; · {project} — sideview</title>")),
+            "label leads, escaped"
+        );
+
+        // …and an unlabeled or unknown page falls back to its id.
+        let body = actix_web::test::call_and_read_body(
+            &app,
+            actix_web::test::TestRequest::get().uri("/s/scratch").to_request(),
+        )
+        .await;
+        let html = String::from_utf8_lossy(&body).to_string();
+        assert!(html.contains(&format!("<title>scratch · {project} — sideview</title>")));
+    }
+
+    #[actix_web::test]
     async fn edit_endpoints_source_splice_guard_and_request() {
         let dir = std::env::temp_dir().join(format!("sv-ed-{}", uuid::Uuid::new_v4()));
         let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
@@ -2009,8 +2101,19 @@ mod tests {
     /// matches the single-segment page route.
     #[actix_web::test]
     async fn encoded_session_ids_match_the_page_route() {
+        let dir = std::env::temp_dir().join(format!("sv-en-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
         let app = actix_web::test::init_service(
-            actix_web::App::new().route("/s/{session}", actix_web::web::get().to(page)),
+            actix_web::App::new()
+                .app_data(state)
+                .route("/s/{session}", actix_web::web::get().to(page)),
         )
         .await;
         for uri in ["/s/cwd%3A%2Fhome%2Fdavid%2Fproj", "/s/tmux%2542"] {
