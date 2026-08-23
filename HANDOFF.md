@@ -6,6 +6,41 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v5 curated: fewer concepts, same features, 2026-08-23.** Hours after 0.4.1, the author
+asked for a grilling on simplification and [V5.sv](V5.sv) came out of it — four sv-ask
+rounds on a grill page, confirmed through the page's own machinery (round 4, thread 116).
+V4.sv moved to shipped and IDEAS.sv was reframed as the continuing pool (no version in its
+name; v5 ships no pool features). The version is structural: the measure is *context needed
+per change* (internal libraries behind narrow interfaces; lower stack depth over smaller
+modules — big files were explicitly not the pain). In: the `page` rename first (the
+`session` noun and duplicate CLI verbs go); the block stack (format, render, ask, csv,
+diff) as an internal crate; the poll loop out of daemon.rs; the splice primitives to a
+shared edit module, breaking the codebase's one dependency cycle (daemon↔cli);
+conversation as an internal library with daemon, cli and monitor as thin callers —
+`--claim` drops there (orchestration beats a blocking queue; a claimed-then-crashed event
+is invisible forever) while `--ack` stays (it drives the reader's "sent" receipt), and
+`watch` gains repeatable `--page`/`--category` filters when that library defines its query
+surface; last, app.js splits into real ES modules, no build step, the selection chip
+folding into the comment island. A Vue shell rewrite was investigated and skipped — the
+shell is mostly imperative browser integration a framework can't help; Vue stays
+islands-only. Deliberately kept, recorded on V5.sv so they aren't re-proposed as cuts:
+every feature (extensions and netcheck were flagged unused in round 1 and kept anyway),
+store.rs as one file, the monitor in the main crate, outline's SQLite home, `working`,
+attachments, and the `h:`/`p:` anchor pair. A post-confirmation thread on V5 (117) then
+settled **the layering law** for all the extractions — concept modules with models and
+algorithms fused, one thin logic layer everything passes through (it owns sequencing and
+transactions; with two interfaces plus the monitor, it is where each operation is written
+once — posting a comment lives in both cli.rs and daemon.rs today, with drift), interfaces
+that only parse/call/format and import nothing below the logic layer — and folded
+attachments into the conversation library. Thread 121 then pulled exactly one fix out of
+the pool into v5: **idiomorph block morphing** replacing wholesale innerHTML replacement
+(the cause the scroll/reading-position machinery compensates for; vendored single file,
+not a framework and not websockets — the transport was never the problem), landing with
+the JS module split. **Goal blessed 2026-08-24 (thread 123 on V5.sv), the v4 ritual
+attached**: each completed piece earns a drill — an sv-ask round over whatever the
+implementation did that the plan did not predict. Work proceeds in V5.sv's order:
+rename, conversation library, remaining extractions, JS split.
+
 **0.4.1, 2026-08-23.** The post-release patch, the 0.2.1 tradition upheld: the
 author found the edit pencil dead on imported (.md/.html) pages minutes after
 0.4.0. Shipped same hour: the sessions event carries a `format` field, the client
@@ -835,7 +870,13 @@ one-binary user promise survives, and `{sql}` finally exercises reference-never-
 Pane takeover is just a session property in the props bag (no migration): one block filling
 the viewport below the header. (3) Artifacts parity, agents writing TSX against a pinned
 import map of vendored ESM, would use SWC embedded in the daemon (Rust, transpile at write
-time, browser runs native modules), not a browser-side Babel. Take rung 0 as an early
+time, browser runs native modules), not a browser-side Babel. The Vue analog of this rung is
+**fervid** (all-Rust SFC compiler, drop-in ambition for @vue/compiler-sfc; alpha as of
+2026-08) — daemon compiles .vue at serve time like it renders markdown, which would also
+allow the smaller runtime-only Vue build. Asked and answered as curiosity on V5 thread 119;
+browser-side compiler-sfc (~1MB+) and Vite (the Node toolchain) were ruled out there, and
+the author judged fervid itself too early and a risk — the settled approach for island
+readability is decomposition into child components with annotated template literals. Take rung 0 as an early
 experiment; take rung 3 only if 0–2 prove insufficient.
 
 **The `sv-` class list.** Six to ten classes for what Bootstrap doesn't cover: metric/delta,

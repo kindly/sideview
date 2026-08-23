@@ -1,4 +1,4 @@
-<sv-page label="v4: the page asks back" category="plan" order="3">
+<sv-page label="v4: the page asks back" category="shipped" order="6">
 
 <sv-prose id="intro">
 # v4: the page asks back
