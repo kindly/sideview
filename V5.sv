@@ -116,3 +116,51 @@ Recorded so they aren't re-proposed as cuts:
 </sv-prose>
 
 </sv-page>
+
+<sv-prose id="drill1">
+## Drill: the rename (step 1, committed fc89732)
+
+The rename is in: `--page` on every verb, `sideview pages`, the `session` alias gone, the
+SSE event and block-event keys renamed, app.js and the skill following, 0.5.0. Four things
+happened that the plan didn't predict — round 1 below.
+</sv-prose>
+
+<sv-ask id="d1q1" round="1">
+**The `/s/` URL prefix survived.** Every page URL is `/s/<id>` — the one arguably
+session-flavored spelling left. Changing it to `/p/` breaks every bookmark and printed URL
+for one letter of purity; the letter never says "session" to a reader.
+- * Keep `/s/` — it's a letter, not a noun; bookmarks outweigh it
+- Rename to `/p/` now, while 0.5.0 is already breaking everything
+</sv-ask>
+
+<sv-ask id="d1q2" round="1">
+**session.rs became `identity.rs`, not part of a page module.** Its job is resolving
+*which page id this invocation writes to* from the harness environment (the env rungs are
+genuinely harness-session facts, and its comments still say so). The alternative was
+folding it into a future page/bindings concept module during the extractions.
+- * identity.rs as landed; fold into a bindings concept module later only if one emerges
+- Should have been page_id.rs / folded now — rename again before more code lands on it
+</sv-ask>
+
+<sv-ask id="d1q3" round="1">
+**The store's migration DDL still says `sessions`.** Migration steps replay history on old
+databases (`CREATE TABLE sessions`, `ALTER TABLE sessions RENAME TO bindings`), so those
+strings must stay verbatim — the *table* has been `bindings` since v2. Recorded here so a
+future grep for "session" doesn't read them as a miss.
+- * Correct as landed (nothing to change; this question is the record)
+- Squash migrations instead: pre-1.0, `reset` exists, history could restart at v0.5
+</sv-ask>
+
+<sv-ask id="d1q4" round="1">
+**No grace release for the removals.** `sideview session …` and `/api/sessions/…` are
+gone outright in 0.5.0 (the alias's own comment promised one release of grace — v4 was
+it). Anything scripted against the old verbs breaks on upgrade with a clap error, and an
+un-restarted 0.4.x daemon serves an old client to a 0.5 CLI until `sideview restart`.
+- * Clean break as landed — pre-1.0 rules, the skew cure is `sideview restart`
+- Re-add a hidden alias for one more release
+</sv-ask>
+
+<sv-ask id="d1fin" round="1" role="close">
+Drill round 1: the rename's four surprises. Approving closes step 1; step 2 (the
+conversation library) starts next.
+</sv-ask>
