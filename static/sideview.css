@@ -234,7 +234,7 @@ html {
   margin-left: auto;
 }
 
-#sv-sessions {
+#sv-pages {
   display: flex;
   gap: 0.4rem;
   overflow-x: auto;

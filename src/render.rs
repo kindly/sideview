@@ -268,8 +268,8 @@ pub fn ext_block(id: &str, ext_name: &str, page_id: &str, height: Option<&str>) 
     let src = format!(
         "/x/{}/{}/{}/",
         ext_name,
-        crate::session::encode(page_id),
-        crate::session::encode(id)
+        crate::identity::encode(page_id),
+        crate::identity::encode(id)
     );
     let style = match height.filter(|h| is_css_length(h)) {
         Some(h) => format!(r#" data-sv-fixed="1" style="height:{h}""#),

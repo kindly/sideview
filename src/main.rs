@@ -9,7 +9,7 @@ mod format;
 mod monitor;
 mod netcheck;
 mod render;
-mod session;
+mod identity;
 mod skill;
 mod store;
 
@@ -45,9 +45,9 @@ struct Cli {
 
 #[derive(Args)]
 struct AuthorArgs {
-    /// Explicit session id (otherwise resolved from the environment)
+    /// Explicit page id (otherwise resolved from the environment)
     #[arg(long)]
-    session: Option<String>,
+    page: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -87,11 +87,6 @@ enum Cmd {
     Page {
         #[command(subcommand)]
         action: PageCmd,
-    },
-    /// Alias of `page` — lives one release, then goes
-    Session {
-        #[command(subcommand)]
-        action: SessionCmd,
     },
     /// Bind a committed .sv file as a page (the missing verb for documents
     /// that live in the repo rather than under .sideview/pages/)
@@ -173,7 +168,7 @@ enum Cmd {
         action: MonitorCmd,
     },
     /// What's running here, and at which URLs
-    Sessions,
+    Pages,
     /// Is the daemon alive, on which port, at which version
     Status,
     /// Stop the recorded daemon and start this binary on the same port
@@ -244,7 +239,7 @@ enum MonitorCmd {
 enum PageCmd {
     /// Set page properties: a human-facing label, whether the outline shows
     Set {
-        /// Name shown in the page's session strip
+        /// Name shown in the page strip
         #[arg(long)]
         label: Option<String>,
         /// Contents rail: `scrollspy` (default — whole page, rail follows the
@@ -255,7 +250,7 @@ enum PageCmd {
         author: AuthorArgs,
     },
     /// Close a page: unbinds it, and for a throwaway page deletes its file
-    /// and conversation too. No id means this session's
+    /// and conversation too. No id means yours
     Rm {
         /// The page to close (defaults to your own)
         id: Option<String>,
@@ -275,28 +270,6 @@ enum PageCmd {
     },
 }
 
-#[derive(Subcommand)]
-enum SessionCmd {
-    /// Set page properties: a human-facing label, whether the outline shows
-    Set {
-        /// Name shown in the page's session strip
-        #[arg(long)]
-        label: Option<String>,
-        /// Contents rail: `scrollspy` (default — whole page, rail follows the
-        /// scroll), `tabs` (sections as separate panes), or `off`
-        #[arg(long)]
-        outline: Option<String>,
-        #[command(flatten)]
-        author: AuthorArgs,
-    },
-    /// Delete a page: its file and its binding. No id means this session's
-    Rm {
-        /// The session to delete (defaults to your own)
-        id: Option<String>,
-        #[command(flatten)]
-        author: AuthorArgs,
-    },
-}
 
 #[derive(Subcommand)]
 enum AttachmentsCmd {
@@ -364,21 +337,21 @@ fn main() -> anyhow::Result<()> {
     match args.cmd {
         // A tool that does the useful thing beats one that lectures you.
         None => cli::open(args.detach, &args.bind, args.port),
-        Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.session.as_deref(), &[]),
-        Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.session.as_deref(), &[]),
+        Some(Cmd::Prose(a)) => cli::author(cli::Kind::Prose, a.page.as_deref(), &[]),
+        Some(Cmd::Markup(a)) => cli::author(cli::Kind::Markup, a.page.as_deref(), &[]),
         Some(Cmd::Html { height, author }) => {
             let extra: Vec<(&str, &str)> = height
                 .as_deref()
                 .map(|h| ("height", h))
                 .into_iter()
                 .collect();
-            cli::author(cli::Kind::Html, author.session.as_deref(), &extra)
+            cli::author(cli::Kind::Html, author.page.as_deref(), &extra)
         }
-        Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.session.as_deref(), &[]),
+        Some(Cmd::Diff(a)) => cli::author(cli::Kind::Diff, a.page.as_deref(), &[]),
         Some(Cmd::Update { id, r#type, author }) => {
-            cli::update(&id, kind(&r#type)?, author.session.as_deref())
+            cli::update(&id, kind(&r#type)?, author.page.as_deref())
         }
-        Some(Cmd::Rm { id, author }) => cli::rm(&id, author.session.as_deref()),
+        Some(Cmd::Rm { id, author }) => cli::rm(&id, author.page.as_deref()),
         Some(Cmd::Page {
             action:
                 PageCmd::Set {
@@ -386,28 +359,17 @@ fn main() -> anyhow::Result<()> {
                     outline,
                     author,
                 },
-        })
-        | Some(Cmd::Session {
-            action:
-                SessionCmd::Set {
-                    label,
-                    outline,
-                    author,
-                },
-        }) => cli::session_set(
-            author.session.as_deref(),
+        }) => cli::page_set(
+            author.page.as_deref(),
             label.as_deref(),
             outline.as_deref(),
         ),
         Some(Cmd::Page {
             action: PageCmd::Rm { id, file, author },
-        }) => cli::session_rm(author.session.as_deref(), id.as_deref(), file),
-        Some(Cmd::Session {
-            action: SessionCmd::Rm { id, author },
-        }) => cli::session_rm(author.session.as_deref(), id.as_deref(), false),
+        }) => cli::page_rm(author.page.as_deref(), id.as_deref(), file),
         Some(Cmd::Page {
             action: PageCmd::Promote { dest, author },
-        }) => cli::page_promote(author.session.as_deref(), &dest),
+        }) => cli::page_promote(author.page.as_deref(), &dest),
         Some(Cmd::Open { file }) => cli::open_page(&file),
         Some(Cmd::Comment {
             block,
@@ -439,7 +401,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Monitor {
             action: MonitorCmd::Stop,
         }) => monitor::stop(),
-        Some(Cmd::Sessions) => cli::sessions(),
+        Some(Cmd::Pages) => cli::pages(),
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Restart { bind }) => cli::restart(&bind),
         Some(Cmd::Styles) => cli::styles(),

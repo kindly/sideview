@@ -1,8 +1,8 @@
 // The whole client. The daemon sends rendered HTML plus each block's declared
 // headings; the job here is: hold an EventSource, place/replace/remove elements
 // by block id, build the contents rail from declarations, and track where the
-// reader is. The rail has two coherent modes, chosen per session by the agent
-// (`session set --outline`): scrollspy (default — the page is always the whole
+// reader is. The rail has two coherent modes, chosen per page by the agent
+// (`page set --outline`): scrollspy (default — the page is always the whole
 // document, the rail follows the scroll) and tabs (sections are separate
 // panes — the mode for prototypes and app-like pages).
 'use strict';
@@ -10,16 +10,16 @@
 // Bumped by hand whenever client behaviour changes: the daemon's version
 // skew warns loudly, but a stale tab's JS is invisible — this stamp (console
 // + the brand tooltip) is how you tell which client a tab is running.
-const CLIENT_STAMP = '2026-08-23A no edit verb on imported pages';
+const CLIENT_STAMP = '2026-08-24A one noun: page';
 console.log('sideview client', CLIENT_STAMP);
 
 const state = {
-  sessions: [],          // [{id, last_active_at, props}] most recent first
-  blocks: new Map(),     // session id -> Map(block id -> {ord, html, headings})
-  selected: null,        // session id — set once from the URL, never changed
+  pages: [],             // [{id, last_active_at, props}] most recent first
+  blocks: new Map(),     // page id -> Map(block id -> {ord, html, headings})
+  selected: null,        // page id — set once from the URL, never changed
   section: null,         // tabs mode: the selected section key
   spyActive: null,       // scrollspy mode: the section currently in view
-  expand: new Map(),     // section key -> bool, manual twist overrides (per session)
+  expand: new Map(),     // section key -> bool, manual twist overrides (per page)
   connectedAt: 0,        // when the stream last opened; gates the arrival ink
   conversations: new Map(), // page id -> {threads: [], comments: []} from SSE
 };
@@ -28,7 +28,7 @@ let outline = { sections: [], blockSections: new Map() };
 let railRefs = new Map(); // section key -> {link, twist, kids}
 
 const $blocks = document.getElementById('sv-blocks');
-const $sessions = document.getElementById('sv-sessions');
+const $pages = document.getElementById('sv-pages');
 const $status = document.getElementById('sv-status');
 const $brand = document.getElementById('sv-brand');
 // The wordmark is the way home: the index of every page, grouped.
@@ -49,14 +49,14 @@ const $outlineList = document.getElementById('sv-outline-list');
 // most recently active page.
 const ROUTE = (() => {
   const m = location.pathname.match(/^\/s\/(.+)$/);
-  if (m) return { view: 'page', session: decodeURIComponent(m[1]) };
-  if (location.pathname === '/home') return { view: 'home', session: null };
-  return { view: 'page', session: null }; // '/' in an empty project
+  if (m) return { view: 'page', page: decodeURIComponent(m[1]) };
+  if (location.pathname === '/home') return { view: 'home', page: null };
+  return { view: 'page', page: null }; // '/' in an empty project
 })();
-state.selected = ROUTE.session;
+state.selected = ROUTE.page;
 
-function sessionProps() {
-  const s = state.sessions.find((x) => x.id === state.selected);
+function pageProps() {
+  const s = state.pages.find((x) => x.id === state.selected);
   return (s && s.props) || {};
 }
 
@@ -64,7 +64,7 @@ function sessionProps() {
 // imported md/html pages (found live on a bound .md, 2026-08-23), so the
 // edit verbs are withheld there. Absent format = older daemon: assume sv.
 function pageEditable() {
-  const s = state.sessions.find((x) => x.id === state.selected);
+  const s = state.pages.find((x) => x.id === state.selected);
   return !s || !s.format || s.format === 'sv';
 }
 
@@ -72,7 +72,7 @@ function pageEditable() {
 // The agent's declared mode: tabs, or scrollspy (the default). `off` means
 // scrollspy with the rail starting collapsed.
 function railMode() {
-  return sessionProps().outline === 'tabs' ? 'tabs' : 'scrollspy';
+  return pageProps().outline === 'tabs' ? 'tabs' : 'scrollspy';
 }
 
 // Whether the rail is open: the viewer's own fold/unfold (remembered per
@@ -80,7 +80,7 @@ function railMode() {
 function railOpen() {
   const stored = localStorage.getItem('sv-outline:' + state.selected);
   if (stored === 'on' || stored === 'off') return stored === 'on';
-  return sessionProps().outline !== 'off';
+  return pageProps().outline !== 'off';
 }
 
 $railToggle.addEventListener('click', () => {
@@ -280,11 +280,11 @@ es.addEventListener('error', () => {
   }
 });
 
-es.addEventListener('sessions', (e) => {
-  state.sessions = JSON.parse(e.data).sessions;
-  // The snapshot is authoritative: a session it doesn't list is gone, blocks
+es.addEventListener('pages', (e) => {
+  state.pages = JSON.parse(e.data).pages;
+  // The snapshot is authoritative: a page it doesn't list is gone, blocks
   // and all — this is how deletion reaches every open tab.
-  const ids = new Set(state.sessions.map((s) => s.id));
+  const ids = new Set(state.pages.map((s) => s.id));
   for (const held of [...state.blocks.keys()]) {
     if (!ids.has(held)) state.blocks.delete(held);
   }
@@ -297,18 +297,18 @@ es.addEventListener('sessions', (e) => {
     location.href = '/';
     return;
   }
-  renderSessionStrip();
+  renderPageStrip();
   if (ROUTE.view === 'home') renderIndex(); // the index lists pages: it follows them
-  refreshOutline(); // a session's outline property may have changed
+  refreshOutline(); // a page's outline property may have changed
 });
 
 es.addEventListener('block', (e) => {
   const ev = JSON.parse(e.data);
-  let per = state.blocks.get(ev.session);
-  if (!per) { per = new Map(); state.blocks.set(ev.session, per); }
+  let per = state.blocks.get(ev.page);
+  if (!per) { per = new Map(); state.blocks.set(ev.page, per); }
   if (ev.action === 'remove') per.delete(ev.block);
   else per.set(ev.block, { ord: ev.ord, html: ev.html, headings: ev.headings || [] });
-  if (ev.session === state.selected) {
+  if (ev.page === state.selected) {
     applyBlock(ev);
     refreshOutline();
     scheduleConversation(); // a replaced block sheds its count-dots
@@ -330,20 +330,20 @@ es.addEventListener('threads', (e) => {
 // config) declared, then by creation. Uncategorized pages keep today's
 // behaviour and sit last, under no label — the default category is "no
 // category", not a category called default.
-function groupedSessions() {
+function groupedPages() {
   const cat = (s) => ((s.props && s.props.category) || '').trim();
   const ord = (s) => {
     const o = parseFloat((s.props && s.props.order) ?? '');
     return Number.isFinite(o) ? o : Infinity;
   };
   const groups = new Map();
-  for (const s of state.sessions) {
+  for (const s of state.pages) {
     const k = cat(s);
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(s);
   }
   for (const list of groups.values()) {
-    list.sort((a, b) => ord(a) - ord(b) || state.sessions.indexOf(a) - state.sessions.indexOf(b));
+    list.sort((a, b) => ord(a) - ord(b) || state.pages.indexOf(a) - state.pages.indexOf(b));
   }
   // A category sorts by its earliest declared order, so `order` places
   // groups as well as pages and nobody needs a second key.
@@ -361,9 +361,9 @@ function groupedSessions() {
 // pages, but you are only ever working inside one set, so the strip shows
 // that set and a title naming it. Moving between categories is the home
 // index's job, not the strip's — it never lists a category as a chip.
-function renderSessionStrip() {
-  $sessions.textContent = '';
-  const groups = groupedSessions();
+function renderPageStrip() {
+  $pages.textContent = '';
+  const groups = groupedPages();
 
   // The strip always shows the siblings of what you are looking at. On the
   // home index that is the categories, and only those: the untitled set's
@@ -382,12 +382,12 @@ function renderSessionStrip() {
         if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
       });
       chip.appendChild(btn);
-      $sessions.appendChild(chip);
+      $pages.appendChild(chip);
     }
     return;
   }
 
-  const here = state.sessions.find((s) => s.id === state.selected);
+  const here = state.pages.find((s) => s.id === state.selected);
   const current = ((here && here.props && here.props.category) || '').trim();
 
   const group = groups.find((g) => g.name === current);
@@ -397,13 +397,13 @@ function renderSessionStrip() {
     const title = document.createElement('span');
     title.className = 'sv-strip-title';
     title.textContent = current;
-    $sessions.appendChild(title);
+    $pages.appendChild(title);
   }
   renderChips(group ? group.pages : groups.find((g) => !g.name)?.pages || []);
 }
 
-function renderChips(sessions) {
-  for (const s of sessions) {
+function renderChips(pages) {
+  for (const s of pages) {
     const chip = document.createElement('span');
     chip.className = 'sv-chip' + (s.id === state.selected ? ' active' : '');
 
@@ -422,7 +422,7 @@ function renderChips(sessions) {
     const props = s.props || {};
     if (props.closable === 'config') {
       chip.append(btn);
-      $sessions.appendChild(chip);
+      $pages.appendChild(chip);
       continue;
     }
     const throwaway = props.tier !== 'committed';
@@ -446,11 +446,11 @@ function renderChips(sessions) {
         return;
       }
       clearTimeout(disarm);
-      fetch('/api/sessions/' + encodeURIComponent(s.id), { method: 'DELETE' }).catch(() => {});
+      fetch('/api/pages/' + encodeURIComponent(s.id), { method: 'DELETE' }).catch(() => {});
     });
 
     chip.append(btn, del);
-    $sessions.appendChild(chip);
+    $pages.appendChild(chip);
   }
 }
 
@@ -467,7 +467,7 @@ function computeOutline() {
   // An explicit outline (sideview outline → outline_spec prop) is used
   // verbatim: the agent's ordered list, inference off. Prose derivation
   // below stays the default.
-  const spec = sessionProps().outline_spec;
+  const spec = pageProps().outline_spec;
   if (Array.isArray(spec) && spec.length) {
     const anchorId = (a) => (typeof a === 'string' && a.startsWith('h:') ? a.slice(2) : null);
     return {
@@ -1257,7 +1257,7 @@ function renderIndex() {
   h.textContent = 'Pages';
   wrap.appendChild(h);
 
-  const groups = groupedSessions();
+  const groups = groupedPages();
   if (!groups.length) {
     const p = document.createElement('p');
     p.className = 'text-muted';

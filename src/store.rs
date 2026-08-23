@@ -1,6 +1,6 @@
 //! The SQLite store, demoted by v1's pages-are-files to what only it can do:
 //! the daemon row (liveness, supersession, the remembered port), durable meta,
-//! and session→file **bindings** — the daemon's watch list. Content lives in
+//! and page→file **bindings** — the daemon's watch list. Content lives in
 //! `.sv` files; the test that keeps this honest is that deleting the database
 //! loses no content (V1.md).
 //!
@@ -18,7 +18,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 pub const DIR_NAME: &str = ".sideview";
 pub const DB_FILE: &str = "sideview.db";
 pub const SPAWN_LOCK: &str = "spawn.lock";
-/// Where throwaway session pages live, under `.sideview/`. Deliberately
+/// Where throwaway pages live, under `.sideview/`. Deliberately
 /// gitignored by the store's own `.gitignore`; promotion is `mv` into the repo.
 pub const PAGES_DIR: &str = "pages";
 
@@ -205,7 +205,7 @@ pub struct DaemonRow {
     pub reachable: bool,
 }
 
-/// A session→file binding. Losing one costs nothing durable (the file is the
+/// A page→file binding. Losing one costs nothing durable (the file is the
 /// content); it exists so the daemon knows where to look without globbing the
 /// project four times a second.
 #[derive(Debug, Clone)]
@@ -431,9 +431,9 @@ impl Store {
 
     // ---- bindings ----------------------------------------------------------
 
-    /// Bind (or re-touch) a session to its page file. The path never changes
+    /// Bind (or re-touch) a page id to its file. The path never changes
     /// through this — a moved page is re-bound explicitly, not by drift.
-    pub fn bind_session(
+    pub fn bind_page(
         &self,
         id: &str,
         path: &str,
@@ -452,7 +452,7 @@ impl Store {
 
     pub fn bindings(&self) -> Result<Vec<Binding>> {
         // Creation order, oldest first: chips get stable positions and new
-        // pages append on the right, like browser tabs. Which session the
+        // pages append on the right, like browser tabs. Which page the
         // page auto-shows is a separate question the client answers from
         // last_active_at — ordering stopped doing double duty after the
         // author watched chips reorder themselves mid-session.
@@ -1042,12 +1042,12 @@ mod tests {
     #[test]
     fn bindings_keep_stable_creation_order_despite_activity() {
         let store = test_store();
-        store.bind_session("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
+        store.bind_page("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
         std::thread::sleep(Duration::from_millis(2));
-        store.bind_session("s2", ".sideview/pages/s2.sv", "/tmp", "test").unwrap();
+        store.bind_page("s2", ".sideview/pages/s2.sv", "/tmp", "test").unwrap();
         std::thread::sleep(Duration::from_millis(2));
         // Re-touching s1 makes it the most active — its chip must not move.
-        store.bind_session("s1", "ignored-on-conflict.sv", "/tmp", "test").unwrap();
+        store.bind_page("s1", "ignored-on-conflict.sv", "/tmp", "test").unwrap();
         let b = store.bindings().unwrap();
         assert_eq!(b.len(), 2);
         assert_eq!(b[0].id, "s1", "creation order, oldest first — stable positions");
@@ -1105,8 +1105,8 @@ mod tests {
     #[test]
     fn attachments_ride_comments_and_files_die_with_their_last_reference() {
         let mut store = test_store();
-        store.bind_session("v3", "V3.sv", "/tmp", "test").unwrap();
-        store.bind_session("other", "O.sv", "/tmp", "test").unwrap();
+        store.bind_page("v3", "V3.sv", "/tmp", "test").unwrap();
+        store.bind_page("other", "O.sv", "/tmp", "test").unwrap();
         let rel = format!("{ATTACHMENTS_PREFIX}aaaaaaaa/shot.png");
         let abs = store.root.join(&rel);
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
@@ -1204,7 +1204,7 @@ mod tests {
         step(&store, "unresolve", true);
         store.set_outline("v2", "[]").unwrap();
         step(&store, "set_outline", true);
-        store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
+        store.bind_page("v2", "V2.sv", "/tmp", "test").unwrap();
         store.delete_binding("v2").unwrap();
         step(&store, "page rm cascade", true);
     }
@@ -1212,7 +1212,7 @@ mod tests {
     #[test]
     fn claims_are_exactly_once_and_page_rm_cascades_conversation() {
         let mut store = test_store();
-        store.bind_session("v2", "V2.sv", "/tmp", "test").unwrap();
+        store.bind_page("v2", "V2.sv", "/tmp", "test").unwrap();
         let (_, c1) = store.create_thread("v2", "b1", "", None, None, "hello", None, "comment", &[]).unwrap();
         assert!(store.claim_comment(c1, "watch:1").unwrap());
         assert!(!store.claim_comment(c1, "watch:2").unwrap(), "second watcher sees zero rows");

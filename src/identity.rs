@@ -1,4 +1,5 @@
-//! Which session am I? Load-bearing now that one daemon hosts many sessions:
+//! Which page do I write? Resolves this invocation's page id from the harness
+//! environment. Load-bearing now that one daemon hosts many pages:
 //! get this wrong and two concurrent agents merge into one page.
 
 use std::path::Path;
@@ -6,15 +7,15 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct Resolved {
     pub id: String,
-    /// Which rung of the chain matched — recorded on the session row.
+    /// Which rung of the chain matched — recorded on the binding row.
     pub detected_from: &'static str,
 }
 
 /// First match wins. The controlling tty is deliberately not on this list:
 /// agent Bash calls have none, and each invocation is a fresh shell.
 pub fn resolve(explicit: Option<&str>, cwd: &Path) -> Resolved {
-    // An empty --session falls through the chain rather than minting the ""
-    // session — found live by a codex run inventing `--session ''`.
+    // An empty --page falls through the chain rather than minting the ""
+    // page — found live by a codex run inventing `--session ''` (the old flag).
     if let Some(id) = explicit.filter(|s| !s.is_empty()) {
         return Resolved { id: id.to_string(), detected_from: "flag" };
     }
@@ -68,7 +69,7 @@ pub fn inside_agent() -> bool {
 /// cwd and tmux rungs produce ids containing `/` and `%`. Encode everything
 /// outside RFC 3986's unreserved set — over-encoding is harmless, a raw slash
 /// is not, and the same encoding serving both uses means the file for a
-/// session is recognizable from its URL.
+/// page is recognizable from its URL.
 pub fn encode(id: &str) -> String {
     use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
     const SEGMENT: &AsciiSet =
@@ -76,8 +77,8 @@ pub fn encode(id: &str) -> String {
     utf8_percent_encode(id, SEGMENT).to_string()
 }
 
-/// The throwaway page file for a session, relative to the project root: a
-/// pure function of the session id, findable with no registry at all.
+/// The throwaway page file for a page id, relative to the project root: a
+/// pure function of the id, findable with no registry at all.
 pub fn page_rel_path(id: &str) -> String {
     format!(
         "{}/{}/{}.sv",

@@ -2,11 +2,11 @@
 //! return immediately; only bare `sideview` ever waits, because only it needs
 //! a URL to open a browser at.
 //!
-//! Since pages became files, authoring is file splicing: read the session's
+//! Since pages became files, authoring is file splicing: read the page's
 //! `.sv` file under a lock, splice the block's line range, write atomically
 //! (temp + rename, so the daemon never reads a torn file from *us* — agents
 //! editing directly get the parser's tolerance instead). The store is only
-//! touched to maintain the session→file binding.
+//! touched to maintain the page→file binding.
 
 use std::fs::File;
 use std::io::Read;
@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use crate::daemon;
 use crate::format;
 use crate::netcheck;
-use crate::session;
+use crate::identity;
 use crate::store::{self, Store, SPAWN_LOCK};
 
 pub enum Kind {
@@ -53,24 +53,24 @@ fn read_stdin() -> Result<String> {
     Ok(content)
 }
 
-/// Resolve the session, keep its binding fresh, and return the page file's
+/// Resolve the page id, keep its binding fresh, and return the page file's
 /// absolute path. The binding's path wins when one exists (a page may have
 /// been re-bound after a move); otherwise it's the deterministic throwaway
 /// location under `.sideview/pages/`.
 fn resolve_and_bind(store: &Store, explicit: Option<&str>) -> Result<(String, PathBuf)> {
     let cwd = std::env::current_dir()?;
-    let resolved = session::resolve(explicit, &cwd);
+    let resolved = identity::resolve(explicit, &cwd);
     let rel = match store.binding(&resolved.id)? {
         Some(b) => b.path,
-        None => session::page_rel_path(&resolved.id),
+        None => identity::page_rel_path(&resolved.id),
     };
-    store.bind_session(&resolved.id, &rel, &cwd.display().to_string(), resolved.detected_from)?;
+    store.bind_page(&resolved.id, &rel, &cwd.display().to_string(), resolved.detected_from)?;
     store.pages_dir()?; // ensure the directory exists before anyone writes into it
     Ok((resolved.id, store.root.join(rel)))
 }
 
 /// Read-modify-write a page file under its sidecar lock, atomically. The lock
-/// is what SQLite transactions used to be: subagents share a session id, and
+/// is what SQLite transactions used to be: subagents share a page id, and
 /// two writers splicing the same file unserialized would corrupt it.
 fn edit_page(path: &Path, f: impl FnOnce(String) -> Result<String>) -> Result<()> {
     let lock_path = path.with_extension("sv.lock");
@@ -107,15 +107,15 @@ fn next_block_id(page: &format::Page) -> String {
     format!("b{}", max + 1)
 }
 
-/// `sideview prose|markup|html|diff` — append the block to the session's
+/// `sideview prose|markup|html|diff` — append the block to the page's
 /// file, print its id alone on stdout, deal with the daemon afterwards, exit
 /// without waiting. `extra` carries per-type attributes (html's --height).
-pub fn author(kind: Kind, explicit_session: Option<&str>, extra: &[(&str, &str)]) -> Result<()> {
+pub fn author(kind: Kind, explicit_page: Option<&str>, extra: &[(&str, &str)]) -> Result<()> {
     for (k, v) in extra {
         format::check_attr_value(v).map_err(|e| anyhow::anyhow!("--{k}: {e}"))?;
     }
     let mut store = open_project_store()?;
-    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let (_, path) = resolve_and_bind(&store, explicit_page)?;
     let body = read_stdin()?;
     let mut assigned = String::new();
     edit_page(&path, |current| {
@@ -137,7 +137,7 @@ pub fn author(kind: Kind, explicit_session: Option<&str>, extra: &[(&str, &str)]
 }
 
 /// Append before a trailing `</sv-page>` when the file has one; a fresh file
-/// gets the page wrapper so `session set` has a line to hang properties on.
+/// gets the page wrapper so `page set` has a line to hang properties on.
 fn append_block(current: String, block: &str) -> String {
     if current.is_empty() {
         return format!("<sv-page>\n\n{block}\n\n</sv-page>\n");
@@ -169,14 +169,14 @@ fn append_block(current: String, block: &str) -> String {
 /// Replace a block's content (and possibly type) in place: splice its line
 /// range, keep its other attributes. Short ids resolve within the caller's
 /// own file, which is what makes two agents both holding a `b7` harmless.
-pub fn update(short_id: &str, kind: Kind, explicit_session: Option<&str>) -> Result<()> {
+pub fn update(short_id: &str, kind: Kind, explicit_page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let (_, path) = resolve_and_bind(&store, explicit_page)?;
     let body = read_stdin()?;
     edit_page(&path, |current| {
         let page = format::parse(&current);
         let Some(b) = page.blocks.iter().find(|b| b.id() == Some(short_id)) else {
-            bail!("no block {short_id} in this session");
+            bail!("no block {short_id} on this page");
         };
         let attrs: Vec<(&str, &str)> =
             b.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
@@ -190,13 +190,13 @@ pub fn update(short_id: &str, kind: Kind, explicit_session: Option<&str>) -> Res
 
 /// Remove a block: its lines simply leave the file. No tombstone — clients
 /// converge from the daemon's full-state connections (see daemon.rs).
-pub fn rm(short_id: &str, explicit_session: Option<&str>) -> Result<()> {
+pub fn rm(short_id: &str, explicit_page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let (_, path) = resolve_and_bind(&store, explicit_page)?;
     edit_page(&path, |current| {
         let page = format::parse(&current);
         let Some(b) = page.blocks.iter().find(|b| b.id() == Some(short_id)) else {
-            bail!("no block {short_id} in this session");
+            bail!("no block {short_id} on this page");
         };
         Ok(splice(&current, b.lines, None))
     })?;
@@ -297,7 +297,7 @@ fn spawn_detached(store: &Store, open_browser: bool, bind_auto: bool) -> Result<
 pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
     let bind_auto = parse_bind(bind)?;
     let store = open_project_store()?;
-    // Deliberately no session binding here: sessions exist when blocks do.
+    // Deliberately no page binding here: pages exist when blocks do.
     // Minting one on bare open grew the switcher by an empty chip per shell.
 
     if let Some(d) = store.daemon_alive()? {
@@ -436,11 +436,11 @@ pub fn restart(bind: &str) -> Result<()> {
     }
 }
 
-/// `sideview session set` — page properties now live in the file itself, on
+/// `sideview page set` — page properties now live in the file itself, on
 /// the `<sv-page>` line: authored presentation belongs in the canonical
 /// source, not in a database row.
-pub fn session_set(
-    explicit_session: Option<&str>,
+pub fn page_set(
+    explicit_page: Option<&str>,
     label: Option<&str>,
     outline: Option<&str>,
 ) -> Result<()> {
@@ -456,7 +456,7 @@ pub fn session_set(
         format::check_attr_value(l).map_err(|e| anyhow::anyhow!("--label: {e}"))?;
     }
     let store = open_project_store()?;
-    let (_, path) = resolve_and_bind(&store, explicit_session)?;
+    let (_, path) = resolve_and_bind(&store, explicit_page)?;
     edit_page(&path, |current| {
         let page = format::parse(&current);
         let mut props: Vec<(String, String)> =
@@ -468,7 +468,7 @@ pub fn session_set(
             }
         };
         if let Some(label) = label {
-            // An empty label clears back to showing the session id.
+            // An empty label clears back to showing the page id.
             set(&mut props, "label", (!label.is_empty()).then_some(label));
         }
         if let Some(outline) = outline {
@@ -510,25 +510,25 @@ pub fn session_set(
     Ok(())
 }
 
-/// `sideview session rm [id]` — delete a page: its file, its sidecar lock,
-/// its binding. No id means your own, matching `session set`. Deliberately
+/// `sideview page rm [id]` — delete a page: its file, its sidecar lock,
+/// its binding. No id means your own, matching `page set`. Deliberately
 /// never touches the daemon: deletion must not auto-spawn one, and a running
 /// one notices the binding vanish on its next tick.
-pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>, delete_file: bool) -> Result<()> {
+pub fn page_rm(explicit_page: Option<&str>, id: Option<&str>, delete_file: bool) -> Result<()> {
     let mut store = open_project_store()?;
     let target = match id {
         Some(id) => id.to_string(),
         None => {
             let cwd = std::env::current_dir()?;
-            session::resolve(explicit_session, &cwd).id
+            identity::resolve(explicit_page, &cwd).id
         }
     };
     // The binding's path wins; without one, the deterministic throwaway
-    // location — so `session rm` works even after a `reset` dropped the db.
+    // location — so `page rm` works even after a `reset` dropped the db.
     let rel = store
         .binding(&target)?
         .map(|b| b.path)
-        .unwrap_or_else(|| session::page_rel_path(&target));
+        .unwrap_or_else(|| identity::page_rel_path(&target));
     // Deletion splits by tier, not by format (author, 2026-08-10): a
     // throwaway page is sideview's own scratch and `rm` means rm; anything
     // in the repo — a promoted .sv as much as an imported DESIGN.md — is a
@@ -555,9 +555,9 @@ pub fn session_rm(explicit_session: Option<&str>, id: Option<&str>, delete_file:
     };
     let _ = std::fs::remove_file(file.with_extension("sv.lock"));
     if !had_binding && !had_file {
-        bail!("no session {target}");
+        bail!("no page {target}");
     }
-    eprintln!("removed session {target} ({rel}) → {}", store.root.display());
+    eprintln!("removed page {target} ({rel}) → {}", store.root.display());
     Ok(())
 }
 
@@ -583,11 +583,11 @@ pub fn open_page(file: &Path) -> Result<()> {
         .and_then(|s| s.to_str())
         .context("file has no stem to name the page after")?
         .to_string();
-    store.bind_session(&id, &rel, &cwd.display().to_string(), "open")?;
+    store.bind_page(&id, &rel, &cwd.display().to_string(), "open")?;
     eprintln!("bound page {id} → {rel}");
     ensure_daemon(&mut store)?;
     if let Some(d) = store.daemon_alive()?.filter(|d| d.reachable) {
-        eprintln!("http://127.0.0.1:{}/s/{}", d.port, session::encode(&id));
+        eprintln!("http://127.0.0.1:{}/s/{}", d.port, identity::encode(&id));
     }
     Ok(())
 }
@@ -595,15 +595,15 @@ pub fn open_page(file: &Path) -> Result<()> {
 /// `sideview page promote <dest>` — mv a throwaway page into the repo with
 /// the binding following. The file is already canon-shaped; promotion just
 /// gives it a version-control-worthy address.
-pub fn page_promote(explicit_session: Option<&str>, dest: &Path) -> Result<()> {
+pub fn page_promote(explicit_page: Option<&str>, dest: &Path) -> Result<()> {
     if dest.is_absolute() || dest.components().any(|c| c.as_os_str() == "..") {
         bail!("destination must be a relative path inside the project");
     }
     let store = open_project_store()?;
     let cwd = std::env::current_dir()?;
-    let id = session::resolve(explicit_session, &cwd).id;
+    let id = identity::resolve(explicit_page, &cwd).id;
     let Some(binding) = store.binding(&id)? else {
-        bail!("no page bound for session {id}");
+        bail!("no page bound for {id}");
     };
     let from = store.root.join(&binding.path);
     let to = store.root.join(dest);
@@ -661,7 +661,7 @@ pub fn comment(
             let cwd = std::env::current_dir()?;
             let page_id = match page {
                 Some(p) => p.to_string(),
-                None => session::resolve(None, &cwd).id,
+                None => identity::resolve(None, &cwd).id,
             };
             let (tid, _) = store.create_thread(
                 &page_id,
@@ -743,7 +743,7 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let page_id = match page {
         Some(p) => p.to_string(),
-        None => session::resolve(None, &cwd).id,
+        None => identity::resolve(None, &cwd).id,
     };
     if clear {
         if !store.clear_outline(&page_id)? {
@@ -946,7 +946,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn sessions() -> Result<()> {
+pub fn pages() -> Result<()> {
     let store = open_project_store()?;
     let port = store.daemon_alive()?.filter(|d| d.reachable).map(|d| d.port);
     let cfg = crate::config::load(&store.root).0;
@@ -971,7 +971,7 @@ pub fn sessions() -> Result<()> {
             Some(p) => println!(
                 "{label}  {}  http://127.0.0.1:{p}/s/{}",
                 b.path,
-                session::encode(&b.id)
+                identity::encode(&b.id)
             ),
             None => println!("{label}  {}  (no daemon running)", b.path),
         }
@@ -1077,7 +1077,7 @@ fn print_urls(store: &Store, port: u16) -> String {
 /// Inside an agent, don't even try — xdg-open needs a desktop session the
 /// sandbox doesn't reach.
 pub fn open_browser(url: &str) {
-    if session::inside_agent() {
+    if identity::inside_agent() {
         return;
     }
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };

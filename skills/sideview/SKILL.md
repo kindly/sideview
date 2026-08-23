@@ -43,12 +43,12 @@ EOF
 sideview rm b2              # remove a block
 ```
 
-Ids are per-session: you can only ever name your own blocks, so use them freely.
+Ids are per-page: you can only ever name your own page's blocks, so use them freely.
 Prefer `update` over appending corrections — plans are revised constantly, and a
 corrected block reads better than a correction below a mistake.
 
 **Your page is a file, and editing it directly is equivalent to the CLI.**
-Everything you write lands in `.sideview/pages/<session>.sv`: blocks fenced by
+Everything you write lands in `.sideview/pages/<page>.sv`: blocks fenced by
 `<sv-prose|markup|html id="bN">` tags whose bodies are raw bytes — never
 HTML-escape anything inside a block. String-edit a block's text and the page
 patches within a tick; small revisions are often easier this way than
@@ -77,10 +77,10 @@ divs and CSS.
 Optionally, set page properties (no ids needed — it applies to your own page):
 
 ```bash
-sideview session set --label "Parser fix plan"   # names the page in the header strip
-sideview session set --outline tabs              # sections become separate panes
-sideview session set --outline off               # no contents rail on this page
-sideview session rm                              # delete your page, file and all (rarely needed)
+sideview page set --label "Parser fix plan"      # names the page in the header strip
+sideview page set --outline tabs                 # sections become separate panes
+sideview page set --outline off                  # no contents rail on this page
+sideview page rm                                 # delete your page, file and all (rarely needed)
 ```
 
 Pages with sections get a contents rail automatically, built from your blocks'

@@ -52,7 +52,7 @@ pub struct Opts {
 /// A pre-serialized SSE event, fanned out to every connected page.
 #[derive(Debug, Clone)]
 struct Outgoing {
-    kind: &'static str, // "block" | "sessions" | "threads"
+    kind: &'static str, // "block" | "pages" | "threads"
     data: String,
 }
 
@@ -66,12 +66,12 @@ struct Rendered {
     headings_json: serde_json::Value,
 }
 
-/// Everything the daemon knows about one session's page, derived from its
+/// Everything the daemon knows about one page, derived from its
 /// file. Rebuilt from scratch whenever the file changes; never persisted.
 #[derive(Debug, Clone, Default)]
 struct PageState {
     props: serde_json::Map<String, serde_json::Value>,
-    /// The source format (V3.sv's three formats). The sessions event carries
+    /// The source format (V3.sv's three formats). The pages event carries
     /// it so the client can withhold affordances imported pages don't have —
     /// today, editing: block splices are an .sv concept (found live on a
     /// bound .md, 2026-08-23).
@@ -92,13 +92,13 @@ struct PageState {
 #[derive(Default)]
 struct Shared {
     /// Binding order (most recently active first), as of the last poll.
-    sessions: Vec<(String, i64)>,
+    order: Vec<(String, i64)>,
     pages: HashMap<String, PageState>,
     /// Per-page conversation snapshots (threads + comments), pre-serialized.
     /// Page-scale full resends, same trust story as block replay: the client
     /// resets on connect and every change ships the whole page's conversation.
     conversations: HashMap<String, String>,
-    /// Explicit outlines (page → parsed spec), riding the sessions event as a
+    /// Explicit outlines (page → parsed spec), riding the pages event as a
     /// prop so the client needs no fourth event kind.
     outlines: HashMap<String, serde_json::Value>,
     /// Installed extensions, loaded from config (reloaded when it changes).
@@ -109,7 +109,7 @@ struct AppState {
     shared: Arc<Mutex<Shared>>,
     root: PathBuf,
     tx: broadcast::Sender<Outgoing>,
-    /// For the page's one write (session deletion) and the shutdown clear.
+    /// For the page's one write (page deletion) and the shutdown clear.
     /// The poll loop has its own connection; handlers otherwise never touch
     /// the store.
     store: Mutex<Store>,
@@ -251,13 +251,11 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 // size cap (413 past it), and nothing else reads raw bodies.
                 .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
                 .route("/", web::get().to(root_redirect))
-                .route("/s/{session}", web::get().to(page))
+                .route("/s/{page}", web::get().to(page))
                 // The index: categories and the pages in them.
                 .route("/home", web::get().to(page))
                 .route("/events", web::get().to(events))
-                .route("/api/pages/{page}", web::delete().to(delete_session))
-                // The old noun, one release of grace — same handler.
-                .route("/api/sessions/{session}", web::delete().to(delete_session))
+                .route("/api/pages/{page}", web::delete().to(delete_page))
                 .route("/api/comments", web::post().to(post_comment))
                 .route("/api/source", web::get().to(block_source))
                 .route("/api/edit", web::post().to(edit_block))
@@ -291,15 +289,15 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
 }
 
 /// The page's one write into the project: tidying power, not authoring power
-/// (V1.md) — anyone who can see the page can delete a session, and cannot
+/// (V1.md) — anyone who can see the page can delete a page, and cannot
 /// create or alter content. Deleting a page is deleting its file; the poll
-/// loop notices the binding is gone on its next tick and the sessions
+/// loop notices the binding is gone on its next tick and the pages
 /// snapshot converges every client.
-async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
+async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
     let id = path.into_inner();
     let mut store = state.store.lock().unwrap();
     let Ok(Some(binding)) = store.binding(&id) else {
-        return HttpResponse::NotFound().body(format!("no session {id:?}"));
+        return HttpResponse::NotFound().body(format!("no page {id:?}"));
     };
     // Tidying power, not destruction: the page's ✕ deletes a *throwaway*
     // page's file, and merely unbinds anything committed — a promoted .sv
@@ -324,7 +322,7 @@ async fn delete_session(path: web::Path<String>, state: Data<AppState>) -> impl 
 
 /// Re-find every page file the db doesn't know: committed .sv files bind by
 /// stem (V2.sv → "V2"), throwaway pages under .sideview/pages/ by decoding
-/// their filename back to the session id. Chip order for rediscovered pages
+/// their filename back to the page id. Chip order for rediscovered pages
 /// comes from canon: the `order` attribute on `<sv-page>` when the author
 /// cares, path order otherwise — binding insertion order carries it.
 fn rediscover_pages(store: &Store) -> Result<()> {
@@ -357,7 +355,7 @@ fn rediscover_pages(store: &Store) -> Result<()> {
                 }
                 let stem = name.trim_end_matches(".sv").to_string();
                 let id = if path.starts_with(&pages_dir) {
-                    // The throwaway filename is the encoded session id.
+                    // The throwaway filename is the encoded page id.
                     percent_encoding::percent_decode_str(&stem)
                         .decode_utf8_lossy()
                         .to_string()
@@ -381,7 +379,7 @@ fn rediscover_pages(store: &Store) -> Result<()> {
             eprintln!("note: {rel} not rebound — a different file already holds page id {id:?}");
             continue;
         }
-        store.bind_session(&id, &rel, &store.root.display().to_string(), "rediscovered")?;
+        store.bind_page(&id, &rel, &store.root.display().to_string(), "rediscovered")?;
         eprintln!("rediscovered page {id} ({rel})");
         // Distinct started_at millis keep the canon order stable in the strip.
         std::thread::sleep(Duration::from_millis(2));
@@ -742,8 +740,8 @@ async fn ext_serve(
         let base = format!(
             "/x/{}/{}/{}/",
             x.manifest.name,
-            crate::session::encode(&page_dec),
-            crate::session::encode(&block_dec)
+            crate::identity::encode(&page_dec),
+            crate::identity::encode(&block_dec)
         );
         let json = crate::ext::block_json(&page_dec, &block_dec, &attrs, &body);
         return HttpResponse::Ok()
@@ -951,12 +949,12 @@ fn poll_loop(
                     eprintln!("config: no file {} (page {id})", e.path);
                     continue;
                 }
-                store.bind_session(&id, &e.path, &store.root.display().to_string(), "config")?;
+                store.bind_page(&id, &e.path, &store.root.display().to_string(), "config")?;
                 eprintln!("config page {id} → {}", e.path);
             }
         }
 
-        let mut changed_sessions = false;
+        let mut changed_pages = false;
         let mut events: Vec<Outgoing> = Vec::new();
         let bindings = store.bindings()?;
         {
@@ -964,9 +962,9 @@ fn poll_loop(
 
             let order: Vec<(String, i64)> =
                 bindings.iter().map(|b| (b.id.clone(), b.last_active_at)).collect();
-            if order != shared.sessions {
-                shared.sessions = order;
-                changed_sessions = true;
+            if order != shared.order {
+                shared.order = order;
+                changed_pages = true;
             }
 
             let exts = shared.extensions.clone();
@@ -1029,7 +1027,7 @@ fn poll_loop(
                 let old = shared.pages.insert(b.id.clone(), fresh);
                 let fresh = &shared.pages[&b.id];
                 if old.as_ref().map(|o| &o.props) != Some(&fresh.props) {
-                    changed_sessions = true;
+                    changed_pages = true;
                 }
                 events.extend(diff_events(&b.id, old.as_ref(), fresh));
             }
@@ -1041,7 +1039,7 @@ fn poll_loop(
 
             // On any conversation mutation: re-serialize conversation
             // snapshots (shipping the pages that changed), and reload the
-            // explicit outlines, which ride the sessions event as a prop.
+            // explicit outlines, which ride the pages event as a prop.
             let g = store.conversation_gen().unwrap_or(conversation_gen);
             if g != conversation_gen {
                 conversation_gen = g;
@@ -1056,7 +1054,7 @@ fn poll_loop(
                     .collect();
                 if fresh != shared.outlines {
                     shared.outlines = fresh;
-                    changed_sessions = true;
+                    changed_pages = true;
                 }
 
                 let pages = store.conversation_pages().unwrap_or_default();
@@ -1083,8 +1081,8 @@ fn poll_loop(
                 });
             }
 
-            if changed_sessions {
-                events.insert(0, sessions_event(&shared));
+            if changed_pages {
+                events.insert(0, pages_event(&shared));
             }
         }
         for e in events {
@@ -1247,14 +1245,14 @@ fn load_page(
 /// The reparse diff: upserts for new or changed blocks, removes for gone ones.
 /// This is what keeps live patching surgical even though the source of truth
 /// is a whole file.
-fn diff_events(session: &str, old: Option<&PageState>, new: &PageState) -> Vec<Outgoing> {
+fn diff_events(page: &str, old: Option<&PageState>, new: &PageState) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let old_by_id: HashMap<&str, &Rendered> = old
         .map(|o| o.blocks.iter().map(|b| (b.id.as_str(), b)).collect())
         .unwrap_or_default();
     for b in &new.blocks {
         if old_by_id.get(b.id.as_str()) != Some(&&*b) {
-            events.push(block_event(session, b));
+            events.push(block_event(page, b));
         }
     }
     let new_ids: std::collections::HashSet<&str> =
@@ -1264,7 +1262,7 @@ fn diff_events(session: &str, old: Option<&PageState>, new: &PageState) -> Vec<O
             events.push(Outgoing {
                 kind: "block",
                 data: serde_json::json!({
-                    "session": session,
+                    "page": page,
                     "block": b.id,
                     "action": "remove",
                 })
@@ -1275,11 +1273,11 @@ fn diff_events(session: &str, old: Option<&PageState>, new: &PageState) -> Vec<O
     events
 }
 
-fn block_event(session: &str, b: &Rendered) -> Outgoing {
+fn block_event(page: &str, b: &Rendered) -> Outgoing {
     Outgoing {
         kind: "block",
         data: serde_json::json!({
-            "session": session,
+            "page": page,
             "block": b.id,
             "action": "upsert",
             "ord": b.ord,
@@ -1290,9 +1288,9 @@ fn block_event(session: &str, b: &Rendered) -> Outgoing {
     }
 }
 
-fn sessions_event(shared: &Shared) -> Outgoing {
-    let sessions: Vec<serde_json::Value> = shared
-        .sessions
+fn pages_event(shared: &Shared) -> Outgoing {
+    let pages: Vec<serde_json::Value> = shared
+        .order
         .iter()
         .map(|(id, last_active_at)| {
             // Props pass through whole from the file, so a key a newer CLI
@@ -1319,8 +1317,8 @@ fn sessions_event(shared: &Shared) -> Outgoing {
         })
         .collect();
     Outgoing {
-        kind: "sessions",
-        data: serde_json::json!({ "sessions": sessions }).to_string(),
+        kind: "pages",
+        data: serde_json::json!({ "pages": pages }).to_string(),
     }
 }
 
@@ -1336,18 +1334,18 @@ async fn root_redirect(req: actix_web::HttpRequest, state: Data<AppState>) -> Ht
     let most_active = {
         let shared = state.shared.lock().unwrap();
         shared
-            .sessions
+            .order
             .iter()
             .max_by_key(|(_, at)| *at)
             .map(|(id, _)| id.clone())
     };
     match most_active {
         Some(id) => HttpResponse::Found()
-            .insert_header(("Location", format!("/s/{}", crate::session::encode(&id))))
+            .insert_header(("Location", format!("/s/{}", crate::identity::encode(&id))))
             // The choice changes as pages become active: never cache it.
             .insert_header(("Cache-Control", "no-store"))
             .finish(),
-        // Empty project: serve the page shell directly ('/' has no session
+        // Empty project: serve the page shell directly ('/' has no page
         // in its match info, so the title is just the project's).
         None => page(req, state).await,
     }
@@ -1379,7 +1377,7 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
             } else {
                 format!("{project} — sideview")
             };
-            let title = match req.match_info().get("session") {
+            let title = match req.match_info().get("page") {
                 Some(id) => {
                     let label = state
                         .shared
@@ -1437,8 +1435,8 @@ async fn events(state: Data<AppState>) -> actix_web::Result<impl Responder> {
     let mut replay: Vec<sse::Event> = Vec::new();
     {
         let shared = state.shared.lock().unwrap();
-        replay.push(to_sse(sessions_event(&shared)));
-        for (id, _) in &shared.sessions {
+        replay.push(to_sse(pages_event(&shared)));
+        for (id, _) in &shared.order {
             if let Some(page) = shared.pages.get(id) {
                 for b in &page.blocks {
                     replay.push(to_sse(block_event(id, b)));
@@ -1626,10 +1624,10 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn delete_session_removes_file_and_binding_and_404s_on_unknown() {
+    async fn delete_page_removes_file_and_binding_and_404s_on_unknown() {
         let dir = std::env::temp_dir().join(format!("sv-del-{}", uuid::Uuid::new_v4()));
         let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
-        store.bind_session("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
+        store.bind_page("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
         let file = store.pages_dir().unwrap().join("s1.sv");
         std::fs::write(&file, "<sv-prose id=\"b1\">\nx\n</sv-prose>\n").unwrap();
         let (tx, _) = broadcast::channel(8);
@@ -1642,15 +1640,15 @@ mod tests {
         let app = actix_web::test::init_service(
             actix_web::App::new()
                 .app_data(state.clone())
-                .route("/api/sessions/{session}", web::delete().to(delete_session)),
+                .route("/api/pages/{page}", web::delete().to(delete_page)),
         )
         .await;
 
-        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/nope").to_request();
+        let req = actix_web::test::TestRequest::delete().uri("/api/pages/nope").to_request();
         let res = actix_web::test::call_service(&app, req).await;
         assert_eq!(res.status(), actix_web::http::StatusCode::NOT_FOUND);
 
-        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/s1").to_request();
+        let req = actix_web::test::TestRequest::delete().uri("/api/pages/s1").to_request();
         let res = actix_web::test::call_service(&app, req).await;
         assert_eq!(res.status(), actix_web::http::StatusCode::NO_CONTENT);
         assert!(!file.exists(), "the page file is deleted");
@@ -1664,8 +1662,8 @@ mod tests {
         // job or an explicit `page rm --file`, never a browser affordance.
         let doc = state.store.lock().unwrap().root.join("DESIGN.md");
         std::fs::write(&doc, "# Design\n").unwrap();
-        state.store.lock().unwrap().bind_session("DESIGN", "DESIGN.md", "/tmp", "config").unwrap();
-        let req = actix_web::test::TestRequest::delete().uri("/api/sessions/DESIGN").to_request();
+        state.store.lock().unwrap().bind_page("DESIGN", "DESIGN.md", "/tmp", "config").unwrap();
+        let req = actix_web::test::TestRequest::delete().uri("/api/pages/DESIGN").to_request();
         let res = actix_web::test::call_service(&app, req).await;
         assert_eq!(res.status(), actix_web::http::StatusCode::NO_CONTENT);
         assert!(doc.exists(), "a committed file survives the page's ✕");
@@ -1682,7 +1680,7 @@ mod tests {
         // Two committed pages, order attribute inverting path order…
         std::fs::write(store.root.join("zebra.sv"), "<sv-page order=\"1\">\n</sv-page>\n").unwrap();
         std::fs::write(store.root.join("alpha.sv"), "<sv-page order=\"2\">\n</sv-page>\n").unwrap();
-        // …and a throwaway whose filename encodes its session id.
+        // …and a throwaway whose filename encodes its page id.
         std::fs::write(
             store.pages_dir().unwrap().join("cwd%3A%2Ftmp%2Fp.sv"),
             "<sv-prose id=\"b1\">\nx\n</sv-prose>\n",
@@ -1775,7 +1773,7 @@ mod tests {
             actix_web::App::new()
                 .app_data(state.clone())
                 .route("/home", web::get().to(page))
-                .route("/s/{session}", web::get().to(page)),
+                .route("/s/{page}", web::get().to(page)),
         )
         .await;
         let project = state.root.file_name().unwrap().to_string_lossy().to_string();
@@ -1820,9 +1818,9 @@ mod tests {
             "<sv-page>\n\n<sv-prose id=\"b1\">\nold text\n</sv-prose>\n\n<sv-markup id=\"b2\">\n<div>card</div>\n</sv-markup>\n\n</sv-page>\n",
         )
         .unwrap();
-        store.bind_session("plan", "plan.sv", "/tmp", "test").unwrap();
+        store.bind_page("plan", "plan.sv", "/tmp", "test").unwrap();
         std::fs::write(store.root.join("NOTES.md"), "# imported\n\nnot spliceable\n").unwrap();
-        store.bind_session("NOTES", "NOTES.md", "/tmp", "test").unwrap();
+        store.bind_page("NOTES", "NOTES.md", "/tmp", "test").unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -2096,11 +2094,11 @@ mod tests {
         assert_eq!(actix_web::test::call_service(&app, req).await.status().as_u16(), 404);
     }
 
-    /// Session ids can contain `/` and `%` (cwd and tmux rungs). The printed
+    /// Page ids can contain `/` and `%` (cwd and tmux rungs). The printed
     /// URLs percent-encode them; this pins that the encoded form actually
     /// matches the single-segment page route.
     #[actix_web::test]
-    async fn encoded_session_ids_match_the_page_route() {
+    async fn encoded_page_ids_match_the_page_route() {
         let dir = std::env::temp_dir().join(format!("sv-en-{}", uuid::Uuid::new_v4()));
         let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
         let (tx, _) = broadcast::channel(8);
@@ -2113,7 +2111,7 @@ mod tests {
         let app = actix_web::test::init_service(
             actix_web::App::new()
                 .app_data(state)
-                .route("/s/{session}", actix_web::web::get().to(page)),
+                .route("/s/{page}", actix_web::web::get().to(page)),
         )
         .await;
         for uri in ["/s/cwd%3A%2Fhome%2Fdavid%2Fproj", "/s/tmux%2542"] {
