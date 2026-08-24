@@ -119,8 +119,11 @@ Recorded so they aren't re-proposed as cuts:
 ## Drill: the rename (step 1, committed fc89732)
 
 The rename is in: `--page` on every verb, `sideview pages`, the `session` alias gone, the
-SSE event and block-event keys renamed, app.js and the skill following, 0.5.0. Four things
-happened that the plan didn't predict — round 1 below.
+SSE event and block-event keys renamed, app.js and the skill following, 0.5.0. Four
+surprises went to round 1; **settled 2026-08-24 (thread 124)**: `/s/` overruled — page
+URLs are `/p/` now, landed as 45f48cf, old bookmarks 404 — and identity.rs, the verbatim
+migration DDL, and the clean break all stood as recommended. Step 1 closed; the daemon
+needs `sideview restart` to serve 0.5.0.
 </sv-prose>
 
 <sv-ask id="d1q1" round="1">
