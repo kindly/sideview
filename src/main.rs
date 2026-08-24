@@ -1,17 +1,15 @@
-mod ask;
 mod cli;
+use sideview_blocks as blocks;
+#[allow(unused_imports)]
+use blocks::{ask, csv, diff, format, render};
 mod config;
-mod csv;
 mod daemon;
-mod diff;
 mod ext;
-mod format;
 mod monitor;
 mod logic;
 mod models;
 mod netcheck;
 mod poll;
-mod render;
 mod identity;
 mod skill;
 

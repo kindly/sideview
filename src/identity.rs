@@ -71,10 +71,7 @@ pub fn inside_agent() -> bool {
 /// is not, and the same encoding serving both uses means the file for a
 /// page is recognizable from its URL.
 pub fn encode(id: &str) -> String {
-    use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-    const SEGMENT: &AsciiSet =
-        &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
-    utf8_percent_encode(id, SEGMENT).to_string()
+    sideview_blocks::encode_id(id)
 }
 
 /// The throwaway page file for a page id, relative to the project root: a

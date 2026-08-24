@@ -195,22 +195,6 @@ fn prose_outline(text: &str, prefix: &str) -> Vec<Heading> {
     out
 }
 
-/// Lenient parse — never errors, whatever an agent wrote. `keep_ids` is true
-/// for markup (an author-supplied id is reachable in the page, which makes it
-/// the explicit supply mechanism) and false for iframe-isolated documents.
-fn fragment_outline(html: &str, keep_ids: bool) -> Vec<Heading> {
-    let doc = scraper::Html::parse_fragment(html);
-    let selector =
-        scraper::Selector::parse("h1,h2,h3,h4,h5,h6").expect("static selector parses");
-    doc.select(&selector)
-        .map(|el| Heading {
-            level: el.value().name().as_bytes()[1] - b'0',
-            text: el.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "),
-            id: if keep_ids { el.value().id().map(str::to_string) } else { None },
-        })
-        .collect()
-}
-
 /// Whole documents are isolated in a sandboxed iframe, with the same base
 /// stylesheets injected so isolated blocks look consistent for free — plus
 /// the envelope script: a versioned postMessage channel ({sv:1, type:…})
@@ -268,8 +252,8 @@ pub fn ext_block(id: &str, ext_name: &str, page_id: &str, height: Option<&str>) 
     let src = format!(
         "/x/{}/{}/{}/",
         ext_name,
-        crate::identity::encode(page_id),
-        crate::identity::encode(id)
+        crate::encode_id(page_id),
+        crate::encode_id(id)
     );
     let style = match height.filter(|h| is_css_length(h)) {
         Some(h) => format!(r#" data-sv-fixed="1" style="height:{h}""#),
@@ -295,7 +279,7 @@ fn attr_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('"', "&quot;")
 }
 
-pub(crate) fn text_escape(s: &str) -> String {
+pub fn text_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
