@@ -121,6 +121,22 @@ struct AppState {
 #[folder = "static/"]
 struct Assets;
 
+/// Try to open a browser; failure just means the printed URL is the path.
+/// Inside an agent, don't even try — xdg-open needs a desktop session the
+/// sandbox doesn't reach.
+pub fn open_browser(url: &str) {
+    if crate::identity::inside_agent() {
+        return;
+    }
+    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let _ = std::process::Command::new(opener)
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     let verdict = netcheck::verdict();
     if !verdict.reachable {
@@ -220,7 +236,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     }
 
     if opts.open_browser {
-        crate::cli::open_browser(&format!("http://127.0.0.1:{port}/"));
+        open_browser(&format!("http://127.0.0.1:{port}/"));
     }
 
     let (tx, _) = broadcast::channel::<Outgoing>(1024);
@@ -610,8 +626,7 @@ struct EditBody {
 /// authoring power — strip this and /api/comments' kind under any future
 /// read-only share.
 async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Responder {
-    use std::os::fd::AsRawFd as _;
-    let e = body.into_inner();
+        let e = body.into_inner();
     let (root, rel) = {
         let store = state.store.lock().unwrap();
         match base::binding(&store, &e.page) {
@@ -624,13 +639,9 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
             .body(format!("{rel} is an imported page — edit the source file itself"));
     }
     let path = root.join(&rel);
-    let lock_path = path.with_extension("sv.lock");
-    let Ok(lock) = std::fs::File::create(&lock_path) else {
-        return HttpResponse::InternalServerError().body("could not create the page lock");
-    };
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
+    let Ok(lock) = crate::logic::edit::lock_page(&path) else {
         return HttpResponse::InternalServerError().body("could not lock the page");
-    }
+    };
     let Ok(current) = std::fs::read_to_string(&path) else {
         return HttpResponse::NotFound().body("page file unreadable");
     };
@@ -652,7 +663,7 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
     }
     let attrs: Vec<(&str, &str)> = b.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let block_text = crate::format::block_text("sv-prose", &attrs, &e.body);
-    let next = crate::cli::splice(&current, b.lines, Some(&block_text));
+    let next = crate::logic::edit::splice(&current, b.lines, Some(&block_text));
     let tmp = path.with_extension("sv.tmp");
     if std::fs::write(&tmp, &next).is_err() || std::fs::rename(&tmp, &path).is_err() {
         return HttpResponse::InternalServerError().body("could not write the page");
