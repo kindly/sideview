@@ -52,7 +52,14 @@ yet — this version is preventative.
   into its concept. Cross-concept needs go boundary-first (fold, as attachments into
   conversation), else one-directional concept-to-concept logic calls (a DAG, like
   format ← render today). Pipelines (block stack, poll loop) stay pipelines — the layering
-  is for the CRUD-shaped half, not a costume for everything. *(thread 117)*
+  is for the CRUD-shaped half, not a costume for everything. The layers are directories
+  (round 3, executed fc4f8cd): `models/{base,conversation}.rs` and
+  `logic/{base,conversation}.rs`, base holding what has no concept of its own —
+  layer-first over concept-first deliberately, because cross-cutting logic that owns no
+  model (gc, the rm cascade) gets a plain file in logic/ with no models/ twin, which
+  concept-first cannot express (thread 126). logic/base is thin one-line wrappers so the
+  import law is total; the Store handle itself stays the argument everything passes.
+  *(threads 117, 125–127)*
 - **Watch simplifies to one delivery concept, and gains filters.** `--claim`
   (exactly-once multi-watcher splitting) is dropped: orchestration beats a blocking queue,
   and a claimed-then-crashed event is invisible forever. `--ack` stays — it is the delivery
@@ -243,6 +250,8 @@ Drill round 2: the conversation library's five surprises. Approving closes step 
 The target: `models/conversation` (today's conversation.rs — models fused with algorithms
 and SQL) and `logic/conversation` (today's ops.rs), beside `models/base` and `logic/base`
 for the domains that have no concept of their own. Four questions decide the exact shape.
+**Approved all as suggested and executed (fc4f8cd, thread 127)**; the layer-first
+rationale — cross-cutting logic needs no model twin — recorded from thread 126.
 </sv-prose>
 
 <sv-ask id="d3q1" round="3">
