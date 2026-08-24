@@ -174,7 +174,11 @@ conversation.rs (671 lines: models + algorithms + SQL + event shapes) behind ops
 lines: the logic layer). store.rs shrank 1272 → 647. post_comment, the guards, and the
 watch decisions each exist once; daemon, cli, and monitor import ops and nothing below
 it. `--claim` is gone; `--page`/`--category` work, verified live against this store.
-Round 2: what the implementation did that the plan didn't predict.
+Round 2 settled all five surprises as recommended (thread 125) — but revised the
+*structure*: the flat ops.rs and its name go, replaced by two directories, `models/` and
+`logic/`, each categorized by concept with a `base` for what has no concept of its own.
+The logic layer gets categories too, not just the models. Round 3 below drills the exact
+shape before the move.
 </sv-prose>
 
 <sv-ask id="d2q1" round="2">
@@ -230,6 +234,55 @@ eventual enforcement.
 <sv-ask id="d2fin" round="2" role="close">
 Drill round 2: the conversation library's five surprises. Approving closes step 2; step 3
 (block crate, poll loop, edit module) starts next.
+</sv-ask>
+
+
+<sv-prose id="drill3">
+## Drill: the models/ and logic/ directories (round 3, before the move)
+
+The target: `models/conversation` (today's conversation.rs — models fused with algorithms
+and SQL) and `logic/conversation` (today's ops.rs), beside `models/base` and `logic/base`
+for the domains that have no concept of their own. Four questions decide the exact shape.
+</sv-prose>
+
+<sv-ask id="d3q1" round="3">
+**What is `models/base`, and where does the Store struct live?** store.rs today =
+infrastructure (the Store struct, open, migrate, meta) + three small domains (bindings,
+outlines, the daemon liveness row).
+- * store.rs moves wholesale to `models/base.rs` — infrastructure and the uncategorized domains in one file, least churn, "one file" spirit kept
+- Split: store.rs keeps the Store struct/open/migrate as pure infrastructure; only the three domains move to models/base.rs
+- Keep store.rs where it is, name unchanged; models/ starts with conversation only
+</sv-ask>
+
+<sv-ask id="d3q2" round="3">
+**Does `logic/base` get written now?** Interfaces still call bindings/outline/daemon-row
+operations on the Store directly — the conversation ops were the logic layer's first
+residents. Writing logic/base now (thin wrappers for outline set/clear, binding
+list/get/delete, daemon lifecycle) makes the law total: interfaces import logic/ and
+nothing else, zero exceptions, one grep. (Holding the Store handle itself — open, .root —
+stays direct either way; it's the argument everything passes, not a decision.)
+- * Now, thin — the law becomes total while the code is already moving
+- Lazily — logic/base grows as each domain is next touched
+</sv-ask>
+
+<sv-ask id="d3q3" round="3">
+**Naming details.** Two small choices that set the pattern for every future concept.
+- * Singular concept names (`models/conversation.rs`, `logic/conversation.rs`), watch machinery inside logic/conversation
+- Plural (`models/conversations.rs`) — as written in your note
+</sv-ask>
+
+<sv-ask id="d3q4" round="3">
+**What stays outside models/ and logic/.** Per the layering law, pipelines aren't the
+CRUD shape: the block stack (format, render, ask, csv, diff — step 3's crate), the poll
+loop, and the coming edit module stay top-level, as do the interfaces (main, cli, daemon,
+monitor) and the small utilities (identity, config, netcheck, skill, ext).
+- * Confirmed — models/ and logic/ hold the CRUD-shaped concepts only
+- No — pull more of it under the two directories (rider says what)
+</sv-ask>
+
+<sv-ask id="d3fin" round="3" role="close">
+Round 3: the directory structure, before any file moves. Approving executes the move;
+step 3 (block crate, poll loop, edit module) follows on the new layout.
 </sv-ask>
 
 </sv-page>
