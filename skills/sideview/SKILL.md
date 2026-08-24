@@ -250,10 +250,9 @@ or selecting exact words and clicking the bubble chip; every conversation
 lives in the right-hand comment bar (open threads as cards, resolved folded
 beneath), never inline. Await their feedback with `sideview watch --since 0 --skip-author
 agent --ack` — typed JSON-lines, one event per comment/resolve, your own echoes
-filtered server-side. Add `--claim` only when several watchers split one
-page's work and each event is acted on the moment it is read: claim couples
-"seen" with "acted", and a claimed event lost in transit is invisible to
-reach-back. Reply on the thread the event names:
+filtered server-side. Scope a watcher with `--page <id>` and/or
+`--category <name>` (both repeatable) — every watcher sees everything its
+filter keeps, and several watchers on one project each get their own copy. Reply on the thread the event names:
 `sideview comment --thread <id>` (body on stdin) — and pass `--page <page>`
 from the same event as a guard: it refuses if the thread lives elsewhere,
 which catches the classic agent hazard of a resetting shell resolving the

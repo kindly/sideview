@@ -421,7 +421,7 @@ async fn upload_attachment(
     // and then to honest octet-stream.
     let mime = sniff_mime(&body, &name);
 
-    let attachments_root = state.store.lock().unwrap().dir.join(crate::store::ATTACHMENTS_DIR);
+    let attachments_root = state.store.lock().unwrap().dir.join(crate::ops::ATTACHMENTS_DIR);
     // <sha8> is the dedupe address; on the astronomical prefix collision
     // (same 8 hex chars, different content, same filename) fall back to the
     // full hash as the directory rather than overwrite.
@@ -437,7 +437,7 @@ async fn upload_attachment(
             .unwrap_or(false);
         if same {
             return HttpResponse::Ok().json(serde_json::json!({
-                "path": format!("{}{}/{}", crate::store::ATTACHMENTS_PREFIX, dir_name, name),
+                "path": format!("{}{}/{}", crate::ops::ATTACHMENTS_PREFIX, dir_name, name),
                 "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
             }));
         }
@@ -455,7 +455,7 @@ async fn upload_attachment(
         return HttpResponse::InternalServerError().body(format!("{e}"));
     }
     HttpResponse::Ok().json(serde_json::json!({
-        "path": format!("{}{}/{}", crate::store::ATTACHMENTS_PREFIX, dir_name, name),
+        "path": format!("{}{}/{}", crate::ops::ATTACHMENTS_PREFIX, dir_name, name),
         "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
     }))
 }
@@ -515,7 +515,7 @@ struct CommentBody {
     #[serde(default)]
     kind: Option<String>,
     #[serde(default)]
-    attachments: Vec<crate::store::NewAttachment>,
+    attachments: Vec<crate::ops::NewAttachment>,
 }
 
 async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> impl Responder {
@@ -531,31 +531,19 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         }
     };
     let mut store = state.store.lock().unwrap();
-    // A row is a future deletion (page rm, gc), so verify each claimed
-    // attachment is a real file in the attachments home before binding it.
-    for a in &b.attachments {
-        if !crate::store::is_attachment_path(&a.path) || !store.root.join(&a.path).is_file() {
-            return HttpResponse::BadRequest()
-                .body(format!("attachment {:?} is not an uploaded file", a.path));
-        }
-    }
-    let result = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
-        (Some(tid), _, _) => {
-            store.reply(tid, &b.body, Some("user"), kind, &b.attachments).map(|cid| (tid, cid))
-        }
-        (None, Some(page), Some(target)) => store.create_thread(
+    let target = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
+        (Some(tid), _, _) => crate::ops::CommentTarget::Reply { thread: tid },
+        (None, Some(page), Some(target)) => crate::ops::CommentTarget::NewThread {
             page,
             target,
-            &b.anchor,
-            b.quote.as_deref(),
-            b.context.as_deref(),
-            &b.body,
-            Some("user"),
-            kind,
-            &b.attachments,
-        ),
+            anchor: &b.anchor,
+            quote: b.quote.as_deref(),
+            context: b.context.as_deref(),
+        },
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
+    let result =
+        crate::ops::post_comment(&mut store, target, &b.body, Some("user"), kind, &b.attachments, None);
     match result {
         Ok((thread, id)) => HttpResponse::Ok().json(serde_json::json!({
             "thread": thread, "id": id,
@@ -671,17 +659,7 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
     // The machine-mail record: how watch stays honest about the file moving
     // under the agent. Only this endpoint mints kind='edited'.
     let mut store = state.store.lock().unwrap();
-    if let Err(err) = store.create_thread(
-        &e.page,
-        &e.block,
-        "",
-        Some(&format!("edit {}", e.block)),
-        None,
-        "edited from the page",
-        Some("user"),
-        "edited",
-        &[],
-    ) {
+    if let Err(err) = crate::ops::record_edited(&mut store, &e.page, &e.block) {
         return HttpResponse::InternalServerError().body(format!("{err:#}"));
     }
     HttpResponse::Ok().json(serde_json::json!({ "hash": crate::format::body_hash(&e.body) }))
@@ -820,12 +798,9 @@ async fn unresolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl R
 /// for a state the thread already holds is success, not conflict.
 fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
     let mut store = state.store.lock().unwrap();
-    match store.thread(id) {
+    match crate::ops::resolve(&mut store, id, Some("user"), undo, None) {
         Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
-        Ok(Some(_)) => match store.resolve_thread(id, Some("user"), undo) {
-            Ok(_) => HttpResponse::NoContent().finish(),
-            Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
-        },
+        Ok(Some(_)) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
     }
 }
@@ -833,24 +808,7 @@ fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
 /// One page's conversation, serialized for the `threads` SSE event. Sent
 /// whole on every change — page-scale, same reasoning as block replay.
 fn conversation_json(store: &Store, page: &str) -> Result<String> {
-    // Comments travel rendered (body_html) beside their source: the card
-    // shows comrak's safe-mode markdown, agents keep reading raw bodies.
-    let comments: Vec<serde_json::Value> = store
-        .comments_for_page(page)?
-        .into_iter()
-        .map(|c| {
-            let mut v = serde_json::to_value(&c).expect("comment serializes");
-            v["body_html"] = serde_json::Value::String(crate::render::comment_body(&c.body));
-            v
-        })
-        .collect();
-    Ok(serde_json::json!({
-        "page": page,
-        "threads": store.threads_for_page(page)?,
-        "comments": comments,
-        "attachments": store.attachments_for_page(page)?,
-    })
-    .to_string())
+    crate::ops::snapshot_json(store, page)
 }
 
 fn threads_event(data: String) -> Outgoing {
@@ -1040,7 +998,7 @@ fn poll_loop(
             // On any conversation mutation: re-serialize conversation
             // snapshots (shipping the pages that changed), and reload the
             // explicit outlines, which ride the pages event as a prop.
-            let g = store.conversation_gen().unwrap_or(conversation_gen);
+            let g = crate::ops::generation(&store).unwrap_or(conversation_gen);
             if g != conversation_gen {
                 conversation_gen = g;
 
@@ -1057,7 +1015,7 @@ fn poll_loop(
                     changed_pages = true;
                 }
 
-                let pages = store.conversation_pages().unwrap_or_default();
+                let pages = crate::ops::pages_with_conversation(&store).unwrap_or_default();
                 for page in &pages {
                     if let Ok(json) = conversation_json(&store, page) {
                         if shared.conversations.get(page) != Some(&json) {
@@ -1750,8 +1708,8 @@ mod tests {
             assert_eq!(res.status().as_u16(), expect, "{uri}");
         }
         let store = state.store.lock().unwrap();
-        assert_eq!(store.comments_for_page("v2").unwrap().len(), 2);
-        assert!(store.threads_for_page("v2").unwrap()[0].resolved_at.is_none());
+        assert_eq!(crate::conversation::comments_for_page(&store, "v2").unwrap().len(), 2);
+        assert!(crate::conversation::threads_for_page(&store, "v2").unwrap()[0].resolved_at.is_none());
     }
 
     #[actix_web::test]
@@ -1869,7 +1827,7 @@ mod tests {
             let store = state.store.lock().unwrap();
             let file = std::fs::read_to_string(store.root.join("plan.sv")).unwrap();
             assert!(file.contains("new **text**") && !file.contains("old text"));
-            let comments = store.comments_for_page("plan").unwrap();
+            let comments = crate::conversation::comments_for_page(&store, "plan").unwrap();
             assert_eq!(comments.len(), 1);
             assert_eq!(comments[0].kind, "edited", "only the splice endpoint mints these");
         }
@@ -1928,7 +1886,7 @@ mod tests {
         assert_eq!(res.status().as_u16(), 400);
         let store = state.store.lock().unwrap();
         let kinds: Vec<String> =
-            store.comments_for_page("plan").unwrap().into_iter().map(|c| c.kind).collect();
+            crate::conversation::comments_for_page(&store, "plan").unwrap().into_iter().map(|c| c.kind).collect();
         assert_eq!(kinds, vec!["edited".to_string(), "edit".to_string()]);
     }
 
@@ -1966,7 +1924,7 @@ mod tests {
         assert_eq!(a["name"], "sh ot.png", "last path segment only — traversal shed at the door");
         assert_eq!(a["mime"], "image/png", "magic bytes, not the claimed extension's word");
         let rel = a["path"].as_str().unwrap().to_string();
-        assert!(rel.starts_with(crate::store::ATTACHMENTS_PREFIX));
+        assert!(rel.starts_with(crate::ops::ATTACHMENTS_PREFIX));
         let abs = state.store.lock().unwrap().root.join(&rel);
         assert!(abs.is_file());
 
@@ -1990,7 +1948,7 @@ mod tests {
         assert!(res.status().is_success());
         {
             let store = state.store.lock().unwrap();
-            let atts = store.attachments_for_page("v3").unwrap();
+            let atts = crate::conversation::attachments_for_page(&store, "v3").unwrap();
             assert_eq!(atts.len(), 1);
             assert_eq!(atts[0].path, rel);
             let json = conversation_json(&store, "v3").unwrap();

@@ -22,6 +22,7 @@ use crate::daemon;
 use crate::format;
 use crate::netcheck;
 use crate::identity;
+use crate::ops;
 use crate::store::{self, Store, SPAWN_LOCK};
 
 pub enum Kind {
@@ -637,7 +638,8 @@ pub fn comment(
     if body.is_empty() {
         bail!("empty comment (body arrives on stdin)");
     }
-    let thread_id = match (thread, block) {
+    let page_owned;
+    let target = match (thread, block) {
         (Some(_), Some(_)) => {
             bail!("pass a block to start a thread, or --thread to reply — not both")
         }
@@ -645,16 +647,7 @@ pub fn comment(
             if at.is_some() {
                 bail!("--at places a new thread; a reply inherits its thread's anchor");
             }
-            // The guard: watch events hand the agent page+thread together, so
-            // asserting the pair costs nothing and catches the cross-project
-            // id collision the FK can't (same id existing in both stores).
-            if let (Some(p), Some(t)) = (page, store.thread(tid)?) {
-                if t.page != p {
-                    bail!("thread {tid} is on page {:?}, not {p:?} — wrong project?", t.page);
-                }
-            }
-            store.reply(tid, body, Some("agent"), "comment", &[])?;
-            tid
+            ops::CommentTarget::Reply { thread: tid }
         }
         (None, Some(target)) => {
             // Commenting never mints a page binding — resolve without binding.
@@ -663,21 +656,19 @@ pub fn comment(
                 Some(p) => p.to_string(),
                 None => identity::resolve(None, &cwd).id,
             };
-            let (tid, _) = store.create_thread(
-                &page_id,
+            page_owned = page_id;
+            ops::CommentTarget::NewThread {
+                page: &page_owned,
                 target,
-                at.unwrap_or(""),
-                None,
-                None,
-                body,
-                Some("agent"),
-                "comment",
-                &[],
-            )?;
-            tid
+                anchor: at.unwrap_or(""),
+                quote: None,
+                context: None,
+            }
         }
         (None, None) => bail!("name a block to comment on, or --thread to reply"),
     };
+    let (thread_id, _) =
+        ops::post_comment(&mut store, target, body, Some("agent"), "comment", &[], page)?;
     println!("{thread_id}");
     eprintln!("→ {}", store.root.display());
     Ok(())
@@ -688,15 +679,10 @@ pub fn comment(
 /// in the page-tail list.
 pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let Some(t) = store.thread(thread)? else {
+    let Some((t, changed)) = ops::resolve(&mut store, thread, Some("agent"), undo, page)? else {
         bail!("no thread {thread}");
     };
-    if let Some(p) = page {
-        if t.page != p {
-            bail!("thread {thread} is on page {:?}, not {p:?} — wrong project?", t.page);
-        }
-    }
-    if !store.resolve_thread(thread, Some("agent"), undo)? {
+    if !changed {
         // The state it's already in, said plainly — not an error worth a
         // nonzero exit, since the desired end state holds.
         eprintln!(
@@ -719,15 +705,10 @@ pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
 /// working; the reply (or a resolve) retires it automatically.
 pub fn working(thread: i64, page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let Some(t) = store.thread(thread)? else {
+    let Some((_, changed)) = ops::working(&mut store, thread, Some("agent"), page)? else {
         bail!("no thread {thread}");
     };
-    if let Some(p) = page {
-        if t.page != p {
-            bail!("thread {thread} is on page {:?}, not {p:?} — wrong project?", t.page);
-        }
-    }
-    if !store.set_working(thread, Some("agent"))? {
+    if !changed {
         eprintln!("thread {thread} is resolved — nothing to work on");
         return Ok(());
     }
@@ -766,12 +747,15 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
 /// `sideview watch` — the agent's await: a blocking read on the store
 /// itself. Typed JSON-lines on stdout (comment / resolve / unresolve), one
 /// object per line. Sandbox-compatible (SQLite file access, no network) and
-/// daemon-independent. `--claim` uses the supersession pattern so several
-/// agents serving one page each see a comment exactly once.
+/// daemon-independent. One delivery concept: every watcher sees everything
+/// its filter keeps; `--ack` receipts what it emits. `--page` and
+/// `--category` (both repeatable) scope the watch — the decisions live in
+/// ops::watch_tick, this loop only paces and prints.
 pub fn watch(
     timeout: Option<u64>,
     since: Option<i64>,
-    claim: bool,
+    pages: Vec<String>,
+    categories: Vec<String>,
     skip_author: Option<&str>,
     ack: bool,
 ) -> Result<()> {
@@ -781,86 +765,20 @@ pub fn watch(
     let whoami = format!("watch:{}", std::process::id());
     let deadline = timeout.map(|t| Instant::now() + Duration::from_secs(t));
 
-    // Watch starts at its invocation moment; --since reaches back (comments
-    // only — resolution is state, so only transitions from here on out).
-    let mut cursor = match since {
-        Some(id) => id,
-        None => store.max_comment_id()?,
+    let mut state = ops::watch_start(&store, since)?;
+    let filter = ops::WatchFilter {
+        skip_author: skip_author.map(str::to_string),
+        pages,
+        categories,
     };
-    let mut resolutions: std::collections::HashMap<i64, Option<i64>> = store
-        .thread_resolutions()?
-        .into_iter()
-        .map(|(id, _, at, _)| (id, at))
-        .collect();
+    let ack_by = ack.then_some(whoami.as_str());
 
     let mut out = std::io::stdout();
-    let mut generation = -1i64; // never matches, so the first pass always reads
     loop {
-        let g = store.conversation_gen()?;
-        if g != generation {
-            generation = g;
-
-            for (c, t) in store.comments_after(cursor)? {
-                cursor = cursor.max(c.id);
-                // Filter before claim: an event this watcher won't emit is
-                // not one it should take from anyone else.
-                if skip_author.is_some() && c.author.as_deref() == skip_author {
-                    continue;
-                }
-                if claim && !store.claim_comment(c.id, &whoami)? {
-                    continue; // another watcher got it — exactly-once holds
-                }
-                if ack {
-                    store.ack_comment(c.id, &whoami)?;
-                }
-                let line = serde_json::json!({
-                    "type": "comment",
-                    // 'comment' | 'edit' (a proposed change to merge) |
-                    // 'edited' (a prose block was spliced from the page —
-                    // re-read the file before your next update/rm there).
-                    "kind": c.kind,
-                    "id": c.id,
-                    "thread": t.id,
-                    "page": t.page,
-                    "target": t.target,
-                    "anchor": t.anchor,
-                    "quote": t.quote,
-                    "body": c.body,
-                    "author": c.author,
-                    "created_at": c.created_at,
-                    // The whole rows (path, name, mime, bytes), so an agent
-                    // can decide whether to pull a 2KB csv or leave a 200MB
-                    // parquet unread without touching either.
-                    "attachments": store.attachments_for_comment(c.id)?,
-                });
-                writeln!(out, "{line}")?;
-                out.flush()?;
-            }
-
-            for (id, page, at, by) in store.thread_resolutions()? {
-                let known = resolutions.insert(id, at);
-                let skip = skip_author.is_some() && by.as_deref() == skip_author;
-                let event = match (known, at) {
-                    _ if skip => None,
-                    (Some(None), Some(when)) => Some(serde_json::json!({
-                        "type": "resolve", "thread": id, "page": page,
-                        "by": by, "created_at": when,
-                    })),
-                    (Some(Some(_)), None) => Some(serde_json::json!({
-                        "type": "unresolve", "thread": id, "page": page,
-                        "created_at": store::now_ms(),
-                    })),
-                    // New threads announce themselves through their first
-                    // comment; a state seen at baseline is not an event.
-                    _ => None,
-                };
-                if let Some(line) = event {
-                    writeln!(out, "{line}")?;
-                    out.flush()?;
-                }
-            }
+        for line in ops::watch_tick(&mut store, &mut state, &filter, ack_by)? {
+            writeln!(out, "{line}")?;
+            out.flush()?;
         }
-
         if deadline.map_or(false, |d| Instant::now() >= d) {
             return Ok(()); // --timeout gives up quietly
         }
@@ -876,7 +794,7 @@ pub fn watch(
 /// leaves `.sideview/attachments/`.
 pub fn attachments_gc(resolved: bool) -> Result<()> {
     let mut store = open_project_store()?;
-    let home = store.dir.join(store::ATTACHMENTS_DIR);
+    let home = store.dir.join(ops::ATTACHMENTS_DIR);
 
     let mut on_disk: Vec<String> = Vec::new();
     let mut stack = vec![home.clone()];
@@ -898,7 +816,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
     on_disk.sort();
 
     let refs: std::collections::HashMap<String, bool> =
-        store.attachment_refs()?.into_iter().collect();
+        ops::attachment_refs(&store)?.into_iter().collect();
     // Every current page's raw content — the backstop that protects a file a
     // page references directly, and names it as mis-homed while doing so.
     let pages: Vec<(String, String)> = store
@@ -922,7 +840,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
             }
             (Some(false), None) => {
                 if resolved {
-                    store.delete_attachment_rows(&rel)?;
+                    ops::delete_attachment_rows(&mut store, &rel)?;
                     true
                 } else {
                     resolved_held += 1;
@@ -933,7 +851,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
         };
         if take {
             freed += std::fs::metadata(store.root.join(&rel)).map(|m| m.len()).unwrap_or(0);
-            store.unlink_attachment(&rel);
+            ops::unlink_attachment(&store, &rel);
             collected += 1;
             println!("collected {rel}");
         }

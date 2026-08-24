@@ -61,9 +61,9 @@ Keep the first implementation intentionally temporary:
 - A restart clears every monitor; the user starts it again after resuming the chat.
 - Do not implement durable cursors, retries across restart, process detachment, or
   automatic restoration.
-- Do not use `--since 0`, `--claim`, or `--ack`. Claim can lose an event after a
-  delivery failure; ack currently describes Sideview emission, not confirmed OpenCode
-  acceptance. Durability belongs in a later design if this experiment earns it.
+- Do not use `--since 0` or `--ack`. Ack currently describes Sideview emission, not
+  confirmed OpenCode acceptance; durability belongs in a later design if this
+  experiment earns it. (`--claim` no longer exists — Sideview 0.5 dropped it.)
 
 ## Plugin contract
 

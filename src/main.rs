@@ -1,6 +1,7 @@
 mod ask;
 mod cli;
 mod config;
+mod conversation;
 mod csv;
 mod daemon;
 mod diff;
@@ -8,6 +9,7 @@ mod ext;
 mod format;
 mod monitor;
 mod netcheck;
+mod ops;
 mod render;
 mod identity;
 mod skill;
@@ -147,18 +149,19 @@ enum Cmd {
         /// Also emit comments back to this id (watch starts at invocation otherwise)
         #[arg(long)]
         since: Option<i64>,
-        /// Claim each comment (exactly-once across concurrent watchers).
-        /// Claim only what you will act on: a claimed event lost in transit
-        /// is invisible to reach-back
+        /// Keep only this page's events (repeatable)
         #[arg(long)]
-        claim: bool,
+        page: Vec<String>,
+        /// Keep only events on pages in this category (repeatable)
+        #[arg(long)]
+        category: Vec<String>,
         /// Drop events authored by this role (e.g. your own echoes: agent).
         /// Server-side, so a comment merely quoting the pattern survives
         #[arg(long)]
         skip_author: Option<String>,
         /// Stamp each emitted comment as seen (a delivery receipt the page
         /// shows as "seen" while the agent works — receipt, not cognition,
-        /// and unlike --claim it never suppresses emission)
+        /// never suppression)
         #[arg(long)]
         ack: bool,
     },
@@ -383,10 +386,11 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Watch {
             timeout,
             since,
-            claim,
+            page,
+            category,
             skip_author,
             ack,
-        }) => cli::watch(timeout, since, claim, skip_author.as_deref(), ack),
+        }) => cli::watch(timeout, since, page, category, skip_author.as_deref(), ack),
         Some(Cmd::Monitor {
             action:
                 MonitorCmd::Codex {

@@ -62,42 +62,36 @@ use project-wide steward mode.
 This Pi session is the Sideview inbox for the whole project. Spawn:
 
 ```text
-sideview --project <project-root> watch --since 0 --claim --ack --skip-author agent
+sideview --project <project-root> watch --since 0 --ack --skip-author agent
 ```
 
 Meaning:
 
-- `--since 0` reaches back to unclaimed comments.
-- `--claim` makes this watcher the exactly-once consumer for comments it emits.
+- `--since 0` reaches back to comments posted before the watcher started.
 - `--ack` records Sideview delivery, not human/model comprehension.
 - `--skip-author agent` prevents the agent's own Sideview replies from waking it.
 
-Warn clearly: a project-wide claimer may consume comments for any page in this
-project. That is correct for an inbox/steward session and wrong for a per-page owner.
-Do not run two project-wide claimers in the same project unless the user accepts that
-whichever one wins the claim owns the event.
+Every watcher sees everything its filter keeps — there is no exactly-once claim
+(Sideview 0.5 dropped `--claim`: orchestration beats a blocking queue). Warn
+clearly: two project-wide watchers in one project both deliver every event, each
+into its own Pi session. Run one steward per project, or scope by page.
 
-### Page-scoped mode — only if the installed Sideview supports it
+### Page-scoped mode
 
-Before generating page-scoped claim code, run `sideview watch --help` and verify a
-real page filter exists, such as `--page`. If it exists, spawn the equivalent of:
+Spawn with the native page filter (`--page` is repeatable; `--category <name>`
+scopes by page category the same way):
 
 ```text
-sideview --project <project-root> watch --page <page-id> --since 0 --claim --ack --skip-author agent
+sideview --project <project-root> watch --page <page-id> --since 0 --ack --skip-author agent
 ```
 
 Set the child environment's `SIDEVIEW_SESSION` to a stable Pi-derived id such as
 `pi:<ctx.sessionManager.getSessionId()>` when authoring page-scoped content.
 
-If the installed Sideview has no page filter, do not fake safe page-scoped claiming.
-You may offer an unclaimed local filter for demos only:
-
-```text
-sideview --project <project-root> watch --skip-author agent
-```
-
-then drop events whose `page` is not the wanted page. State that this duplicates
-rather than owns events and is not an exactly-once monitor.
+On a pre-0.5 Sideview (`watch --help` lacks `--page`), fall back to a local
+filter: spawn without the flag and drop events whose `page` is not the wanted
+page. Never pass `--claim` — 0.5 removed it, and on older versions a claimed
+event lost in transit is invisible to reach-back.
 
 ## Extension contract
 
@@ -139,7 +133,6 @@ The status command and status tool report:
 - last event summary
 - last error
 - bounded stderr tail
-- whether project-wide `--claim` is active
 
 ## Implementation template
 
@@ -156,7 +149,7 @@ import { join } from "node:path";
 const MAX_LINE = 1024 * 1024;
 const MAX_TAIL = 8192;
 
-type Mode = { kind: "project" } | { kind: "page"; page: string; claimSafe: boolean };
+type Mode = { kind: "project" } | { kind: "page"; page: string; nativeFilter: boolean };
 
 type State = {
   child?: ChildProcess;
@@ -231,7 +224,7 @@ export default function sideviewWatch(pi: ExtensionAPI) {
       if (params.mode === "project") state.mode = { kind: "project" };
       if (params.mode === "page") {
         if (!params.page) throw new Error("page mode requires page");
-        state.mode = { kind: "page", page: params.page, claimSafe: false };
+        state.mode = { kind: "page", page: params.page, nativeFilter: false };
       }
       await start(pi, state, ctx);
       return {
@@ -301,8 +294,8 @@ function parseMode(args: string): Mode | undefined {
   if (parts.length === 0) return undefined;
   if (parts[0] === "project") return { kind: "project" };
   if (parts[0] === "page" && parts[1]) {
-    // claimSafe must be set only after verifying the installed sideview has a page filter.
-    return { kind: "page", page: parts[1], claimSafe: false };
+    // nativeFilter is set after verifying the installed sideview has --page.
+    return { kind: "page", page: parts[1], nativeFilter: false };
   }
   throw new Error("usage: /sideview-watch-start [project|page <page-id>]");
 }
@@ -315,11 +308,9 @@ async function start(pi: ExtensionAPI, state: State, ctx: ExtensionContext) {
     throw new Error(`No Sideview store at ${db}; open or write a Sideview page first.`);
   }
 
-  const argv = ["--project", ctx.cwd, "watch", "--since", "0", "--skip-author", "agent"];
-  if (state.mode.kind === "project") {
-    argv.push("--claim", "--ack");
-  } else if (state.mode.claimSafe) {
-    argv.push("--page", state.mode.page, "--claim", "--ack");
+  const argv = ["--project", ctx.cwd, "watch", "--since", "0", "--ack", "--skip-author", "agent"];
+  if (state.mode.kind === "page" && state.mode.nativeFilter) {
+    argv.push("--page", state.mode.page);
   }
 
   state.argv = argv;
@@ -386,7 +377,7 @@ function deliver(pi: ExtensionAPI, state: State, line: string) {
     return;
   }
 
-  if (state.mode.kind === "page" && !state.mode.claimSafe && ev.page !== state.mode.page) return;
+  if (state.mode.kind === "page" && !state.mode.nativeFilter && ev.page !== state.mode.page) return;
 
   const message = formatEvent(ev);
   state.lastEvent = summarizeEvent(ev);
@@ -452,7 +443,7 @@ Run checks that do not install new dependencies unless the user asks. At minimum
 1. Compare imports and API calls with the installed Pi `.d.ts` files.
 2. Run a syntax/type check if the project or Pi installation already provides one.
 3. Run `sideview --project <project-root> status` or `sideview --project <project-root> sessions` to confirm the project store is reachable.
-4. If page-scoped mode was requested, verify `sideview watch --help` actually supports the page filter before enabling `claimSafe`.
+4. If page-scoped mode was requested, verify `sideview watch --help` actually supports `--page` before enabling `nativeFilter` (present since 0.5; older versions fall back to the local filter).
 
 Report the generated file, chosen mode, exact argv, and whether `/reload` or restart is needed.
 
@@ -480,8 +471,8 @@ buffered incorrectly.
 Once one event passes:
 
 - Submit several comments quickly and confirm each arrives once.
-- Run two Pi sessions in the same project with project-wide claim and confirm the
-  user understands whichever watcher claims first owns the event.
+- If two Pi sessions watch the same project, confirm the user understands both
+  deliver every event — one steward per project, or scope each by page.
 - Exercise comment, edit request, edited notice, resolve, and unresolve events.
 - Quit Pi and verify no `sideview watch` child remains.
 - Force Sideview unavailable and confirm status reports the spawn/exit error.
@@ -493,7 +484,7 @@ State:
 
 - Pi version and extension API files inspected
 - generated extension path
-- selected watch mode and exact claim policy
+- selected watch mode and filter policy
 - exact argv and project root
 - static checks run
 - reload/restart instruction

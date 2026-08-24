@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::store::{self, Comment, Store, Thread};
+use crate::ops::{self, Comment, Thread};
+use crate::store::{self, Store};
 
 const STATE_FILE: &str = "monitor-codex.json";
 const LOCK_FILE: &str = "monitor-codex.lock";
@@ -208,8 +209,7 @@ fn discover_codex(explicit: Option<&Path>) -> Result<PathBuf> {
 }
 
 fn resolution_snapshot(store: &Store) -> Result<BTreeMap<i64, ResolutionState>> {
-    Ok(store
-        .thread_resolutions()?
+    Ok(ops::thread_resolutions(store)?
         .into_iter()
         .map(|(id, _, resolved_at, resolved_by)| {
             (
@@ -312,20 +312,20 @@ fn deliver(store: &Store, state: &mut MonitorState, key: &str, message: &str) ->
 }
 
 fn process_generation(store: &mut Store, state: &mut MonitorState) -> Result<()> {
-    for (comment, thread) in store.comments_after(state.cursor)? {
+    for (comment, thread) in ops::comments_after(store, state.cursor)? {
         if comment.author.as_deref() == Some("agent") {
             state.cursor = comment.id;
             write_state(store, state)?;
             continue;
         }
-        let attachments = store.attachments_for_comment(comment.id)?;
+        let attachments = ops::attachments_for_comment(store, comment.id)?;
         let message = comment_message(&comment, &thread, attachments.len());
         deliver(store, state, &format!("comment:{}", comment.id), &message)?;
         // External delivery succeeded. Persist the cursor before the optional
         // page receipt: a receipt failure must not duplicate the model turn.
         state.cursor = comment.id;
         write_state(store, state)?;
-        if let Err(e) = store.ack_comment(comment.id, "monitor:codex") {
+        if let Err(e) = ops::ack_comment(store, comment.id, "monitor:codex") {
             eprintln!(
                 "queued comment {} but could not stamp its receipt: {e:#}",
                 comment.id
@@ -333,7 +333,7 @@ fn process_generation(store: &mut Store, state: &mut MonitorState) -> Result<()>
         }
     }
 
-    let rows = store.thread_resolutions()?;
+    let rows = ops::thread_resolutions(store)?;
     let present: BTreeSet<i64> = rows.iter().map(|(id, _, _, _)| *id).collect();
     for (id, page, resolved_at, resolved_by) in rows {
         let current = ResolutionState {
@@ -401,7 +401,7 @@ fn run_monitor(thread: String, codex: PathBuf, detached: bool, instance_id: Stri
         "a Codex monitor is already running for this project; use `sideview monitor status`",
     )?;
     let previous = load_state(&store)?;
-    let current_max = store.max_comment_id()?;
+    let current_max = ops::max_comment_id(&store)?;
     let reuse = previous
         .as_ref()
         .filter(|s| s.version == STATE_VERSION && s.thread == thread && s.cursor <= current_max);
@@ -437,7 +437,7 @@ fn run_monitor(thread: String, codex: PathBuf, detached: bool, instance_id: Stri
     let mut generation = -1i64;
     let mut retry = Duration::from_secs(1);
     loop {
-        let current = match store.conversation_gen() {
+        let current = match ops::generation(&store) {
             Ok(g) => g,
             Err(e) => {
                 state.last_error = Some(format!("reading Sideview store: {e:#}"));
@@ -706,8 +706,8 @@ mod tests {
             discover_codex(Some(&codex)).unwrap(),
             codex.canonicalize().unwrap()
         );
-        let (thread, comment) = store
-            .create_thread(
+        let (thread, comment) = crate::conversation::create_thread(
+            &mut store,
                 "V4",
                 "intro",
                 "",
@@ -734,11 +734,11 @@ mod tests {
         assert!(call.contains("--thread"));
         assert!(call.contains("Sideview comment"));
         assert!(call.contains("Page V4 · thread"));
-        let delivered = store.comments_for_page("V4").unwrap();
+        let delivered = crate::conversation::comments_for_page(&store, "V4").unwrap();
         assert_eq!(delivered[0].seen_by.as_deref(), Some("monitor:codex"));
 
-        let echo = store
-            .reply(thread, "done", Some("agent"), "comment", &[])
+        let echo = crate::conversation::reply(
+            &mut store,thread, "done", Some("agent"), "comment", &[])
             .unwrap();
         process_generation(&mut store, &mut state).unwrap();
         assert_eq!(state.cursor, echo);
@@ -749,8 +749,8 @@ mod tests {
     fn failed_queue_keeps_cursor_and_pending_event_for_retry() {
         let mut store = test_store();
         let (codex, _) = fake_codex(&store, false);
-        let (_, comment) = store
-            .create_thread(
+        let (_, comment) = crate::conversation::create_thread(
+            &mut store,
                 "V4",
                 "intro",
                 "",
@@ -774,7 +774,7 @@ mod tests {
                 .unwrap()
                 .contains("queue refused")
         );
-        assert_eq!(store.comments_for_page("V4").unwrap()[0].seen_at, None);
+        assert_eq!(crate::conversation::comments_for_page(&store, "V4").unwrap()[0].seen_at, None);
     }
 
     #[cfg(target_os = "linux")]
