@@ -48,7 +48,7 @@ const $outlineList = document.getElementById('sv-outline-list');
 // '/' never reaches here with pages present — the server 302s it to the
 // most recently active page.
 const ROUTE = (() => {
-  const m = location.pathname.match(/^\/s\/(.+)$/);
+  const m = location.pathname.match(/^\/p\/(.+)$/);
   if (m) return { view: 'page', page: decodeURIComponent(m[1]) };
   if (location.pathname === '/home') return { view: 'home', page: null };
   return { view: 'page', page: null }; // '/' in an empty project
@@ -413,7 +413,7 @@ function renderChips(pages) {
     btn.className = 'sv-chip-label';
     btn.textContent = (s.props && s.props.label) || shortLabel(s.id);
     btn.title = s.id;
-    btn.href = '/s/' + encodeURIComponent(s.id);
+    btn.href = '/p/' + encodeURIComponent(s.id);
 
     // The ✕ is tidying power, and what it tidies depends on the page's tier
     // (V3.sv): a throwaway page's file goes with it; a committed page is only
@@ -1284,7 +1284,7 @@ function renderIndex() {
     for (const s2 of g.pages) {
       const a = document.createElement('a');
       a.className = 'sv-home-page';
-      a.href = '/s/' + encodeURIComponent(s2.id); // a real link, nothing intercepted
+      a.href = '/p/' + encodeURIComponent(s2.id); // a real link, nothing intercepted
       const name = document.createElement('span');
       name.className = 'sv-home-name';
       name.textContent = (s2.props && s2.props.label) || shortLabel(s2.id);

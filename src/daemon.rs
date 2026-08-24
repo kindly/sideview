@@ -251,7 +251,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
                 // size cap (413 past it), and nothing else reads raw bodies.
                 .app_data(web::PayloadConfig::new(ATTACHMENT_CAP))
                 .route("/", web::get().to(root_redirect))
-                .route("/s/{page}", web::get().to(page))
+                .route("/p/{page}", web::get().to(page))
                 // The index: categories and the pages in them.
                 .route("/home", web::get().to(page))
                 .route("/events", web::get().to(events))
@@ -703,7 +703,7 @@ fn ext_lookup(
     let Some(x) = shared.extensions.iter().find(|x| x.manifest.name == ext) else {
         return Err(HttpResponse::NotFound().body(format!("no extension {ext:?} installed")));
     };
-    // Path segments arrive still percent-encoded (the /s/ route learned the
+    // Path segments arrive still percent-encoded (the /p/ route learned the
     // same); page ids can hold `/` and `%`, so decode before the lookup.
     let page = percent_encoding::percent_decode_str(page).decode_utf8_lossy().to_string();
     let block = percent_encoding::percent_decode_str(block).decode_utf8_lossy().to_string();
@@ -1341,7 +1341,7 @@ async fn root_redirect(req: actix_web::HttpRequest, state: Data<AppState>) -> Ht
     };
     match most_active {
         Some(id) => HttpResponse::Found()
-            .insert_header(("Location", format!("/s/{}", crate::identity::encode(&id))))
+            .insert_header(("Location", format!("/p/{}", crate::identity::encode(&id))))
             // The choice changes as pages become active: never cache it.
             .insert_header(("Cache-Control", "no-store"))
             .finish(),
@@ -1773,7 +1773,7 @@ mod tests {
             actix_web::App::new()
                 .app_data(state.clone())
                 .route("/home", web::get().to(page))
-                .route("/s/{page}", web::get().to(page)),
+                .route("/p/{page}", web::get().to(page)),
         )
         .await;
         let project = state.root.file_name().unwrap().to_string_lossy().to_string();
@@ -1790,7 +1790,7 @@ mod tests {
         // …a labeled page leads with its label, escaped…
         let body = actix_web::test::call_and_read_body(
             &app,
-            actix_web::test::TestRequest::get().uri("/s/v9").to_request(),
+            actix_web::test::TestRequest::get().uri("/p/v9").to_request(),
         )
         .await;
         let html = String::from_utf8_lossy(&body).to_string();
@@ -1802,7 +1802,7 @@ mod tests {
         // …and an unlabeled or unknown page falls back to its id.
         let body = actix_web::test::call_and_read_body(
             &app,
-            actix_web::test::TestRequest::get().uri("/s/scratch").to_request(),
+            actix_web::test::TestRequest::get().uri("/p/scratch").to_request(),
         )
         .await;
         let html = String::from_utf8_lossy(&body).to_string();
@@ -2111,10 +2111,10 @@ mod tests {
         let app = actix_web::test::init_service(
             actix_web::App::new()
                 .app_data(state)
-                .route("/s/{page}", actix_web::web::get().to(page)),
+                .route("/p/{page}", actix_web::web::get().to(page)),
         )
         .await;
-        for uri in ["/s/cwd%3A%2Fhome%2Fdavid%2Fproj", "/s/tmux%2542"] {
+        for uri in ["/p/cwd%3A%2Fhome%2Fdavid%2Fproj", "/p/tmux%2542"] {
             let req = actix_web::test::TestRequest::get().uri(uri).to_request();
             let res = actix_web::test::call_service(&app, req).await;
             assert!(res.status().is_success(), "{uri} did not match the page route");

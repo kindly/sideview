@@ -587,7 +587,7 @@ pub fn open_page(file: &Path) -> Result<()> {
     eprintln!("bound page {id} → {rel}");
     ensure_daemon(&mut store)?;
     if let Some(d) = store.daemon_alive()?.filter(|d| d.reachable) {
-        eprintln!("http://127.0.0.1:{}/s/{}", d.port, identity::encode(&id));
+        eprintln!("http://127.0.0.1:{}/p/{}", d.port, identity::encode(&id));
     }
     Ok(())
 }
@@ -969,7 +969,7 @@ pub fn pages() -> Result<()> {
         };
         match port {
             Some(p) => println!(
-                "{label}  {}  http://127.0.0.1:{p}/s/{}",
+                "{label}  {}  http://127.0.0.1:{p}/p/{}",
                 b.path,
                 identity::encode(&b.id)
             ),
