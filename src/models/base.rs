@@ -326,16 +326,16 @@ impl Store {
     /// Returns whether a binding existed; deleting the page file is the
     /// caller's job (the binding is bookkeeping; the file is the content).
     pub fn delete_binding(&mut self, id: &str) -> Result<bool> {
-        let paths = crate::conversation::attachment_paths_for_page(self, id)?;
+        let paths = crate::models::conversation::attachment_paths_for_page(self, id)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        crate::conversation::delete_page_conversation(&tx, id)?;
+        crate::models::conversation::delete_page_conversation(&tx, id)?;
         tx.execute("DELETE FROM outlines WHERE page = ?1", [id])?;
         let n = tx.execute("DELETE FROM bindings WHERE id = ?1", [id])?;
-        crate::conversation::bump_gen(&tx)?;
+        crate::models::conversation::bump_gen(&tx)?;
         tx.commit()?;
         for p in paths {
-            if !crate::conversation::attachment_path_in_use(self, &p)? {
-                crate::conversation::unlink_attachment(self, &p);
+            if !crate::models::conversation::attachment_path_in_use(self, &p)? {
+                crate::models::conversation::unlink_attachment(self, &p);
             }
         }
         Ok(n > 0)
@@ -362,7 +362,7 @@ impl Store {
              ON CONFLICT(page) DO UPDATE SET spec = excluded.spec, updated_at = excluded.updated_at",
             rusqlite::params![page, spec, now_ms()],
         )?;
-        crate::conversation::bump_gen(&tx)?;
+        crate::models::conversation::bump_gen(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -371,7 +371,7 @@ impl Store {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let n = tx.execute("DELETE FROM outlines WHERE page = ?1", [page])?;
         if n > 0 {
-            crate::conversation::bump_gen(&tx)?;
+            crate::models::conversation::bump_gen(&tx)?;
         }
         tx.commit()?;
         Ok(n > 0)
@@ -619,7 +619,7 @@ mod tests {
         let b = store.bindings().unwrap();
         assert_eq!(b.len(), 1, "the rename kept the rows");
         assert_eq!(b[0].id, "s1");
-        assert!(crate::conversation::threads_for_page(&store, "any").unwrap().is_empty(), "v2 tables exist");
+        assert!(crate::models::conversation::threads_for_page(&store, "any").unwrap().is_empty(), "v2 tables exist");
     }
 
     #[test]

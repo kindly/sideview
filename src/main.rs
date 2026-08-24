@@ -1,19 +1,19 @@
 mod ask;
 mod cli;
 mod config;
-mod conversation;
 mod csv;
 mod daemon;
 mod diff;
 mod ext;
 mod format;
 mod monitor;
+mod logic;
+mod models;
 mod netcheck;
-mod ops;
 mod render;
 mod identity;
 mod skill;
-mod store;
+
 
 use clap::{Args, Parser, Subcommand};
 
@@ -421,7 +421,7 @@ fn main() -> anyhow::Result<()> {
         }) => skill::uninstall(repo, agent.as_deref()),
         Some(Cmd::InternalDaemon { open, bind, port }) => {
             let cwd = std::env::current_dir()?;
-            let dir = store::find_store_dir(&cwd);
+            let dir = crate::models::base::find_store_dir(&cwd);
             daemon::run(
                 &dir,
                 &daemon::Opts {

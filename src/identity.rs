@@ -82,8 +82,8 @@ pub fn encode(id: &str) -> String {
 pub fn page_rel_path(id: &str) -> String {
     format!(
         "{}/{}/{}.sv",
-        crate::store::DIR_NAME,
-        crate::store::PAGES_DIR,
+        crate::models::base::DIR_NAME,
+        crate::models::base::PAGES_DIR,
         encode(id)
     )
 }

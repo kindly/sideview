@@ -10,12 +10,12 @@
 
 use anyhow::{bail, Result};
 
-pub use crate::conversation::{
+pub use crate::models::conversation::{
     is_attachment_path, Attachment, Comment, NewAttachment, Thread, ATTACHMENTS_DIR,
     ATTACHMENTS_PREFIX,
 };
-use crate::conversation as conv;
-use crate::store::Store;
+use crate::models::conversation as conv;
+use crate::models::base::Store;
 
 /// Where a new comment lands: a fresh thread on a block, or a reply.
 pub enum CommentTarget<'a> {
@@ -251,7 +251,7 @@ pub fn watch_tick(
             })),
             (Some(Some(_)), None) => Some(serde_json::json!({
                 "type": "unresolve", "thread": id, "page": page,
-                "created_at": crate::store::now_ms(),
+                "created_at": crate::models::base::now_ms(),
             })),
             // New threads announce themselves through their first
             // comment; a state seen at baseline is not an event.

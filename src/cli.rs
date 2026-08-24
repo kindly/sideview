@@ -22,8 +22,9 @@ use crate::daemon;
 use crate::format;
 use crate::netcheck;
 use crate::identity;
-use crate::ops;
-use crate::store::{self, Store, SPAWN_LOCK};
+use crate::logic::base;
+use crate::logic::conversation;
+use crate::models::base::{self as store, Store, SPAWN_LOCK};
 
 pub enum Kind {
     Prose,
@@ -61,11 +62,11 @@ fn read_stdin() -> Result<String> {
 fn resolve_and_bind(store: &Store, explicit: Option<&str>) -> Result<(String, PathBuf)> {
     let cwd = std::env::current_dir()?;
     let resolved = identity::resolve(explicit, &cwd);
-    let rel = match store.binding(&resolved.id)? {
+    let rel = match base::binding(&store, &resolved.id)? {
         Some(b) => b.path,
         None => identity::page_rel_path(&resolved.id),
     };
-    store.bind_page(&resolved.id, &rel, &cwd.display().to_string(), resolved.detected_from)?;
+    base::bind_page(&store, &resolved.id, &rel, &cwd.display().to_string(), resolved.detected_from)?;
     store.pages_dir()?; // ensure the directory exists before anyone writes into it
     Ok((resolved.id, store.root.join(rel)))
 }
@@ -227,7 +228,7 @@ pub(crate) fn splice(current: &str, (start, end): (usize, usize), replacement: O
 /// unreachable, in which case print the one line that fixes it. The block is
 /// already written either way — nothing is ever lost.
 fn ensure_daemon(store: &mut Store) -> Result<()> {
-    if let Some(d) = store.daemon_alive()? {
+    if let Some(d) = base::daemon_alive(&store)? {
         if d.reachable {
             if d.version != env!("CARGO_PKG_VERSION") {
                 eprintln!(
@@ -264,7 +265,7 @@ fn spawn_detached(store: &Store, open_browser: bool, bind_auto: bool) -> Result<
         return Ok(false);
     }
     // Re-check under the lock: the daemon we raced may have claimed the row.
-    if store.daemon_alive()?.map_or(false, |d| d.reachable) {
+    if base::daemon_alive(&store)?.map_or(false, |d| d.reachable) {
         return Ok(false);
     }
     let exe = std::env::current_exe()?;
@@ -301,7 +302,7 @@ pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
     // Deliberately no page binding here: pages exist when blocks do.
     // Minting one on bare open grew the switcher by an empty chip per shell.
 
-    if let Some(d) = store.daemon_alive()? {
+    if let Some(d) = base::daemon_alive(&store)? {
         if d.reachable {
             if d.version != env!("CARGO_PKG_VERSION") {
                 eprintln!(
@@ -338,7 +339,7 @@ pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
         // Readiness is the row appearing: wait briefly, honestly.
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(d) = store.daemon_alive()? {
+            if let Some(d) = base::daemon_alive(&store)? {
                 if d.reachable {
                     let url = print_urls(&store, d.port);
                     open_browser(&url);
@@ -387,7 +388,7 @@ pub fn restart(bind: &str) -> Result<()> {
         );
     }
 
-    if let Some(d) = store.daemon()? {
+    if let Some(d) = base::daemon(&store)? {
         let old = format!("v{} (pid {})", d.version, d.pid);
         // ESRCH just means it's already gone — a stale row, not an error.
         unsafe { libc::kill(d.pid as libc::pid_t, libc::SIGTERM) };
@@ -395,7 +396,7 @@ pub fn restart(bind: &str) -> Result<()> {
         // port actually free — the whole reason this command exists.
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let row_gone = store.daemon()?.map_or(true, |now| now.pid != d.pid);
+            let row_gone = base::daemon(&store)?.map_or(true, |now| now.pid != d.pid);
             let port_free =
                 std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, d.port)).is_ok();
             if row_gone && port_free {
@@ -420,7 +421,7 @@ pub fn restart(bind: &str) -> Result<()> {
     }
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if let Some(d) = store.daemon_alive()? {
+        if let Some(d) = base::daemon_alive(&store)? {
             if d.reachable {
                 eprintln!("running v{} (pid {})", d.version, d.pid);
                 print_urls(&store, d.port);
@@ -536,7 +537,7 @@ pub fn page_rm(explicit_page: Option<&str>, id: Option<&str>, delete_file: bool)
     // committed file, so the default is to unbind and leave it on disk.
     // `--file` is the deliberate second word for actually deleting one.
     if !store::is_throwaway_page(&rel) && !delete_file {
-        let had = store.delete_binding(&target)?;
+        let had = base::delete_binding(&mut store, &target)?;
         if !had {
             bail!("no page {target}");
         }
@@ -548,7 +549,7 @@ pub fn page_rm(explicit_page: Option<&str>, id: Option<&str>, delete_file: bool)
         return Ok(());
     }
     let file = store.root.join(&rel);
-    let had_binding = store.delete_binding(&target)?;
+    let had_binding = base::delete_binding(&mut store, &target)?;
     let had_file = match std::fs::remove_file(&file) {
         Ok(()) => true,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
@@ -584,10 +585,10 @@ pub fn open_page(file: &Path) -> Result<()> {
         .and_then(|s| s.to_str())
         .context("file has no stem to name the page after")?
         .to_string();
-    store.bind_page(&id, &rel, &cwd.display().to_string(), "open")?;
+    base::bind_page(&store, &id, &rel, &cwd.display().to_string(), "open")?;
     eprintln!("bound page {id} → {rel}");
     ensure_daemon(&mut store)?;
-    if let Some(d) = store.daemon_alive()?.filter(|d| d.reachable) {
+    if let Some(d) = base::daemon_alive(&store)?.filter(|d| d.reachable) {
         eprintln!("http://127.0.0.1:{}/p/{}", d.port, identity::encode(&id));
     }
     Ok(())
@@ -603,7 +604,7 @@ pub fn page_promote(explicit_page: Option<&str>, dest: &Path) -> Result<()> {
     let store = open_project_store()?;
     let cwd = std::env::current_dir()?;
     let id = identity::resolve(explicit_page, &cwd).id;
-    let Some(binding) = store.binding(&id)? else {
+    let Some(binding) = base::binding(&store, &id)? else {
         bail!("no page bound for {id}");
     };
     let from = store.root.join(&binding.path);
@@ -617,7 +618,7 @@ pub fn page_promote(explicit_page: Option<&str>, dest: &Path) -> Result<()> {
     std::fs::rename(&from, &to)
         .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
     let _ = std::fs::remove_file(from.with_extension("sv.lock"));
-    store.rebind_path(&id, &dest.to_string_lossy())?;
+    base::rebind_path(&store, &id, &dest.to_string_lossy())?;
     eprintln!("promoted {} → {} (binding follows)", binding.path, dest.display());
     Ok(())
 }
@@ -647,7 +648,7 @@ pub fn comment(
             if at.is_some() {
                 bail!("--at places a new thread; a reply inherits its thread's anchor");
             }
-            ops::CommentTarget::Reply { thread: tid }
+            conversation::CommentTarget::Reply { thread: tid }
         }
         (None, Some(target)) => {
             // Commenting never mints a page binding — resolve without binding.
@@ -657,7 +658,7 @@ pub fn comment(
                 None => identity::resolve(None, &cwd).id,
             };
             page_owned = page_id;
-            ops::CommentTarget::NewThread {
+            conversation::CommentTarget::NewThread {
                 page: &page_owned,
                 target,
                 anchor: at.unwrap_or(""),
@@ -668,7 +669,7 @@ pub fn comment(
         (None, None) => bail!("name a block to comment on, or --thread to reply"),
     };
     let (thread_id, _) =
-        ops::post_comment(&mut store, target, body, Some("agent"), "comment", &[], page)?;
+        conversation::post_comment(&mut store, target, body, Some("agent"), "comment", &[], page)?;
     println!("{thread_id}");
     eprintln!("→ {}", store.root.display());
     Ok(())
@@ -679,7 +680,7 @@ pub fn comment(
 /// in the page-tail list.
 pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let Some((t, changed)) = ops::resolve(&mut store, thread, Some("agent"), undo, page)? else {
+    let Some((t, changed)) = conversation::resolve(&mut store, thread, Some("agent"), undo, page)? else {
         bail!("no thread {thread}");
     };
     if !changed {
@@ -705,7 +706,7 @@ pub fn resolve(thread: i64, undo: bool, page: Option<&str>) -> Result<()> {
 /// working; the reply (or a resolve) retires it automatically.
 pub fn working(thread: i64, page: Option<&str>) -> Result<()> {
     let mut store = open_project_store()?;
-    let Some((_, changed)) = ops::working(&mut store, thread, Some("agent"), page)? else {
+    let Some((_, changed)) = conversation::working(&mut store, thread, Some("agent"), page)? else {
         bail!("no thread {thread}");
     };
     if !changed {
@@ -727,7 +728,7 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
         None => identity::resolve(None, &cwd).id,
     };
     if clear {
-        if !store.clear_outline(&page_id)? {
+        if !base::clear_outline(&mut store, &page_id)? {
             eprintln!("no explicit outline on {page_id}");
         }
         return Ok(());
@@ -740,7 +741,7 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
     if !parsed.is_array() {
         bail!("outline entries are a JSON array of {{title, anchor, children?}}");
     }
-    store.set_outline(&page_id, &parsed.to_string())?;
+    base::set_outline(&mut store, &page_id, &parsed.to_string())?;
     Ok(())
 }
 
@@ -750,7 +751,7 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
 /// daemon-independent. One delivery concept: every watcher sees everything
 /// its filter keeps; `--ack` receipts what it emits. `--page` and
 /// `--category` (both repeatable) scope the watch — the decisions live in
-/// ops::watch_tick, this loop only paces and prints.
+/// conversation::watch_tick, this loop only paces and prints.
 pub fn watch(
     timeout: Option<u64>,
     since: Option<i64>,
@@ -765,8 +766,8 @@ pub fn watch(
     let whoami = format!("watch:{}", std::process::id());
     let deadline = timeout.map(|t| Instant::now() + Duration::from_secs(t));
 
-    let mut state = ops::watch_start(&store, since)?;
-    let filter = ops::WatchFilter {
+    let mut state = conversation::watch_start(&store, since)?;
+    let filter = conversation::WatchFilter {
         skip_author: skip_author.map(str::to_string),
         pages,
         categories,
@@ -775,7 +776,7 @@ pub fn watch(
 
     let mut out = std::io::stdout();
     loop {
-        for line in ops::watch_tick(&mut store, &mut state, &filter, ack_by)? {
+        for line in conversation::watch_tick(&mut store, &mut state, &filter, ack_by)? {
             writeln!(out, "{line}")?;
             out.flush()?;
         }
@@ -794,7 +795,7 @@ pub fn watch(
 /// leaves `.sideview/attachments/`.
 pub fn attachments_gc(resolved: bool) -> Result<()> {
     let mut store = open_project_store()?;
-    let home = store.dir.join(ops::ATTACHMENTS_DIR);
+    let home = store.dir.join(conversation::ATTACHMENTS_DIR);
 
     let mut on_disk: Vec<String> = Vec::new();
     let mut stack = vec![home.clone()];
@@ -816,7 +817,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
     on_disk.sort();
 
     let refs: std::collections::HashMap<String, bool> =
-        ops::attachment_refs(&store)?.into_iter().collect();
+        conversation::attachment_refs(&store)?.into_iter().collect();
     // Every current page's raw content — the backstop that protects a file a
     // page references directly, and names it as mis-homed while doing so.
     let pages: Vec<(String, String)> = store
@@ -840,7 +841,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
             }
             (Some(false), None) => {
                 if resolved {
-                    ops::delete_attachment_rows(&mut store, &rel)?;
+                    conversation::delete_attachment_rows(&mut store, &rel)?;
                     true
                 } else {
                     resolved_held += 1;
@@ -851,7 +852,7 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
         };
         if take {
             freed += std::fs::metadata(store.root.join(&rel)).map(|m| m.len()).unwrap_or(0);
-            ops::unlink_attachment(&store, &rel);
+            conversation::unlink_attachment(&store, &rel);
             collected += 1;
             println!("collected {rel}");
         }
@@ -866,9 +867,9 @@ pub fn attachments_gc(resolved: bool) -> Result<()> {
 
 pub fn pages() -> Result<()> {
     let store = open_project_store()?;
-    let port = store.daemon_alive()?.filter(|d| d.reachable).map(|d| d.port);
+    let port = base::daemon_alive(&store)?.filter(|d| d.reachable).map(|d| d.port);
     let cfg = crate::config::load(&store.root).0;
-    for b in store.bindings()? {
+    for b in base::bindings(&store)? {
         // Only a composed page carries an sv-page tag. Parsing an imported
         // one as sv is not merely pointless but wrong: V1.md documents the
         // format, so its *example* tag was read as a real one (found by
@@ -901,12 +902,12 @@ pub fn status() -> Result<()> {
     let store = open_project_store()?;
     println!("store:   {}", store.db_path().display());
     println!("pages:   {}", store.dir.join(store::PAGES_DIR).display());
-    match store.daemon()? {
+    match base::daemon(&store)? {
         None => println!("daemon:  not running"),
         Some(d) => {
             // An explicit status runs the doubt path: definitive, not a
             // timestamp guess.
-            let alive = store.ping_daemon()?;
+            let alive = base::ping_daemon(&store)?;
             println!(
                 "daemon:  {} — v{}, port {}, pid {}, reachable={}",
                 if alive { "alive (answered ping)" } else { "NOT answering (stale row?)" },
@@ -943,7 +944,7 @@ pub fn reset() -> Result<()> {
         return Ok(());
     }
     let store = Store::open(&dir)?;
-    if store.daemon_alive()?.is_some() {
+    if base::daemon_alive(&store)?.is_some() {
         bail!("a daemon is running; Ctrl-C it first.");
     }
     drop(store);

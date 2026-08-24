@@ -30,7 +30,9 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::format;
 use crate::netcheck;
 use crate::render;
-use crate::store::{now_ms, DaemonRow, Store};
+use crate::logic::base;
+use crate::logic::conversation;
+use crate::models::base::{now_ms, DaemonRow, Store};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const HEARTBEAT_EVERY: u32 = 12; // × POLL_INTERVAL ≈ 3s
@@ -158,7 +160,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     let remembered = cfg
         .port
         .or_else(|| store.meta("port").ok().flatten().and_then(|p| p.parse().ok()))
-        .or_else(|| store.daemon().ok().flatten().map(|d| d.port))
+        .or_else(|| base::daemon(&store).ok().flatten().map(|d| d.port))
         .unwrap_or(0);
     let loopback = match opts.port {
         Some(p) => TcpListener::bind((Ipv4Addr::LOCALHOST, p))
@@ -192,7 +194,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     // can fail, and claim-then-bind would evict a healthy daemon on behalf of
     // one that never started.
     let instance_id = uuid::Uuid::new_v4().to_string();
-    store.claim_daemon(&DaemonRow {
+    base::claim_daemon(&mut store, &DaemonRow {
         instance_id: instance_id.clone(),
         pid: std::process::id() as i64,
         port,
@@ -283,7 +285,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
     })?;
 
     // Ctrl-C lands here: clean shutdown clears the row (only as its holder).
-    state.store.lock().unwrap().clear_daemon(&instance_id)?;
+    base::clear_daemon(&state.store.lock().unwrap(), &instance_id)?;
     eprintln!("daemon stopped");
     Ok(())
 }
@@ -296,7 +298,7 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
 async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
     let id = path.into_inner();
     let mut store = state.store.lock().unwrap();
-    let Ok(Some(binding)) = store.binding(&id) else {
+    let Ok(Some(binding)) = base::binding(&store, &id) else {
         return HttpResponse::NotFound().body(format!("no page {id:?}"));
     };
     // Tidying power, not destruction: the page's ✕ deletes a *throwaway*
@@ -304,7 +306,7 @@ async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Res
     // as much as an imported DESIGN.md (author, 2026-08-10). Deleting a
     // file someone committed belongs to git, or to an explicit
     // `page rm --file`, never to a two-click affordance in a browser.
-    if crate::store::is_throwaway_page(&binding.path) {
+    if crate::models::base::is_throwaway_page(&binding.path) {
         let file = state.root.join(&binding.path);
         if let Err(e) = std::fs::remove_file(&file) {
             if e.kind() != std::io::ErrorKind::NotFound {
@@ -314,7 +316,7 @@ async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Res
         }
         let _ = std::fs::remove_file(file.with_extension("sv.lock"));
     }
-    match store.delete_binding(&id) {
+    match base::delete_binding(&mut store, &id) {
         Ok(_) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
     }
@@ -327,10 +329,10 @@ async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Res
 /// cares, path order otherwise — binding insertion order carries it.
 fn rediscover_pages(store: &Store) -> Result<()> {
     let known: std::collections::HashSet<String> =
-        store.bindings()?.into_iter().map(|b| b.path).collect();
+        base::bindings(&store)?.into_iter().map(|b| b.path).collect();
     let mut found: Vec<(f64, String, String, String)> = Vec::new(); // (order, path, rel, id)
 
-    let pages_dir = store.dir.join(crate::store::PAGES_DIR);
+    let pages_dir = store.dir.join(crate::models::base::PAGES_DIR);
     let mut stack = vec![store.root.clone()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
@@ -375,11 +377,11 @@ fn rediscover_pages(store: &Store) -> Result<()> {
 
     found.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
     for (_, _, rel, id) in found {
-        if store.binding(&id)?.is_some() {
+        if base::binding(&store, &id)?.is_some() {
             eprintln!("note: {rel} not rebound — a different file already holds page id {id:?}");
             continue;
         }
-        store.bind_page(&id, &rel, &store.root.display().to_string(), "rediscovered")?;
+        base::bind_page(&store, &id, &rel, &store.root.display().to_string(), "rediscovered")?;
         eprintln!("rediscovered page {id} ({rel})");
         // Distinct started_at millis keep the canon order stable in the strip.
         std::thread::sleep(Duration::from_millis(2));
@@ -421,7 +423,7 @@ async fn upload_attachment(
     // and then to honest octet-stream.
     let mime = sniff_mime(&body, &name);
 
-    let attachments_root = state.store.lock().unwrap().dir.join(crate::ops::ATTACHMENTS_DIR);
+    let attachments_root = state.store.lock().unwrap().dir.join(conversation::ATTACHMENTS_DIR);
     // <sha8> is the dedupe address; on the astronomical prefix collision
     // (same 8 hex chars, different content, same filename) fall back to the
     // full hash as the directory rather than overwrite.
@@ -437,7 +439,7 @@ async fn upload_attachment(
             .unwrap_or(false);
         if same {
             return HttpResponse::Ok().json(serde_json::json!({
-                "path": format!("{}{}/{}", crate::ops::ATTACHMENTS_PREFIX, dir_name, name),
+                "path": format!("{}{}/{}", conversation::ATTACHMENTS_PREFIX, dir_name, name),
                 "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
             }));
         }
@@ -455,7 +457,7 @@ async fn upload_attachment(
         return HttpResponse::InternalServerError().body(format!("{e}"));
     }
     HttpResponse::Ok().json(serde_json::json!({
-        "path": format!("{}{}/{}", crate::ops::ATTACHMENTS_PREFIX, dir_name, name),
+        "path": format!("{}{}/{}", conversation::ATTACHMENTS_PREFIX, dir_name, name),
         "name": name, "mime": mime, "bytes": body.len(), "sha256": sha256,
     }))
 }
@@ -515,7 +517,7 @@ struct CommentBody {
     #[serde(default)]
     kind: Option<String>,
     #[serde(default)]
-    attachments: Vec<crate::ops::NewAttachment>,
+    attachments: Vec<conversation::NewAttachment>,
 }
 
 async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> impl Responder {
@@ -532,8 +534,8 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     };
     let mut store = state.store.lock().unwrap();
     let target = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
-        (Some(tid), _, _) => crate::ops::CommentTarget::Reply { thread: tid },
-        (None, Some(page), Some(target)) => crate::ops::CommentTarget::NewThread {
+        (Some(tid), _, _) => conversation::CommentTarget::Reply { thread: tid },
+        (None, Some(page), Some(target)) => conversation::CommentTarget::NewThread {
             page,
             target,
             anchor: &b.anchor,
@@ -543,7 +545,7 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
     let result =
-        crate::ops::post_comment(&mut store, target, &b.body, Some("user"), kind, &b.attachments, None);
+        conversation::post_comment(&mut store, target, &b.body, Some("user"), kind, &b.attachments, None);
     match result {
         Ok((thread, id)) => HttpResponse::Ok().json(serde_json::json!({
             "thread": thread, "id": id,
@@ -565,7 +567,7 @@ struct SourceQuery {
 async fn block_source(q: web::Query<SourceQuery>, state: Data<AppState>) -> impl Responder {
     let (root, rel) = {
         let store = state.store.lock().unwrap();
-        match store.binding(&q.page) {
+        match base::binding(&store, &q.page) {
             Ok(Some(b)) => (store.root.clone(), b.path),
             _ => return HttpResponse::NotFound().body("no such page"),
         }
@@ -612,7 +614,7 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
     let e = body.into_inner();
     let (root, rel) = {
         let store = state.store.lock().unwrap();
-        match store.binding(&e.page) {
+        match base::binding(&store, &e.page) {
             Ok(Some(b)) => (store.root.clone(), b.path),
             _ => return HttpResponse::NotFound().body("no such page"),
         }
@@ -659,7 +661,7 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
     // The machine-mail record: how watch stays honest about the file moving
     // under the agent. Only this endpoint mints kind='edited'.
     let mut store = state.store.lock().unwrap();
-    if let Err(err) = crate::ops::record_edited(&mut store, &e.page, &e.block) {
+    if let Err(err) = conversation::record_edited(&mut store, &e.page, &e.block) {
         return HttpResponse::InternalServerError().body(format!("{err:#}"));
     }
     HttpResponse::Ok().json(serde_json::json!({ "hash": crate::format::body_hash(&e.body) }))
@@ -798,7 +800,7 @@ async fn unresolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl R
 /// for a state the thread already holds is success, not conflict.
 fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
     let mut store = state.store.lock().unwrap();
-    match crate::ops::resolve(&mut store, id, Some("user"), undo, None) {
+    match conversation::resolve(&mut store, id, Some("user"), undo, None) {
         Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
         Ok(Some(_)) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
@@ -808,7 +810,7 @@ fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
 /// One page's conversation, serialized for the `threads` SSE event. Sent
 /// whole on every change — page-scale, same reasoning as block replay.
 fn conversation_json(store: &Store, page: &str) -> Result<String> {
-    crate::ops::snapshot_json(store, page)
+    conversation::snapshot_json(store, page)
 }
 
 fn threads_event(data: String) -> Outgoing {
@@ -860,7 +862,7 @@ fn poll_loop(
         if ticks % HEARTBEAT_EVERY == 0 {
             // Zero rows affected means somebody else claimed the row: stop
             // serving and let the browser reconnect to whoever holds it now.
-            if !store.heartbeat(instance_id)? {
+            if !base::heartbeat(&store, instance_id)? {
                 eprintln!("superseded by another daemon — exiting");
                 std::process::exit(0);
             }
@@ -873,7 +875,7 @@ fn poll_loop(
             .ok();
         if let Some((ping, pong)) = pending {
             if ping != pong {
-                store.answer_ping(instance_id)?;
+                base::answer_ping(&store, instance_id)?;
             }
         }
 
@@ -900,21 +902,21 @@ fn poll_loop(
             shared.lock().unwrap().extensions = exts;
             for e in &cfg.pages {
                 let id = e.page_id();
-                if store.binding(&id)?.is_some() {
+                if base::binding(&store, &id)?.is_some() {
                     continue;
                 }
                 if !store.root.join(&e.path).exists() {
                     eprintln!("config: no file {} (page {id})", e.path);
                     continue;
                 }
-                store.bind_page(&id, &e.path, &store.root.display().to_string(), "config")?;
+                base::bind_page(&store, &id, &e.path, &store.root.display().to_string(), "config")?;
                 eprintln!("config page {id} → {}", e.path);
             }
         }
 
         let mut changed_pages = false;
         let mut events: Vec<Outgoing> = Vec::new();
-        let bindings = store.bindings()?;
+        let bindings = base::bindings(&store)?;
         {
             let mut shared = shared.lock().unwrap();
 
@@ -955,7 +957,7 @@ fn poll_loop(
                 // and closes by deleting; a committed one only unbinds; and
                 // a page the config declares has no meaningful close at all,
                 // since it returns the moment the config is read again.
-                let tier = if crate::store::is_throwaway_page(&b.path) {
+                let tier = if crate::models::base::is_throwaway_page(&b.path) {
                     "throwaway"
                 } else {
                     "committed"
@@ -998,12 +1000,11 @@ fn poll_loop(
             // On any conversation mutation: re-serialize conversation
             // snapshots (shipping the pages that changed), and reload the
             // explicit outlines, which ride the pages event as a prop.
-            let g = crate::ops::generation(&store).unwrap_or(conversation_gen);
+            let g = conversation::generation(&store).unwrap_or(conversation_gen);
             if g != conversation_gen {
                 conversation_gen = g;
 
-                let fresh: HashMap<String, serde_json::Value> = store
-                    .outlines()
+                let fresh: HashMap<String, serde_json::Value> = base::outlines(&store)
                     .unwrap_or_default()
                     .into_iter()
                     .filter_map(|(page, spec)| {
@@ -1015,7 +1016,7 @@ fn poll_loop(
                     changed_pages = true;
                 }
 
-                let pages = crate::ops::pages_with_conversation(&store).unwrap_or_default();
+                let pages = conversation::pages_with_conversation(&store).unwrap_or_default();
                 for page in &pages {
                     if let Ok(json) = conversation_json(&store, page) {
                         if shared.conversations.get(page) != Some(&json) {
@@ -1318,7 +1319,7 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
             // every restart a hard bust, and a restart is already how a new
             // binary arrives.
             static STAMP: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
-            let v = STAMP.get_or_init(crate::store::now_ms);
+            let v = STAMP.get_or_init(crate::models::base::now_ms);
             // The title carries the page and the project, because browser
             // history is where titles live (author, 2026-08-23): several
             // projects' daemons all titled "sideview" were indistinguishable
@@ -1446,12 +1447,12 @@ async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Re
     // row are nobody's business over the tailnet. Only the named internals
     // are refused: other files under .sideview/ still serve (pages, and the
     // dogfood comparison pages iframe from there).
-    if let Ok(store_dir) = root.join(crate::store::DIR_NAME).canonicalize() {
+    if let Ok(store_dir) = root.join(crate::models::base::DIR_NAME).canonicalize() {
         if full.starts_with(&store_dir) {
             let name = full.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with(crate::store::DB_FILE)
+            if name.starts_with(crate::models::base::DB_FILE)
                 || name == "daemon.log"
-                || name == crate::store::SPAWN_LOCK
+                || name == crate::models::base::SPAWN_LOCK
             {
                 return HttpResponse::Forbidden()
                     .body(format!("refusing {rel:?}: the store's internals are not served"));
@@ -1543,11 +1544,11 @@ mod tests {
     #[actix_web::test]
     async fn file_endpoint_refuses_store_internals_but_serves_neighbours() {
         let dir = std::env::temp_dir().join(format!("sv-fe-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         std::fs::write(store.root.join("ok.html"), "<p>ok</p>").unwrap();
         std::fs::write(store.dir.join("lab.html"), "<p>lab</p>").unwrap();
         std::fs::write(store.dir.join("sideview.db-pre-v4"), "backup").unwrap();
-        std::fs::write(store.dir.join(crate::store::SPAWN_LOCK), "").unwrap();
+        std::fs::write(store.dir.join(crate::models::base::SPAWN_LOCK), "").unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -1584,8 +1585,8 @@ mod tests {
     #[actix_web::test]
     async fn delete_page_removes_file_and_binding_and_404s_on_unknown() {
         let dir = std::env::temp_dir().join(format!("sv-del-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
-        store.bind_page("s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
+        base::bind_page(&store, "s1", ".sideview/pages/s1.sv", "/tmp", "test").unwrap();
         let file = store.pages_dir().unwrap().join("s1.sv");
         std::fs::write(&file, "<sv-prose id=\"b1\">\nx\n</sv-prose>\n").unwrap();
         let (tx, _) = broadcast::channel(8);
@@ -1634,7 +1635,7 @@ mod tests {
     #[test]
     fn rediscovery_binds_committed_and_throwaway_pages_in_canon_order() {
         let dir = std::env::temp_dir().join(format!("sv-rd-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         // Two committed pages, order attribute inverting path order…
         std::fs::write(store.root.join("zebra.sv"), "<sv-page order=\"1\">\n</sv-page>\n").unwrap();
         std::fs::write(store.root.join("alpha.sv"), "<sv-page order=\"2\">\n</sv-page>\n").unwrap();
@@ -1645,7 +1646,7 @@ mod tests {
         )
         .unwrap();
         rediscover_pages(&store).unwrap();
-        let bindings = store.bindings().unwrap();
+        let bindings = base::bindings(&store).unwrap();
         let ids: Vec<&str> = bindings.iter().map(|b| b.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -1654,13 +1655,13 @@ mod tests {
         );
         // Idempotent: a second scan binds nothing new.
         rediscover_pages(&store).unwrap();
-        assert_eq!(store.bindings().unwrap().len(), 3);
+        assert_eq!(base::bindings(&store).unwrap().len(), 3);
     }
 
     #[actix_web::test]
     async fn comment_endpoint_creates_threads_replies_and_resolves() {
         let dir = std::env::temp_dir().join(format!("sv-cm-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -1708,14 +1709,14 @@ mod tests {
             assert_eq!(res.status().as_u16(), expect, "{uri}");
         }
         let store = state.store.lock().unwrap();
-        assert_eq!(crate::conversation::comments_for_page(&store, "v2").unwrap().len(), 2);
-        assert!(crate::conversation::threads_for_page(&store, "v2").unwrap()[0].resolved_at.is_none());
+        assert_eq!(crate::models::conversation::comments_for_page(&store, "v2").unwrap().len(), 2);
+        assert!(crate::models::conversation::threads_for_page(&store, "v2").unwrap()[0].resolved_at.is_none());
     }
 
     #[actix_web::test]
     async fn page_title_names_the_page_and_the_project() {
         let dir = std::env::temp_dir().join(format!("sv-ti-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         let mut shared = Shared::default();
         let mut labeled = PageState::default();
         labeled.props.insert("label".into(), serde_json::json!("Parser <plan>"));
@@ -1770,15 +1771,15 @@ mod tests {
     #[actix_web::test]
     async fn edit_endpoints_source_splice_guard_and_request() {
         let dir = std::env::temp_dir().join(format!("sv-ed-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         std::fs::write(
             store.root.join("plan.sv"),
             "<sv-page>\n\n<sv-prose id=\"b1\">\nold text\n</sv-prose>\n\n<sv-markup id=\"b2\">\n<div>card</div>\n</sv-markup>\n\n</sv-page>\n",
         )
         .unwrap();
-        store.bind_page("plan", "plan.sv", "/tmp", "test").unwrap();
+        base::bind_page(&store, "plan", "plan.sv", "/tmp", "test").unwrap();
         std::fs::write(store.root.join("NOTES.md"), "# imported\n\nnot spliceable\n").unwrap();
-        store.bind_page("NOTES", "NOTES.md", "/tmp", "test").unwrap();
+        base::bind_page(&store, "NOTES", "NOTES.md", "/tmp", "test").unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -1827,7 +1828,7 @@ mod tests {
             let store = state.store.lock().unwrap();
             let file = std::fs::read_to_string(store.root.join("plan.sv")).unwrap();
             assert!(file.contains("new **text**") && !file.contains("old text"));
-            let comments = crate::conversation::comments_for_page(&store, "plan").unwrap();
+            let comments = crate::models::conversation::comments_for_page(&store, "plan").unwrap();
             assert_eq!(comments.len(), 1);
             assert_eq!(comments[0].kind, "edited", "only the splice endpoint mints these");
         }
@@ -1886,14 +1887,14 @@ mod tests {
         assert_eq!(res.status().as_u16(), 400);
         let store = state.store.lock().unwrap();
         let kinds: Vec<String> =
-            crate::conversation::comments_for_page(&store, "plan").unwrap().into_iter().map(|c| c.kind).collect();
+            crate::models::conversation::comments_for_page(&store, "plan").unwrap().into_iter().map(|c| c.kind).collect();
         assert_eq!(kinds, vec!["edited".to_string(), "edit".to_string()]);
     }
 
     #[actix_web::test]
     async fn attachments_upload_dedupe_bind_and_refuse_impostors() {
         let dir = std::env::temp_dir().join(format!("sv-at-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),
@@ -1924,7 +1925,7 @@ mod tests {
         assert_eq!(a["name"], "sh ot.png", "last path segment only — traversal shed at the door");
         assert_eq!(a["mime"], "image/png", "magic bytes, not the claimed extension's word");
         let rel = a["path"].as_str().unwrap().to_string();
-        assert!(rel.starts_with(crate::ops::ATTACHMENTS_PREFIX));
+        assert!(rel.starts_with(conversation::ATTACHMENTS_PREFIX));
         let abs = state.store.lock().unwrap().root.join(&rel);
         assert!(abs.is_file());
 
@@ -1948,7 +1949,7 @@ mod tests {
         assert!(res.status().is_success());
         {
             let store = state.store.lock().unwrap();
-            let atts = crate::conversation::attachments_for_page(&store, "v3").unwrap();
+            let atts = crate::models::conversation::attachments_for_page(&store, "v3").unwrap();
             assert_eq!(atts.len(), 1);
             assert_eq!(atts[0].path, rel);
             let json = conversation_json(&store, "v3").unwrap();
@@ -1974,7 +1975,7 @@ mod tests {
     #[actix_web::test]
     async fn extension_frames_serve_injected_and_calls_exec_the_manifest_bin() {
         let dir = std::env::temp_dir().join(format!("sv-x-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         let ext_dir = store.root.join("extensions/demo");
         std::fs::create_dir_all(&ext_dir).unwrap();
         std::fs::write(ext_dir.join("index.html"), "<head><title>d</title></head><body>x</body>").unwrap();
@@ -2058,7 +2059,7 @@ mod tests {
     #[actix_web::test]
     async fn encoded_page_ids_match_the_page_route() {
         let dir = std::env::temp_dir().join(format!("sv-en-{}", uuid::Uuid::new_v4()));
-        let store = Store::open(&dir.join(crate::store::DIR_NAME)).unwrap();
+        let store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
         let (tx, _) = broadcast::channel(8);
         let state = Data::new(AppState {
             shared: Arc::new(Mutex::new(Shared::default())),

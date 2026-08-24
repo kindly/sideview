@@ -12,7 +12,7 @@
 use anyhow::{Context as _, Result};
 use rusqlite::{OptionalExtension, TransactionBehavior};
 
-use crate::store::{now_ms, Store};
+use crate::models::base::{now_ms, Store};
 
 /// One conversation's placement: where it hangs, what it quoted at creation,
 /// whether someone has resolved it. Serialized shape doubles as the daemon
@@ -510,7 +510,7 @@ pub fn comment_event(store: &Store, c: &Comment, t: &Thread) -> Result<serde_jso
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::DIR_NAME;
+    use crate::models::base::DIR_NAME;
 
     fn test_store() -> Store {
         let dir = std::env::temp_dir().join(format!("sideview-test-{}", uuid::Uuid::new_v4()));
