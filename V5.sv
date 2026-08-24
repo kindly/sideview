@@ -294,4 +294,56 @@ Round 3: the directory structure, before any file moves. Approving executes the 
 step 3 (block crate, poll loop, edit module) follows on the new layout.
 </sv-ask>
 
+
+<sv-prose id="drill4">
+## Drill: the remaining extractions (step 3, commits 236a976 / 665e296 / cc0e7ed)
+
+logic/edit.rs holds the splice primitives and daemon.rs no longer imports cli at all;
+poll.rs holds the loop, page loading, and event builders (daemon.rs 2125 → ~1500 with
+tests); crates/blocks holds format, render, ask, csv, diff behind "parse .sv, render
+blocks" — comrak, diffy, similar, and csv left the root manifest with it. 77 tests green
+throughout. Four surprises for round 4.
+</sv-prose>
+
+<sv-ask id="d4q1" round="4">
+**The crate boundary has a release cost.** A path dependency can't be published to
+crates.io unless the dependency is published too: at 0.5.0's release, sideview-blocks
+must become a real public crate (its publish=false comes off), or the workspace inlines
+back before tagging.
+- * Publish sideview-blocks at release — internal in intent, public in registry, version-locked to the binary
+- Inline the crate back before each release (workspace for development only)
+</sv-ask>
+
+<sv-ask id="d4q2" round="4">
+**The re-import shim.** main.rs re-imports the five block modules at the binary's root,
+so every call site still reads `crate::format::parse(...)` — zero churn, but a grep for
+"who uses the blocks crate" must know about the shim line. The alternative is rewriting
+~60 call sites to `sideview_blocks::` paths, making the boundary visible at each one.
+- * Keep the shim — one documented line; the Cargo.toml already declares the boundary
+- Rewrite the call sites to explicit sideview_blocks:: paths
+</sv-ask>
+
+<sv-ask id="d4q3" round="4">
+**Two unplanned placements, recorded.** `open_browser` moved cli→daemon (the cycle's
+second edge; daemon owns the "open on ready" behavior, cli calls down, one direction
+everywhere). And id percent-encoding moved into the blocks crate (`encode_id`) because
+rendered ext frames embed their own URLs — identity::encode now delegates to it.
+- * Both as landed (this question is the record)
+- One of these reads wrong — rider says which
+</sv-ask>
+
+<sv-ask id="d4q4" round="4">
+**A dead function died, and took a dependency with it.** fragment_outline had no callers
+since markup stopped contributing to the outline (456dd3e, pre-v5) — and it was the last
+user of scraper, so the whole dependency left both manifests. Strictly a removal in a
+no-removals version, but of unreachable code, not a feature.
+- * Right call — dead code holding a live dependency is exactly what a structural version should catch
+- Restore it (something planned needs scraper soon)
+</sv-ask>
+
+<sv-ask id="d4fin" round="4" role="close">
+Drill round 4: step 3's surprises. Approving closes the Rust half of v5; step 4 (the JS
+module split: ES modules, comment-bar decomposition, chip-into-island, idiomorph) is last.
+</sv-ask>
+
 </sv-page>
