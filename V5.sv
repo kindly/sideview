@@ -166,4 +166,70 @@ Drill round 1: the rename's four surprises. Approving closes step 1; step 2 (the
 conversation library) starts next.
 </sv-ask>
 
+
+<sv-prose id="drill2">
+## Drill: the conversation library (step 2, committed 4c4d061)
+
+conversation.rs (671 lines: models + algorithms + SQL + event shapes) behind ops.rs (343
+lines: the logic layer). store.rs shrank 1272 → 647. post_comment, the guards, and the
+watch decisions each exist once; daemon, cli, and monitor import ops and nothing below
+it. `--claim` is gone; `--page`/`--category` work, verified live against this store.
+Round 2: what the implementation did that the plan didn't predict.
+</sv-prose>
+
+<sv-ask id="d2q1" round="2">
+**The snapshot JSON lives in ops, not conversation.** The plan said the concept module
+owns "the one serialization both watch and SSE emit". The watch event shape does live
+there — but the SSE snapshot renders comment bodies to HTML via the render module, and
+putting it in conversation would have added a conversation→render dependency (wrong
+direction: render is the block pipeline). So conversation owns the watch-event shape,
+ops composes the snapshot from conversation + render.
+- * Right call — cross-concept composition is exactly what the logic layer is for
+- Wrong — move snapshot into conversation and accept the render dependency
+</sv-ask>
+
+<sv-ask id="d2q2" round="2">
+**Fixture exception to the import law.** Production code in daemon/cli/monitor imports
+only ops (grep-verified). But their *test modules* call conversation directly to set up
+fixtures (create a thread, read back comments). The alternative is routing fixtures
+through ops::post_comment, which drags its validation into tests that aren't testing it.
+- * Tests may import the concept module; the law governs production imports
+- Strict: tests go through ops too, fixtures included
+</sv-ask>
+
+<sv-ask id="d2q3" round="2">
+**Category resolution reads files inside watch_tick.** `--category` resolves category →
+pages by reading each binding's sv-page tag (or config) on every generation change — not
+cached, so a page changing category is picked up live, at the cost of a few file reads
+per event burst (only when --category is used). The alternative was resolving once at
+watch start: cheaper, but a category change mid-watch would be missed.
+- * Live resolution per tick — correctness over a negligible cost
+- Resolve once at start; a category change means restarting the watcher
+</sv-ask>
+
+<sv-ask id="d2q4" round="2">
+**The gen counter stayed shared.** Outline writes and the page-rm cascade (store.rs) bump
+conversation's generation counter — `bump_gen` is pub(crate) and crossed the module line,
+because watchers and the daemon's poll loop key *all* their reloads off that one counter.
+The pure alternative (a counter per concept) means every poller polls two counters for no
+behavioral gain today.
+- * One shared counter, conversation owns it, others may bump — revisit only if a second real poller family appears
+- Split the counter per concept now
+</sv-ask>
+
+<sv-ask id="d2q5" round="2">
+**The pi-watch recipe simplified more than planned.** Its claimSafe machinery existed
+only because --page didn't: with the native filter and no claim, the skill's page mode is
+one flag, and the "two project-wide claimers" warning became "two watchers both deliver —
+one steward per project, or scope by page". The one-agent-per-page pool idea remains the
+eventual enforcement.
+- * As landed (this question is the record; nothing to decide unless it reads wrong)
+- Something reads wrong — rider below
+</sv-ask>
+
+<sv-ask id="d2fin" round="2" role="close">
+Drill round 2: the conversation library's five surprises. Approving closes step 2; step 3
+(block crate, poll loop, edit module) starts next.
+</sv-ask>
+
 </sv-page>
