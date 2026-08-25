@@ -360,11 +360,11 @@ Fifteen ES modules under static/js/, served as-is; idiomorph 0.7.4 vendored and 
 the in-place update path; the comment bar decomposed into components with annotated
 template literals; the chip folded into the island with chip.js keeping only the
 saga-hardened selection mechanics. En route, THIRD-PARTY.md turned out to still list
-mermaid (removed 2026-08-08) and to have never listed Vue — both fixed. **One honest
-caveat before this round: the Rust side is test-pinned, but the browser side has no test
-harness — serving was verified against a scratch daemon, and the module graph, the morph,
-and the island need a live `sideview restart` plus real use (this page is the dogfood)
-before the round's approval means what it says.**
+mermaid (removed 2026-08-08) and to have never listed Vue — both fixed. Round 5 approved
+all four decisions (thread 130) — but the send itself came through the old client: the
+restart had spawned the installed 0.4.1 binary, not the v5 build. **Step 4 closes when
+this page has actually run the new client** (install 0.5.0 or `target/debug/sideview
+restart`, then exercise a comment, an edit, and a morph — thread 130 has the steps).
 </sv-prose>
 
 <sv-ask id="d5q1" round="5">
