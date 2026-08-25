@@ -189,10 +189,6 @@ function goToChild(s, c) {
   target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-function blockEl(id) {
-  return id ? $blocks.querySelector(`[data-block="${CSS.escape(id)}"]`) : null;
-}
-
 function applyVisibility() {
   const tabs = railMode() === 'tabs' && outline.sections.length > 1;
   const selIdx = outline.sections.findIndex((s) => s.key === state.section);
