@@ -5,7 +5,7 @@ import { $blocks, blockEl } from './dom.js';
 import { keepReading, offerPill } from './scroll.js';
 import { hydrateAsk } from './ask.js';
 import { pendingBlockEv } from './editor.js';
-import { startDraft, BUBBLE_SVG } from './chip.js';
+import { startDraft, BUBBLE_SVG } from './commentbar.js';
 import { Idiomorph } from '/assets/vendor/idiomorph.esm.js';
 
 // Morph config: runtime decoration lives in inline styles (the envelope's

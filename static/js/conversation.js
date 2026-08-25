@@ -3,7 +3,6 @@ import { state, conversation } from './state.js';
 import { resolveAnchor } from './anchors.js';
 import { refreshAskSent, isAskThread } from './ask.js';
 import { svc } from './commentbar.js';
-import { syncToggle } from './chip.js';
 
 // Recompute which threads still attach, after any block or thread change.
 let conversationScheduled = false;
@@ -50,7 +49,6 @@ function syncConversation() {
   for (const t of conv.threads) attach[t.id] = !!resolveAnchor(t);
   svc.attach = attach;
   refreshAskSent(); // a sent round's state is derived from these threads
-  if (!document.body.classList.contains('sv-selecting')) syncToggle();
 }
 
 async function postComment(payload) {
