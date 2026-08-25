@@ -413,4 +413,27 @@ this page — comment, edit, ask, watch a block update morph. Approval closes st
 with it v5's committed work; what follows is the release round.
 </sv-ask>
 
+
+<sv-prose id="release">
+## The release
+
+Everything this page commits to is built, drilled, and live-verified: five drill rounds,
+two honest holds (the crate inline-back, the old-client approval), one live failure found
+and harnessed against. The sweep is green — 77 Rust tests, the JS graph check, the docs
+speaking one noun, version 0.5.0 in the manifest, THIRD-PARTY.md true again. What 0.5.0
+carries over 0.4.1: one noun (`page`, `/p/` URLs, `--page` everywhere), the models/logic
+layering with the conversation library behind it, `watch --page`/`--category` and no
+`--claim`, the edit module (no daemon↔cli cycle), poll.rs, src/blocks/, fifteen ES
+modules with the stamp-as-path-segment cache fix, idiomorph morphing, the decomposed
+island with the chip folded in, and two dead-code removals. Approving round 6 is the
+order to: push main, tag v0.5.0 (release.yml builds the binaries), publish to crates.io,
+and re-sync the installed skills on this machine's harnesses. Nothing is tagged or
+published before it.
+</sv-prose>
+
+<sv-ask id="d6fin" round="6" role="close">
+Round 6: the release. Your approve is the order — v0.5.0 tagged, published, skills
+re-synced.
+</sv-ask>
+
 </sv-page>
