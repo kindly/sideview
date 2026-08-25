@@ -93,7 +93,7 @@ there's one file to open in DuckDB when something looks wrong. A machine-wide da
 lose all four.
 
 **A daemon is per project, started once by the human.** It hosts that project's store and serves
-every session in it, each at its own URL (`/s/<session>`), with `/` a live shell that lists them
+every page in it, each at its own URL (`/p/<page>`), with `/` a live shell that lists them
 and switches between them, so one tab stays useful indefinitely and new sessions appear in it
 rather than stranding you on a URL only the agent knows.
 
