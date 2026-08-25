@@ -11,6 +11,21 @@ appear on it within ~100ms. Reach for it when output is **visual** (images, layo
 tables), **long-form** (plans, design arguments, comparisons), or **revisable**
 (status you'll update as you work).
 
+**How to listen — settle this before you present anything.** The reader's replies
+arrive through `sideview watch` (JSON-lines on stdout), and running it wrong is the
+classic failure: a plain foreground shell call blocks your turn, times out, and goes
+deaf — the user comments into silence. In **Claude Code, run it under the background
+Monitor tool** (persistent, so it survives the whole session):
+
+```
+Monitor: sideview watch --since 0 --skip-author agent --ack
+```
+
+Each comment then arrives as a notification you act on. Other harnesses: Codex uses
+`sideview monitor codex` (below); anything that can genuinely block open-endedly may
+run watch in the foreground; otherwise loop `--timeout N` and re-arm. Never leave a
+watch running in a shell you cannot hear.
+
 ## The five commands
 
 Content always arrives on stdin. Every authoring command prints the block's id alone
@@ -220,8 +235,10 @@ they survive in a snapshot where an island's state does not.
 **If the user asked for the page, watching is part of the ask.** Don't end at
 the last block: their reply arrives *on* the page, so present, then run `watch`
 and act on what comes back. A page delivered without a watcher is a question
-with nobody listening for the answer. (`--timeout N` and re-arm if your
-harness can't block open-endedly.)
+with nobody listening for the answer. Run the watcher the way the top of this
+skill says — in Claude Code that is the background Monitor tool, never a
+foreground shell (`--timeout N` and re-arm only where no monitor facility
+exists and blocking open-endedly isn't possible).
 
 For a Codex conversation that should wake only when feedback arrives, use the
 product monitor instead of maintaining a shell wrapper:

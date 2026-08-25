@@ -50,8 +50,9 @@ The conventions that make this the grilling ritual:
 
 ## Between rounds
 
-Await the answers with `sideview watch` (block on it; `--timeout N` and re-arm
-if your harness can't block open-endedly). The round arrives as **one
+Await the answers with `sideview watch` — in Claude Code under the background
+Monitor tool (persistent), never a foreground shell call that blocks the turn
+and goes deaf; elsewhere block on it, or loop `--timeout N` and re-arm. The round arrives as **one
 comment**: first line `ask round N — approved|revise`, then only the answers
 that differ from your recommendations, keyed by block id, riders quoted
 beneath — `all as suggested` means every recommendation stood.
