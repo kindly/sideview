@@ -38,8 +38,19 @@ the pool into v5: **idiomorph block morphing** replacing wholesale innerHTML rep
 not a framework and not websockets — the transport was never the problem), landing with
 the JS module split. **Goal blessed 2026-08-24 (thread 123 on V5.sv), the v4 ritual
 attached**: each completed piece earns a drill — an sv-ask round over whatever the
-implementation did that the plan did not predict. Work proceeds in V5.sv's order:
-rename, conversation library, remaining extractions, JS split.
+implementation did that the plan did not predict. **All four steps are implemented,
+2026-08-25**: the page rename with /p/ URLs (drill r1); the conversation concept module
+behind the logic layer, --claim dropped, watch --page/--category live-verified (r2); the
+models/ and logic/ directories with logic/base making the import law total (r3); the
+edit module ending the daemon↔cli cycle, poll.rs, and the block stack — built as a
+workspace crate, then deliberately inlined to src/blocks/ (r4: don't pollute crates.io);
+and the JS split — fifteen ES modules served as-is with the cache stamp as a path
+segment, idiomorph morphing the update path, the comment bar decomposed into components,
+the chip folded into the island (drill r5 open, pending the author's live test after
+`sideview restart`). Two dead-code finds en route: fragment_outline took the scraper
+dependency with it; renderAllBlocks had been orphaned since 0.3.1. THIRD-PARTY.md was
+stale (mermaid still listed, Vue never listed) and is fixed. Version 0.5.0 throughout;
+77 Rust tests green at every step. What remains: r5's approval, then the release round.
 
 **0.4.1, 2026-08-23.** The post-release patch, the 0.2.1 tradition upheld: the
 author found the edit pencil dead on imported (.md/.html) pages minutes after

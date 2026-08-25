@@ -352,4 +352,60 @@ Drill round 4: step 3's surprises. Approving closes the Rust half of v5; step 4 
 module split: ES modules, comment-bar decomposition, chip-into-island, idiomorph) is last.
 </sv-ask>
 
+
+<sv-prose id="drill5">
+## Drill: the JS split (step 4, commits 2d9162d / 044ac4b / 502aa80)
+
+Fifteen ES modules under static/js/, served as-is; idiomorph 0.7.4 vendored and morphing
+the in-place update path; the comment bar decomposed into components with annotated
+template literals; the chip folded into the island with chip.js keeping only the
+saga-hardened selection mechanics. En route, THIRD-PARTY.md turned out to still list
+mermaid (removed 2026-08-08) and to have never listed Vue — both fixed. **One honest
+caveat before this round: the Rust side is test-pinned, but the browser side has no test
+harness — serving was verified against a scratch daemon, and the module graph, the morph,
+and the island need a live `sideview restart` plus real use (this page is the dogfood)
+before the round's approval means what it says.**
+</sv-prose>
+
+<sv-ask id="d5q1" round="5">
+**The stamp became a path segment.** Relative imports can't carry the `?v=` query that
+protects against iOS pairing fresh JS with stale caches (thread 35's lesson), so the
+shell now points at `/assets/js/<stamp>/app.js`, relative imports inherit the directory,
+and the asset route strips the segment. New mechanism, invented en route.
+- * Right fix — the cache lesson applied to ESM; one route tweak, no import maps
+- Prefer an import map in the shell (daemon-generated, per-module stamped URLs)
+</sv-ask>
+
+<sv-ask id="d5q2" round="5">
+**The morph has two carve-outs and one unmet promise.** Script-bearing blocks (Vue
+islands) keep wholesale replace — a morphed script never re-executes; and a morph never
+strips inline styles the fresh HTML lacks, because runtime decoration (iframe heights,
+csv freeze offsets) lives there. The unmet promise: reconnect replay still clears and
+rebuilds, so the scroll-preservation machinery didn't shrink — it fires far less. Making
+replay morph too (mark-and-sweep against ghosts) is real work for another day.
+- * Accept: steady-state morphing is the visible win; replay-morphing goes to the pool
+- The replay path should morph too, in v5 — the machinery shrink was the point
+</sv-ask>
+
+<sv-ask id="d5q3" round="5">
+**The fold's degradation cost.** Before: if Vue failed to load, the bar died but the edit
+pencil (chip → editor) survived. Now the chip renders inside the island, so edit entry
+degrades with Vue too. Commenting already needed Vue either way; prose editing didn't.
+- * Accept — one UI was the point; a page whose Vue fails has bigger problems, and the file is always editable directly
+- Keep a minimal no-Vue fallback pencil (partial un-fold)
+</sv-ask>
+
+<sv-ask id="d5q4" round="5">
+**renderAllBlocks left with the split** — dead since server-side routing (0.3.1) orphaned
+its caller; the second dead-code find of v5 (fragment_outline + scraper was the first).
+- * Right call (this question is the record)
+- Restore it
+</sv-ask>
+
+<sv-ask id="d5fin" round="5" role="close">
+Drill round 5: the JS split's surprises. Before approving, run `sideview restart` and use
+this page — comment, edit, ask, watch a block update morph. Approval closes step 4 and
+with it v5's committed work; what follows is the release round.
+</sv-ask>
+
 </sv-page>
