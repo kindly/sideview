@@ -25,8 +25,12 @@ yet — this version is preventative.
 - **One noun: `page`.** The `session` vocabulary and the duplicate CLI verbs go — one
   name everywhere, pre-1.0 breakage accepted. Lands first: mechanical, touches everything
   shallowly, and the extracted pieces get born with the right names. *(grill r2/r3)*
-- **The block stack becomes an internal crate.** format, render, ask, csv, diff
-  (~1,660 lines) behind one narrow interface: parse .sv, render blocks. *(r2)*
+- **The block stack becomes one module behind one narrow interface** — format, render,
+  ask, csv, diff (~1,660 lines): parse .sv, render blocks. Built as a workspace crate
+  first, then deliberately inlined to `src/blocks/` in round 4: a crate useful only to
+  this binary would pollute crates.io, so the boundary is convention (nothing in blocks/
+  imports models, logic, or interfaces) rather than the compiler, and the crate returns
+  only if the project grows real outside users. *(r2; drill r4)*
 - **The poll loop moves out of daemon.rs.** Poll loop + page loading + event builders
   (~470 lines) already run on their own thread and share nothing with actix; daemon.rs
   keeps only what genuinely needs the web framework. *(r2)*
@@ -300,9 +304,11 @@ step 3 (block crate, poll loop, edit module) follows on the new layout.
 
 logic/edit.rs holds the splice primitives and daemon.rs no longer imports cli at all;
 poll.rs holds the loop, page loading, and event builders (daemon.rs 2125 → ~1500 with
-tests); crates/blocks holds format, render, ask, csv, diff behind "parse .sv, render
-blocks" — comrak, diffy, similar, and csv left the root manifest with it. 77 tests green
-throughout. Four surprises for round 4.
+tests); the block stack sits behind "parse .sv, render blocks". 77 tests green
+throughout. Four surprises went to round 4; **settled (thread 129)**: the crate was
+overruled — inlined back to `src/blocks/` as b105e28, no workspace, don't pollute
+crates.io — and the shim, the two placements, and the dead-code deletion all stood.
+The Rust half of v5 is closed; step 4 (the JS split) remains.
 </sv-prose>
 
 <sv-ask id="d4q1" round="4">
