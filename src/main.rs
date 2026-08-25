@@ -1,5 +1,5 @@
 mod cli;
-use sideview_blocks as blocks;
+mod blocks;
 #[allow(unused_imports)]
 use blocks::{ask, csv, diff, format, render};
 mod config;

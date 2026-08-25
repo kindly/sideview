@@ -834,7 +834,7 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
             let html = String::from_utf8_lossy(&f.data)
                 .replace(
                     "<title>sideview</title>",
-                    &format!("<title>{}</title>", sideview_blocks::render::text_escape(&title)),
+                    &format!("<title>{}</title>", crate::render::text_escape(&title)),
                 )
                 .replace("/assets/sideview.css", &format!("/assets/sideview.css?v={v}"))
                 .replace("/assets/app.js", &format!("/assets/app.js?v={v}"));

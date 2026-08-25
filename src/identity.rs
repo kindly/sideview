@@ -71,7 +71,7 @@ pub fn inside_agent() -> bool {
 /// is not, and the same encoding serving both uses means the file for a
 /// page is recognizable from its URL.
 pub fn encode(id: &str) -> String {
-    sideview_blocks::encode_id(id)
+    crate::blocks::encode_id(id)
 }
 
 /// The throwaway page file for a page id, relative to the project root: a

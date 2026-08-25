@@ -1738,6 +1738,9 @@ dependencies = [
  "actix-web-lab",
  "anyhow",
  "clap",
+ "comrak",
+ "csv",
+ "diffy",
  "futures-util",
  "if-addrs",
  "libc",
@@ -1748,25 +1751,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sideview-blocks",
+ "similar",
  "tokio",
  "tokio-stream",
  "toml",
  "uuid",
-]
-
-[[package]]
-name = "sideview-blocks"
-version = "0.5.0"
-dependencies = [
- "anyhow",
- "comrak",
- "csv",
- "diffy",
- "percent-encoding",
- "serde",
- "serde_json",
- "similar",
 ]
 
 [[package]]
