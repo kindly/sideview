@@ -371,7 +371,9 @@ restart`, then exercise a comment, an edit, and a morph — thread 130 has the s
 **The stamp became a path segment.** Relative imports can't carry the `?v=` query that
 protects against iOS pairing fresh JS with stale caches (thread 35's lesson), so the
 shell now points at `/assets/js/<stamp>/app.js`, relative imports inherit the directory,
-and the asset route strips the segment. New mechanism, invented en route.
+and the asset route strips the segment. New mechanism, invented en route. *(This
+sentence arrived as an edit request from the page — the new client's tier-2 editing,
+live-tested on its own drill.)*
 - * Right fix — the cache lesson applied to ESM; one route tweak, no import maps
 - Prefer an import map in the shell (daemon-generated, per-module stamped URLs)
 </sv-ask>
