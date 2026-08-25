@@ -6,6 +6,18 @@ import { keepReading, offerPill } from './scroll.js';
 import { hydrateAsk } from './ask.js';
 import { pendingBlockEv } from './editor.js';
 import { startDraft, BUBBLE_SVG } from './chip.js';
+import { Idiomorph } from '/assets/vendor/idiomorph.esm.js';
+
+// Morph config: runtime decoration lives in inline styles (the envelope's
+// iframe height, csv freeze offsets) that the server's fresh HTML never
+// carries — a morph must not strip them just because the new node is bare.
+const MORPH_OPTS = {
+  callbacks: {
+    beforeAttributeUpdated: (attr, node, mutationType) => {
+      if (attr === 'style' && mutationType === 'remove') return false;
+    },
+  },
+};
 
 // ---- the iframe envelope --------------------------------------------------
 // html blocks are sandboxed srcdoc iframes; the envelope is their one channel
@@ -104,6 +116,8 @@ function addBlockComment(el) {
 function wireExtFrames(el) {
   for (const frame of el.querySelectorAll('iframe.sv-ext')) {
     if (frame.dataset.svFixed) continue;
+    if (frame.dataset.svWired) continue; // morph keeps nodes: wire once
+    frame.dataset.svWired = '1';
     frame.addEventListener('load', () => {
       try {
         const doc = frame.contentDocument;
@@ -173,9 +187,23 @@ function applyBlock(ev) {
   hydrateAsk(el);
   applyIframeMemory(el, ev.block);
   if (existing && (existing.dataset.ord || '') === ev.ord) {
-    // update: patch in place, compensated so the reading doesn't move
-    keepReading(() => existing.replaceWith(el));
-    activateScripts(el);
+    // update in place. Morph (idiomorph, V5.sv thread 121): unchanged nodes
+    // keep their scroll, selection, open details and iframe state, so most
+    // patches move nothing and the reading anchor has nothing to do. Blocks
+    // carrying scripts (Vue islands) keep the wholesale path — a morphed
+    // script element doesn't re-execute, and an island's own state is the
+    // iframe/DOM it built, which replaceWith + activateScripts handles.
+    if (el.querySelector('script') || existing.querySelector('script')) {
+      keepReading(() => existing.replaceWith(el));
+      activateScripts(el);
+    } else {
+      keepReading(() => Idiomorph.morph(existing, el, MORPH_OPTS));
+      // Runtime state the morph reset re-applies on the surviving node.
+      applyDiffPref(existing);
+      hydrateAsk(existing);
+      wireExtFrames(existing);
+      wireCsvFreeze(existing);
+    }
     return;
   }
   keepReading(() => {

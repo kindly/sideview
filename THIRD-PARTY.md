@@ -9,10 +9,15 @@ Versions are also recorded next to each asset under `static/vendor/`.
 MIT License. Copyright (c) 2011–2025 The Bootstrap Authors.
 <https://github.com/twbs/bootstrap/blob/main/LICENSE>
 
-## Mermaid v11.16.0 — `static/vendor/mermaid.min.js`
+## Vue v3.5.41 — `static/vendor/vue.esm-browser.prod.js`
 
-MIT License. Copyright (c) 2014–2025 Knut Sveidqvist.
-<https://github.com/mermaid-js/mermaid/blob/develop/LICENSE>
+MIT License. Copyright (c) 2018–present Yuxi (Evan) You and Vue contributors.
+<https://github.com/vuejs/core/blob/main/LICENSE>
+
+## idiomorph v0.7.4 — `static/vendor/idiomorph.esm.js`
+
+Zero-Clause BSD (0BSD). Copyright (c) 2023 Big Sky Software.
+<https://github.com/bigskysoftware/idiomorph/blob/main/LICENSE>
 
 ## IBM Plex Sans / IBM Plex Mono — `static/vendor/fonts/*.woff2`
 
