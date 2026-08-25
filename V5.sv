@@ -360,11 +360,14 @@ Fifteen ES modules under static/js/, served as-is; idiomorph 0.7.4 vendored and 
 the in-place update path; the comment bar decomposed into components with annotated
 template literals; the chip folded into the island with chip.js keeping only the
 saga-hardened selection mechanics. En route, THIRD-PARTY.md turned out to still list
-mermaid (removed 2026-08-08) and to have never listed Vue — both fixed. Round 5 approved
-all four decisions (thread 130) — but the send itself came through the old client: the
-restart had spawned the installed 0.4.1 binary, not the v5 build. **Step 4 closes when
-this page has actually run the new client** (install 0.5.0 or `target/debug/sideview
-restart`, then exercise a comment, an edit, and a morph — thread 130 has the steps).
+mermaid (removed 2026-08-08) and to have never listed Vue — both fixed. Round 5's first
+approval arrived through the *old* client (the restart had spawned the installed 0.4.1);
+the honest hold that followed caught v5's one live failure — a duplicate blockEl import
+that killed the module graph (fixed abd23d9, and tools/jsgraph-check.mjs now
+link-checks the graph at maintainer time). **Closed 2026-08-25 (thread 130): the author
+exercised all three legs on 0.5.0** — an ordinary comment, an edit request (merged into
+d5q1), a direct prose splice — every change morphing in place, and the round's amended
+approval was itself sent through the new client.
 </sv-prose>
 
 <sv-ask id="d5q1" round="5">

@@ -46,11 +46,14 @@ edit module ending the daemon↔cli cycle, poll.rs, and the block stack — buil
 workspace crate, then deliberately inlined to src/blocks/ (r4: don't pollute crates.io);
 and the JS split — fifteen ES modules served as-is with the cache stamp as a path
 segment, idiomorph morphing the update path, the comment bar decomposed into components,
-the chip folded into the island (drill r5 open, pending the author's live test after
-`sideview restart`). Two dead-code finds en route: fragment_outline took the scraper
+the chip folded into the island (drill r5 approved live, 2026-08-25 — the author's
+first restart picked up the installed 0.4.1 and the honest hold caught v5's one live
+failure, a duplicate blockEl import that killed the module graph; fixed, and
+tools/jsgraph-check.mjs now link-checks the graph at maintainer time; all three editing
+legs then ran on 0.5.0 and the amended approval itself came through the new client). Two dead-code finds en route: fragment_outline took the scraper
 dependency with it; renderAllBlocks had been orphaned since 0.3.1. THIRD-PARTY.md was
 stale (mermaid still listed, Vue never listed) and is fixed. Version 0.5.0 throughout;
-77 Rust tests green at every step. What remains: r5's approval, then the release round.
+77 Rust tests green at every step. What remains: the release round on V5.sv.
 
 **0.4.1, 2026-08-23.** The post-release patch, the 0.2.1 tradition upheld: the
 author found the edit pencil dead on imported (.md/.html) pages minutes after
