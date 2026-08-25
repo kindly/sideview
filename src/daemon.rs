@@ -837,7 +837,11 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
                     &format!("<title>{}</title>", crate::render::text_escape(&title)),
                 )
                 .replace("/assets/sideview.css", &format!("/assets/sideview.css?v={v}"))
-                .replace("/assets/app.js", &format!("/assets/app.js?v={v}"));
+                // The module entry gets the stamp as a path segment, not a query:
+                // relative imports inherit the directory, so a fresh entry can
+                // never pair with stale submodules (the thread-35 iOS lesson,
+                // applied to ESM). asset() strips the segment on the way in.
+                .replace("/assets/js/app.js", &format!("/assets/js/{v}/app.js"));
             HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
         }
         None => HttpResponse::InternalServerError().body("index.html missing from binary"),
@@ -845,7 +849,15 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
 }
 
 async fn asset(path: web::Path<String>) -> impl Responder {
-    let rel = path.into_inner();
+    let mut rel = path.into_inner();
+    // /assets/js/<stamp>/x.js -> js/x.js: the stamp is cache truth, not a path.
+    if let Some(rest) = rel.strip_prefix("js/") {
+        if let Some((first, tail)) = rest.split_once('/') {
+            if !first.ends_with(".js") && !tail.is_empty() {
+                rel = format!("js/{tail}");
+            }
+        }
+    }
     match Assets::get(&rel) {
         Some(f) => HttpResponse::Ok()
             .content_type(
