@@ -1,4 +1,4 @@
-<sv-page label="v5: fewer concepts, same features" category="plan" order="3">
+<sv-page label="v5: fewer concepts, same features" category="shipped" order="5">
 
 <sv-prose id="intro">
 # v5: fewer concepts, same features
