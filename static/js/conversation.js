@@ -52,6 +52,11 @@ function syncConversation() {
 }
 
 async function postComment(payload) {
+  // The self-declared name (V6.sv round 1) rides every send from this one
+  // spot — drafts, replies and ask rounds alike. Absent means unnamed,
+  // which is exactly the pre-v6 shape; the daemon normalizes.
+  const name = localStorage.getItem('sv-name');
+  if (name) payload = { author_name: name, ...payload };
   const res = await fetch('/api/comments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

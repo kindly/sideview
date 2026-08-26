@@ -49,7 +49,25 @@
     </div>
     <nav id="sv-pages" aria-label="pages"></nav>
     <div id="sv-status" role="status" hidden>reconnecting…</div>
-    <button id="sv-theme" type="button" aria-label="theme"></button>
+    <!-- The settings menu (V6.sv round 2): the theme button grew into a
+         small popover — the viewer's name, clearly labeled, and the dark
+         mode switch. Native details, no bootstrap JS. -->
+    <details id="sv-settings">
+      <summary id="sv-theme" aria-label="settings" title="settings">⚙</summary>
+      <div id="sv-settings-panel">
+        <label class="sv-set-row">
+          <span>Name</span>
+          <input id="sv-set-name" type="text" maxlength="60" placeholder="anonymous"
+                 autocomplete="off" aria-label="your name on comments">
+        </label>
+        <label class="sv-set-row">
+          <span>Dark mode</span>
+          <span class="form-check form-switch">
+            <input id="sv-set-dark" class="form-check-input" type="checkbox" role="switch">
+          </span>
+        </label>
+      </div>
+    </details>
   </header>
   <aside id="sv-outline" aria-label="contents">
     <div id="sv-outline-top">

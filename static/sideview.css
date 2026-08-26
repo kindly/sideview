@@ -210,7 +210,13 @@ html {
   color: #c98a2b;
 }
 
-/* The theme override: ◐ following the system, ☀/☾ pinned by the viewer. */
+/* The settings menu (V6.sv round 2): the theme button grew into a popover —
+   name, clearly labeled, and the dark mode switch. Native details; the
+   summary keeps the old button's dress. */
+#sv-settings {
+  position: relative;
+  flex: none;
+}
 #sv-theme {
   font-family: var(--sv-mono);
   font-size: 0.85rem;
@@ -220,17 +226,60 @@ html {
   color: var(--bs-secondary-color);
   border: 1px solid var(--bs-border-color);
   border-radius: var(--bs-border-radius);
-  flex: none;
+  cursor: pointer;
+  list-style: none;             /* no disclosure triangle: it's a menu button */
+  user-select: none;
 }
+#sv-theme::-webkit-details-marker { display: none; }
 
-#sv-theme:hover {
+#sv-theme:hover,
+#sv-settings[open] #sv-theme {
   color: var(--bs-body-color);
   border-color: var(--bs-secondary-color);
 }
 
+#sv-settings-panel {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 30;                  /* over content and the rails, like the header */
+  min-width: 15rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.sv-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0 0 0.55rem;
+}
+.sv-set-row:last-of-type { margin-bottom: 0; }
+.sv-set-row > span:first-child {
+  font-family: var(--sv-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+#sv-set-name {
+  width: 9.5rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  font-size: 0.85rem;
+}
+#sv-settings .form-check { margin: 0; min-height: 0; }
+#sv-settings .form-check-input { cursor: pointer; }
+
 /* #sv-status carries the margin-left:auto that pushes the right side of the
-   header over; when it's hidden (the usual state) the button inherits it. */
-#sv-status[hidden] + #sv-theme {
+   header over; when it's hidden (the usual state) the menu inherits it. */
+#sv-status[hidden] + #sv-settings {
   margin-left: auto;
 }
 
@@ -1807,6 +1856,7 @@ body.sv-cbar:not(.sv-cbar-open) #sv-cbar-toggle { display: block; }
    lesson 7) — declared on the element, never inherited (lesson 4). */
 @media (hover: none) {
   .sv-editor-text { font-size: 16px; }
+  #sv-set-name { font-size: 16px; }
 }
 /* Edit on touch (thread 77): the pencil rides above the corner chip while
    a selection is active — fixed corner, out of the toolbar's airspace. */

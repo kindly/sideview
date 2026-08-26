@@ -148,6 +148,14 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE comments ADD COLUMN kind TEXT NOT NULL DEFAULT 'comment';
     "#,
+    // v6: the commenter's self-declared display name (V6.sv, round 1) —
+    // beside the author *role*, which keeps meaning user|agent. Typed once
+    // on the page, kept in the browser, sent with each comment; no accounts,
+    // no uniqueness — "whoever had the link", honestly labeled. NULL is
+    // exactly the pre-v6 behavior.
+    r#"
+    ALTER TABLE comments ADD COLUMN author_name TEXT;
+    "#,
 ];
 
 pub fn now_ms() -> i64 {

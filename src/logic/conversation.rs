@@ -44,6 +44,7 @@ pub fn post_comment(
     target: CommentTarget,
     body: &str,
     author: Option<&str>,
+    author_name: Option<&str>,
     kind: &str,
     attachments: &[NewAttachment],
     page_guard: Option<&str>,
@@ -54,6 +55,14 @@ pub fn post_comment(
     if !matches!(kind, "comment" | "edit") {
         bail!("kind {kind:?} is not postable");
     }
+    // The self-declared display name (V6.sv round 1): a label, not an
+    // identity — normalized here once for every interface. Whitespace-only
+    // is unnamed, and the cap keeps a pasted paragraph out of the meta line.
+    let author_name = author_name
+        .map(|n| n.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|n| !n.is_empty())
+        .map(|n| n.chars().take(60).collect::<String>());
+    let author_name = author_name.as_deref();
     // A row is a future deletion (page rm, gc), so verify each claimed
     // attachment is a real file in the attachments home before binding it.
     for a in attachments {
@@ -71,7 +80,7 @@ pub fn post_comment(
                     bail!("thread {thread} is on page {:?}, not {p:?} — wrong project?", t.page);
                 }
             }
-            let id = conv::reply(store, thread, body, author, kind, attachments)?;
+            let id = conv::reply(store, thread, body, author, author_name, kind, attachments)?;
             Ok((thread, id))
         }
         CommentTarget::NewThread { page, target, anchor, quote, context } => conv::create_thread(
@@ -83,6 +92,7 @@ pub fn post_comment(
             context,
             body,
             author,
+            author_name,
             kind,
             attachments,
         ),
@@ -102,6 +112,7 @@ pub fn record_edited(store: &mut Store, page: &str, block: &str) -> Result<()> {
         None,
         "edited from the page",
         Some("user"),
+        None,
         "edited",
         &[],
     )?;

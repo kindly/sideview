@@ -277,7 +277,9 @@ wrong project's store. For the same reason, prefer `--project <dir>` (or
 SIDEVIEW_PROJECT) over relying on your cwd in multi-project sessions. Start your own
 thread with `sideview comment <block> [--at <anchor>]`. Your comments carry
 `author: "agent"`; a thread where the agent spoke last shows a filled bubble
-on the page — that is the handoff.
+on the page — that is the handoff. A human's event may also carry
+`author_name` — a display name they chose on the page (several people can
+comment on one page); when it's there, address them by it.
 
 **Answering a thread is not closing it — do not resolve just because you
 replied.** Resolving moves the conversation off the page into the tail list,

@@ -474,6 +474,10 @@ struct CommentBody {
     /// those, or a request could forge a "the file changed" record.
     #[serde(default)]
     kind: Option<String>,
+    /// The commenter's self-declared display name (V6.sv round 1) —
+    /// normalized by the logic layer; absent means exactly pre-v6 behavior.
+    #[serde(default)]
+    author_name: Option<String>,
     #[serde(default)]
     attachments: Vec<conversation::NewAttachment>,
 }
@@ -502,8 +506,16 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         },
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
-    let result =
-        conversation::post_comment(&mut store, target, &b.body, Some("user"), kind, &b.attachments, None);
+    let result = conversation::post_comment(
+        &mut store,
+        target,
+        &b.body,
+        Some("user"),
+        b.author_name.as_deref(),
+        kind,
+        &b.attachments,
+        None,
+    );
     match result {
         Ok((thread, id)) => HttpResponse::Ok().json(serde_json::json!({
             "thread": thread, "id": id,
@@ -1164,6 +1176,28 @@ mod tests {
         let store = state.store.lock().unwrap();
         assert_eq!(crate::models::conversation::comments_for_page(&store, "v2").unwrap().len(), 2);
         assert!(crate::models::conversation::threads_for_page(&store, "v2").unwrap()[0].resolved_at.is_none());
+        drop(store);
+
+        // Names (V6.sv round 1): normalized once in the logic layer — inner
+        // whitespace collapses, a whitespace-only name is unnamed, and the
+        // 60-char cap keeps a pasted paragraph out of the meta line.
+        for (sent, expect) in [
+            (serde_json::json!("  Priya \n Sharma  "), Some("Priya Sharma".to_string())),
+            (serde_json::json!("   \n "), None),
+            (serde_json::json!("x".repeat(200)), Some("x".repeat(60))),
+        ] {
+            let req = actix_web::test::TestRequest::post()
+                .uri("/api/comments")
+                .set_json(serde_json::json!({
+                    "page": "v2", "target": "b3", "body": "named", "author_name": sent
+                }))
+                .to_request();
+            let res = actix_web::test::call_service(&app, req).await;
+            assert!(res.status().is_success());
+            let store = state.store.lock().unwrap();
+            let cs = crate::models::conversation::comments_for_page(&store, "v2").unwrap();
+            assert_eq!(cs.last().unwrap().author_name, expect);
+        }
     }
 
     #[actix_web::test]

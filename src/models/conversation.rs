@@ -41,7 +41,11 @@ pub struct Comment {
     pub id: i64,
     pub thread_id: i64,
     pub body: String,
+    /// The role: 'user' | 'agent' (NULL in old rows and fixtures).
     pub author: Option<String>,
+    /// The commenter's self-declared display name (migration v6) — beside
+    /// the role, never instead of it. NULL is pre-v6 behavior.
+    pub author_name: Option<String>,
     pub created_at: i64,
     pub seen_at: Option<i64>,
     pub seen_by: Option<String>,
@@ -103,7 +107,7 @@ const THREAD_COLS: &str = "threads.id, threads.page, threads.target, threads.anc
      threads.quote, threads.context, threads.created_at, threads.resolved_at, threads.resolved_by, \
      threads.working_at, threads.working_by";
 const COMMENT_COLS: &str = "comments.id, comments.thread_id, comments.body, comments.author, \
-     comments.created_at, comments.seen_at, comments.seen_by, comments.kind";
+     comments.author_name, comments.created_at, comments.seen_at, comments.seen_by, comments.kind";
 
 fn thread_row(r: &rusqlite::Row) -> rusqlite::Result<Thread> {
     thread_row_at(r, 0)
@@ -131,10 +135,11 @@ fn comment_row(r: &rusqlite::Row) -> rusqlite::Result<Comment> {
         thread_id: r.get(1)?,
         body: r.get(2)?,
         author: r.get(3)?,
-        created_at: r.get(4)?,
-        seen_at: r.get(5)?,
-        seen_by: r.get(6)?,
-        kind: r.get(7)?,
+        author_name: r.get(4)?,
+        created_at: r.get(5)?,
+        seen_at: r.get(6)?,
+        seen_by: r.get(7)?,
+        kind: r.get(8)?,
     })
 }
 
@@ -190,6 +195,7 @@ pub fn create_thread(
     context: Option<&str>,
     body: &str,
     author: Option<&str>,
+    author_name: Option<&str>,
     kind: &str,
     attachments: &[NewAttachment],
 ) -> Result<(i64, i64)> {
@@ -202,8 +208,9 @@ pub fn create_thread(
     )?;
     let thread_id = tx.last_insert_rowid();
     tx.execute(
-        "INSERT INTO comments(thread_id, body, author, created_at, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![thread_id, body, author, now, kind],
+        "INSERT INTO comments(thread_id, body, author, author_name, created_at, kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![thread_id, body, author, author_name, now, kind],
     )?;
     let comment_id = tx.last_insert_rowid();
     insert_attachments(&tx, comment_id, attachments, now)?;
@@ -219,14 +226,16 @@ pub fn reply(
     thread_id: i64,
     body: &str,
     author: Option<&str>,
+    author_name: Option<&str>,
     kind: &str,
     attachments: &[NewAttachment],
 ) -> Result<i64> {
     let now = now_ms();
     let tx = store.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute(
-        "INSERT INTO comments(thread_id, body, author, created_at, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![thread_id, body, author, now, kind],
+        "INSERT INTO comments(thread_id, body, author, author_name, created_at, kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![thread_id, body, author, author_name, now, kind],
     )
     .with_context(|| format!("no thread {thread_id}?"))?;
     let id = tx.last_insert_rowid();
@@ -442,7 +451,7 @@ pub fn comments_after(store: &Store, cursor: i64) -> Result<Vec<(Comment, Thread
          WHERE comments.id > ?1 ORDER BY comments.id ASC"
     ))?;
     let rows = stmt
-        .query_map([cursor], |r| Ok((comment_row(r)?, thread_row_at(r, 8)?)))?
+        .query_map([cursor], |r| Ok((comment_row(r)?, thread_row_at(r, 9)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
@@ -502,6 +511,7 @@ pub fn comment_event(store: &Store, c: &Comment, t: &Thread) -> Result<serde_jso
         "quote": t.quote,
         "body": c.body,
         "author": c.author,
+        "author_name": c.author_name,
         "created_at": c.created_at,
         "attachments": attachments_for_comment(store, c.id)?,
     }))
@@ -520,26 +530,45 @@ mod tests {
     #[test]
     fn threads_carry_placement_and_comments_are_utterances() {
         let mut store = test_store();
-        let (t1, c1) = create_thread(&mut store, "v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None, "comment", &[])
+        let (t1, c1) = create_thread(&mut store, "v2", "b3", "p:3f9c2a1b04d2", Some("the paragraph…"), None, "yay complete", None, None, "comment", &[])
             .unwrap();
-        let c2 = reply(&mut store, t1, "second thoughts", None, "comment", &[]).unwrap();
+        let c2 = reply(&mut store, t1, "second thoughts", None, None, "comment", &[]).unwrap();
         assert!(c2 > c1);
         let threads = threads_for_page(&store, "v2").unwrap();
         assert_eq!(threads.len(), 1);
         assert_eq!(threads[0].quote.as_deref(), Some("the paragraph…"));
         let comments = comments_for_page(&store, "v2").unwrap();
         assert_eq!(comments.len(), 2, "replies join their thread, not a new one");
-        assert!(reply(&mut store, 999, "into the void", None, "comment", &[]).is_err(), "FK: no orphan utterances");
+        assert!(reply(&mut store, 999, "into the void", None, None, "comment", &[]).is_err(), "FK: no orphan utterances");
+    }
+
+    #[test]
+    fn names_ride_comments_into_events_and_absence_is_pre_v6_behavior() {
+        let mut store = test_store();
+        let (t, _) = create_thread(
+            &mut store, "v6", "b1", "", None, None, "hello", Some("user"), Some("Priya"),
+            "comment", &[],
+        )
+        .unwrap();
+        reply(&mut store, t, "and back", Some("agent"), None, "comment", &[]).unwrap();
+        let cs = comments_for_page(&store, "v6").unwrap();
+        assert_eq!(cs[0].author_name.as_deref(), Some("Priya"));
+        assert_eq!(cs[1].author_name, None, "nameless is exactly the old shape");
+        // The watch event line agents parse carries the name beside the role.
+        let (c, th) = &comments_after(&store, 0).unwrap()[0];
+        let ev = comment_event(&store, c, th).unwrap();
+        assert_eq!(ev["author"], "user");
+        assert_eq!(ev["author_name"], "Priya");
     }
 
     #[test]
     fn threads_succeed_each_other_at_an_anchor_and_resolve_is_undoable() {
         let mut store = test_store();
-        let (t1, _) = create_thread(&mut store, "v2", "b3", "", None, None, "first concern", None, "comment", &[]).unwrap();
+        let (t1, _) = create_thread(&mut store, "v2", "b3", "", None, None, "first concern", None, None, "comment", &[]).unwrap();
         assert!(resolve_thread(&mut store, t1, None, false).unwrap());
         assert!(!resolve_thread(&mut store, t1, None, false).unwrap(), "already resolved: no-op");
         // A fresh thread at the same spot — no uniqueness in the way…
-        let (t2, _) = create_thread(&mut store, "v2", "b3", "", None, None, "new concern", None, "comment", &[]).unwrap();
+        let (t2, _) = create_thread(&mut store, "v2", "b3", "", None, None, "new concern", None, None, "comment", &[]).unwrap();
         assert_ne!(t1, t2);
         // …and unresolving the first can never fail on an index.
         assert!(resolve_thread(&mut store, t1, None, true).unwrap());
@@ -568,13 +597,13 @@ mod tests {
             sha256: "aa".into(),
         };
         let (_, c1) =
-            create_thread(&mut store, "v3", "b1", "", None, None, "see", None, "comment", &[a.clone()]).unwrap();
+            create_thread(&mut store, "v3", "b1", "", None, None, "see", None, None, "comment", &[a.clone()]).unwrap();
         assert_eq!(attachments_for_comment(&store, c1).unwrap().len(), 1);
         assert_eq!(attachments_for_page(&store, "v3").unwrap().len(), 1);
 
         // Deduped file shared with another page's conversation: the first
         // page's death must not take bytes a remaining row still protects.
-        create_thread(&mut store, "other", "b1", "", None, None, "also", None, "comment", &[a.clone()]).unwrap();
+        create_thread(&mut store, "other", "b1", "", None, None, "also", None, None, "comment", &[a.clone()]).unwrap();
         store.delete_binding("v3").unwrap();
         assert!(abs.exists(), "a remaining row protects its bytes");
         store.delete_binding("other").unwrap();
@@ -583,7 +612,7 @@ mod tests {
         // Confinement: a row is a future deletion, so nothing outside the
         // attachments home may ever be recorded as one.
         let evil = NewAttachment { path: "src/main.rs".into(), ..a };
-        assert!(create_thread(&mut store, "v3", "b1", "", None, None, "x", None, "comment", &[evil]).is_err());
+        assert!(create_thread(&mut store, "v3", "b1", "", None, None, "x", None, None, "comment", &[evil]).is_err());
     }
 
     #[test]
@@ -611,14 +640,14 @@ mod tests {
             sha256: "bb".into(),
         };
         let (t1, _) =
-            create_thread(&mut store, "v3", "b1", "", None, None, "csv", None, "comment", &[a.clone()]).unwrap();
+            create_thread(&mut store, "v3", "b1", "", None, None, "csv", None, None, "comment", &[a.clone()]).unwrap();
         resolve_thread(&mut store, t1, None, false).unwrap();
         assert_eq!(
             attachment_refs(&store).unwrap(),
             vec![(rel.clone(), false)],
             "held only by a resolved thread — what --resolved widens to"
         );
-        create_thread(&mut store, "v3", "b2", "", None, None, "again", None, "comment", &[a]).unwrap();
+        create_thread(&mut store, "v3", "b2", "", None, None, "again", None, None, "comment", &[a]).unwrap();
         assert_eq!(
             attachment_refs(&store).unwrap(),
             vec![(rel.clone(), true)],
@@ -641,9 +670,9 @@ mod tests {
             }
             last = g;
         };
-        let (t, _) = create_thread(&mut store, "v2", "b1", "", None, None, "hi", None, "comment", &[]).unwrap();
+        let (t, _) = create_thread(&mut store, "v2", "b1", "", None, None, "hi", None, None, "comment", &[]).unwrap();
         step(&store, "create_thread", true);
-        reply(&mut store, t, "again", None, "comment", &[]).unwrap();
+        reply(&mut store, t, "again", None, None, "comment", &[]).unwrap();
         step(&store, "reply", true);
         resolve_thread(&mut store, t, None, false).unwrap();
         step(&store, "resolve", true);
@@ -662,7 +691,7 @@ mod tests {
     fn page_rm_cascades_conversation() {
         let mut store = test_store();
         store.bind_page("v2", "V2.sv", "/tmp", "test").unwrap();
-        create_thread(&mut store, "v2", "b1", "", None, None, "hello", None, "comment", &[]).unwrap();
+        create_thread(&mut store, "v2", "b1", "", None, None, "hello", None, None, "comment", &[]).unwrap();
         assert_eq!(comments_after(&store, 0).unwrap().len(), 1);
         assert!(store.delete_binding("v2").unwrap());
         assert!(threads_for_page(&store, "v2").unwrap().is_empty(), "threads die with the page");

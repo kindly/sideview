@@ -6,6 +6,60 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v6 curated: more than one commenter, 2026-08-26.** Hours after 0.5.0, [V6.sv](V6.sv)
+opened with the focus the author set (multi-user commenting, basic auth via link share,
+optional self-chosen names) and curation round 1 came back approved the same day
+(thread 137). It is the n>1 experiment the conversation library was pulled forward for
+(V5 thread 117): n>1 is commenters, never authors. The one reversal against the draft:
+the tailnet stays open, tokenless — **the funnel is the share path** ("through funnel is
+where security matters"), and `sideview share` should open a Tailscale Funnel and hand
+back the public link + credential in one command, disclosure-loud. Settled with it: two
+link kinds (page-scoped guest links, one project-wide link for your own devices), names
+self-declared per browser (localStorage; migration v6 puts the name beside the author
+role — the column's own comment always said identity would fill it), guests get the whole
+conversation surface (comment, reply, resolve, attach, edit requests) and never
+authorship, enforced server-side by role; agent-harness identity stays in the pool. This
+bends SHARING.md's T2 deliberately (capability link + self-declared name instead of
+tailnet identity, commenting instead of read-only); the rationale gets recorded there
+when v6 ships. Order of work on V6.sv: (1) the funnel SSE-buffering check — the
+never-run tailscale-serve check, now load-bearing, needs the author at the machine;
+(2) names on comments; (3) tokens + the guest boundary; (4) `sideview share`. Each piece
+earns a drill (the v4 ritual). V5.sv moved to the shipped category; the pool gained the
+reconnect-replay-morphs item v5's round 5 owed it, and the trust/sharing entries carry
+their v6 annotations. Known skew, the author's to cure: `~/.cargo/bin/sideview` is still
+0.4.1 (`cargo install --path .`); the daemon and `target/debug` are 0.5.0.
+
+**Step 2 (names on comments) is built, 2026-08-26 — drill round 2 open on V6.sv.**
+Migration v6 (`author_name TEXT` beside the author role; the live store migrated with a
+`-pre-v6` backup, the running 0.5.0 daemon unaffected since every query names its
+columns), normalization once in the logic layer (whitespace collapse, whitespace-only =
+unnamed, 60-char cap), the watch event and SSE snapshot carrying the name (serde field —
+old rows say null), the CLI unchanged (agents stay nameless per round 1), the bar's meta
+lines showing the name for humans only, and the name control in the bar's title row
+(localStorage `sv-name`, injected once in the client's single postComment path — drafts,
+replies and ask-round sends alike). 78 tests (one new model pin, the endpoint
+normalization pinned inside the comments round-trip test); version bumped to 0.6.0;
+skill's watch section teaches `author_name`. **Round 2 came back revise (thread 138,
+folded and resolved): the name control left the bar's title row for a settings menu in
+the header** — the theme button is now ⚙ opening a popover (Name, clearly labeled; a
+Dark mode switch showing the effective mode, whose flip pins an override, with a muted
+"follow the system" reset visible only while pinned; native `details`, closes on
+outside click/Esc/Enter). **Round 3 approved (thread 139), two riders folded, step 2 closed 2026-08-26**: auto is
+dropped — a first visit follows the OS silently, the first flip stores light/dark and
+that is the whole theme model (no explicit auto state, no reset; the ◐/☀/☾ tri-state
+glyph and cycle are gone) — and a first visit starts with the settings menu open, once
+per browser (`sv-welcomed`), so a guest who followed a link meets the name field
+immediately. Useful fact found en route: **rust-embed serves `static/` from disk in
+debug builds**, so UI changes appear on reload with no restart — but the *daemon
+binary* was still pre-name while drilling, so a posted `author_name` is silently
+dropped until `sideview restart`. The author's live name test therefore comes after
+their restart. Committed in two: the curation (docs) and step 2 (code). One build-environment find worth keeping: cargo's bin fingerprint
+(`target/debug/.fingerprint/sideview-*/dep-bin-sideview`) went stale-but-claiming-fresh —
+`cargo build` said "Finished" while `target/debug/sideview` stayed an hour old (sources
+demonstrably newer; `CARGO_LOG=cargo::core::compiler::fingerprint=debug` showed "all
+paths up-to-date" against an older mtime). `rm -rf` of that one fingerprint dir fixed it;
+if a build "succeeds" but behavior doesn't change, check the binary's mtime first.
+
 **v5 shipped: 0.5.0 on crates.io, 2026-08-26.** The release order arrived as round 6's
 approve on V5.sv ("Go deploy", thread 136) and executed within minutes: main pushed
 (28 commits, 7782b25..215eadd), tag v0.5.0 pushed (release.yml building the binaries),

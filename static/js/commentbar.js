@@ -105,6 +105,10 @@ function mountCommentBar() {
     const cs = commentsFor(id);
     return cs.length ? (cs[cs.length - 1].author || 'user') : null;
   };
+  // The meta line's label: the role, unless a human named themselves
+  // (V6.sv round 1 — the name sits beside the role, never instead of it).
+  // Setting your own name lives in the header's settings menu (round 2).
+  const nameOf = (c) => (c.author === 'agent' ? 'agent' : c.author_name || c.author || 'user');
   // The silence-fillers. sent: the plumbing's delivery receipt (the
   // server has it; says nothing about the agent). working: the agent's
   // own declaration for long tasks, retired by its reply.
@@ -316,7 +320,7 @@ function mountCommentBar() {
   const ThreadCard = {
     props: ['t'],
     setup: (p) => ({
-      t: p.t, svc, collapsed, replies, commentsFor, lastAuthor, sentPending, fmt,
+      t: p.t, svc, collapsed, replies, commentsFor, lastAuthor, nameOf, sentPending, fmt,
       jump, reply, replyFiles, rAtts, removeReplyAtt, pickChange, resolve, toggle,
       bodyHtml, grow,
     }),
@@ -335,7 +339,7 @@ function mountCommentBar() {
           <blockquote v-if="t.quote">{{ t.quote }}</blockquote>
           <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
             <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
-              {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
+              {{ nameOf(c) }} · {{ fmt(c.created_at) }}</span>
             <div class="sv-comment-body" v-html="bodyHtml(c)"></div>
           </div>
           <div v-if="t.working_at" class="sv-status sv-working"
@@ -365,7 +369,7 @@ function mountCommentBar() {
 
   const ResolvedCard = {
     props: ['t'],
-    setup: (p) => ({ t: p.t, svc, commentsFor, fmt, jump, reopen, bodyHtml }),
+    setup: (p) => ({ t: p.t, svc, commentsFor, nameOf, fmt, jump, reopen, bodyHtml }),
     template: /* html */ `
       <div class="sv-cbar-card sv-was-resolved">
         <div class="sv-cbar-meta">
@@ -375,7 +379,7 @@ function mountCommentBar() {
         <blockquote v-if="t.quote">{{ t.quote }}</blockquote>
         <div v-for="c in commentsFor(t.id)" :key="c.id" class="sv-comment">
           <span class="sv-comment-meta" :class="{ 'sv-agent': c.author === 'agent' }">
-            {{ c.author || 'user' }} · {{ fmt(c.created_at) }}</span>
+            {{ nameOf(c) }} · {{ fmt(c.created_at) }}</span>
           <div class="sv-comment-body" v-html="bodyHtml(c)"></div>
         </div>
         <div class="sv-cbar-actions">

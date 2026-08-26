@@ -586,7 +586,7 @@ pub fn comment(
         (None, None) => bail!("name a block to comment on, or --thread to reply"),
     };
     let (thread_id, _) =
-        conversation::post_comment(&mut store, target, body, Some("agent"), "comment", &[], page)?;
+        conversation::post_comment(&mut store, target, body, Some("agent"), None, "comment", &[], page)?;
     println!("{thread_id}");
     eprintln!("→ {}", store.root.display());
     Ok(())

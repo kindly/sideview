@@ -667,6 +667,7 @@ mod tests {
             thread_id: 4,
             body: "make it smaller".into(),
             author: Some("user".into()),
+            author_name: None,
             created_at: 1,
             seen_at: None,
             seen_by: None,
@@ -715,6 +716,7 @@ mod tests {
                 None,
                 "make it smaller",
                 Some("user"),
+                None,
                 "comment",
                 &[],
             )
@@ -738,7 +740,7 @@ mod tests {
         assert_eq!(delivered[0].seen_by.as_deref(), Some("monitor:codex"));
 
         let echo = crate::models::conversation::reply(
-            &mut store,thread, "done", Some("agent"), "comment", &[])
+            &mut store,thread, "done", Some("agent"), None, "comment", &[])
             .unwrap();
         process_generation(&mut store, &mut state).unwrap();
         assert_eq!(state.cursor, echo);
@@ -758,6 +760,7 @@ mod tests {
                 None,
                 "retry me",
                 Some("user"),
+                None,
                 "comment",
                 &[],
             )
