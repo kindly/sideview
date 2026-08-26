@@ -6,6 +6,21 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v5 shipped: 0.5.0 on crates.io, 2026-08-26.** The release order arrived as round 6's
+approve on V5.sv ("Go deploy", thread 136) and executed within minutes: main pushed
+(28 commits, 7782b25..215eadd), tag v0.5.0 pushed (release.yml building the binaries),
+`cargo publish` confirmed, and the skills re-synced on all four harnesses — carrying the
+last pre-release fix, the listen-first Monitor guidance (thread 135). Three days from
+curation to release, six drill rounds plus the curation grill's four, every feature and
+the release itself ordered through the page. What 0.5.0 carries over 0.4.1: one noun
+(`page`, `/p/` URLs, `--page` on every verb, the `session` alias gone), the models/ and
+logic/ directories with the conversation concept module and the total import law,
+`watch --page`/`--category` and no `--claim`, logic/edit ending the daemon↔cli cycle,
+poll.rs, src/blocks/, fifteen ES modules with the stamp-as-path-segment cache fix,
+idiomorph morphing, the decomposed comment island with the chip folded in, the JS graph
+check, and two dead-code removals (fragment_outline + the scraper dependency;
+renderAllBlocks).
+
 **v5 curated: fewer concepts, same features, 2026-08-23.** Hours after 0.4.1, the author
 asked for a grilling on simplification and [V5.sv](V5.sv) came out of it — four sv-ask
 rounds on a grill page, confirmed through the page's own machinery (round 4, thread 116).

@@ -1,7 +1,7 @@
 # sideview
 
-A visual side channel for CLI agents. The latest release on crates.io is **0.4.1**
-(2026-08-23, github.com/kindly/sideview); the design documents remain the authority on
+A visual side channel for CLI agents. The latest release on crates.io is **0.5.0**
+(2026-08-26, github.com/kindly/sideview); the design documents remain the authority on
 intent.
 
 **Read the working plan first** — the highest-numbered `V*.sv` in the repo, itself a

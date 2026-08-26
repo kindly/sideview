@@ -429,6 +429,10 @@ island with the chip folded in, and two dead-code removals. Approving round 6 is
 order to: push main, tag v0.5.0 (release.yml builds the binaries), publish to crates.io,
 and re-sync the installed skills on this machine's harnesses. Nothing is tagged or
 published before it.
+
+**Shipped 2026-08-26: round 6 approved ("Go deploy", thread 136) and 0.5.0 went out
+within minutes — main pushed, v0.5.0 tagged, crates.io publish confirmed, skills
+re-synced on all four harnesses.**
 </sv-prose>
 
 <sv-ask id="d6fin" round="6" role="close">
