@@ -53,7 +53,13 @@ immediately. Useful fact found en route: **rust-embed serves `static/` from disk
 debug builds**, so UI changes appear on reload with no restart — but the *daemon
 binary* was still pre-name while drilling, so a posted `author_name` is silently
 dropped until `sideview restart`. The author's live name test therefore comes after
-their restart. Committed in two: the curation (docs) and step 2 (code). One build-environment find worth keeping: cargo's bin fingerprint
+their restart. Committed in two: the curation (docs) and step 2 (code). **Live-verified
+same hour (thread 140)**: the author restarted, named themselves "david" in ⚙, and
+commented — stored signed, delivered signed on watch, answered by name. One honest
+stumble worth its lesson: the agent's *watcher process* was still the pre-name build
+and stripped the field from events, so the agent first told the author their test had
+failed when the store said it hadn't — after a binary upgrade, restart watchers too,
+and when an event contradicts the page, check the store before answering. One build-environment find worth keeping: cargo's bin fingerprint
 (`target/debug/.fingerprint/sideview-*/dep-bin-sideview`) went stale-but-claiming-fresh —
 `cargo build` said "Finished" while `target/debug/sideview` stayed an hour old (sources
 demonstrably newer; `CARGO_LOG=cargo::core::compiler::fingerprint=debug` showed "all
