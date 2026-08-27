@@ -90,7 +90,7 @@ Every idea still standing after five shipped versions, in one place — the cont
 - **Provenance**: commit + working diff + input hashes per output; grades `verifiable`/`dated`/`unverifiable`; staleness detection; `sideview verify`. Diff excluded from shares by default. *(DESIGN.md)*
 - **Typed, enumerated params from the start**: the cheap pre-decision that keeps T2/T3 possible. *(SHARING.md recommendation)*
 - **The auth trigger**: a tailnet node you don't control means `--bind loopback` + `tailscale serve`, better than any token. v6 answers the *funnel* case with tokens (round 1: the tailnet stays open; security begins at the public web); the trigger as written stays for the node-you-don't-control case. *(V0.md remote; V6.sv)*
-- **`tailscale serve` SSE buffering check**: ten minutes; gates the whole proxied-remote story. Standing since v0, never run — **pulled into v6 as step 1** (funnel is the share path, so the check is now load-bearing). *(HANDOFF; V6.sv)*
+- **`tailscale serve` SSE buffering check**: standing since v0, **run 2026-08-27 as v6's step 1 — passed on both paths** (serve proxy ≤2 ms transit; public funnel relay ≤28 ms, no buffering; findings on V6.sv). Off the list. *(HANDOFF; V6.sv)*
 </sv-prose>
 
 <sv-prose id="experiments">

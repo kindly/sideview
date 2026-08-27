@@ -222,4 +222,45 @@ the name in ⚙ and comment anywhere, and the watch event arrives signed. Approv
 closes step 2 for real.
 </sv-ask>
 
+
+<sv-prose id="funnel">
+## The funnel check (step 1, run live 2026-08-27)
+
+The question standing since v0 is answered: **the funnel does not buffer SSE.** A
+throwaway one-tick-per-second probe behind `tailscale funnel`, measured on both paths —
+tailnet-direct through the serve proxy (gaps ~1000 ms, transit ≤2 ms) and the true
+public relay through the ingress, resolved by public DNS (all 30 events, gaps ~1000 ms,
+transit ≤28 ms). Funnel and probe torn down after; the public URL now refuses.
+**Round 4 approved 2026-08-27, all as suggested (thread 141): step 1 closed** — share
+detects-and-instructs at both consent gates, step 3 next, the cert wait handled in
+share's UX. The
+share design inherits four facts: funnel needs a **one-time tailnet enable** (the CLI
+prints the admin URL and waits); tailscaled takes serve configs only from root or its
+**operator** (`sudo tailscale set --operator=$USER`, once); funnel is **TLS
+passthrough** — the certificate lives on this machine, and the *first* HTTPS hit waits
+~30 s on its issuance (our first relay run timed out on exactly that); and the funnel
+proxies **one hostname to one port** — whatever it points at is entirely public.
+</sv-prose>
+
+<sv-ask id="d4q1" round="4">
+**How `sideview share` handles the two consent gates.** Funnel enablement and operator
+mode are both one-time, both outside sideview's authority.
+- * Detect and instruct: on denial, print the exact one-time command / admin URL and stop — sideview never sudos, never opens the browser to the admin console itself
+- Drive it: share runs `sudo tailscale set --operator` itself and opens the enable URL
+</sv-ask>
+
+<sv-ask id="d4q2" round="4">
+**Sequencing confirmed by the one-port fact.** The funnel exposes the whole daemon, so
+tokens and the guest boundary (step 3) must be live before `share` ever points funnel
+at a real sideview port; and share's first run should expect the ~30 s certificate
+wait (warm it, or say so honestly).
+- * Confirmed — step 3 next, share last, cert wait handled in share's UX
+- Something reads wrong — rider says what
+</sv-ask>
+
+<sv-ask id="d4fin" round="4" role="close">
+Round 4: the funnel check's findings. Approving closes step 1 and starts step 3 —
+tokens and the guest boundary.
+</sv-ask>
+
 </sv-page>

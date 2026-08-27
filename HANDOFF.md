@@ -29,6 +29,21 @@ reconnect-replay-morphs item v5's round 5 owed it, and the trust/sharing entries
 their v6 annotations. Known skew, the author's to cure: `~/.cargo/bin/sideview` is still
 0.4.1 (`cargo install --path .`); the daemon and `target/debug` are 0.5.0.
 
+**Step 1 (the funnel check) ran live and passed, 2026-08-27 — round 4 open on V6.sv.**
+The v0-era SSE-buffering question is closed: a 1 Hz probe behind `tailscale funnel`
+delivered every event unbuffered on both paths — tailnet-direct through the serve proxy
+(transit ≤2 ms) and the true public relay through the ingress, resolved via public DNS
+(all 30 events, transit ≤28 ms). Four facts the share design inherits, recorded on
+V6.sv: funnel needs a one-time tailnet enable (CLI prints the admin URL and waits);
+serve configs need root or operator mode (`sudo tailscale set --operator=$USER`, once —
+the author ran it); funnel is TLS passthrough, so the cert lives on the node and the
+first HTTPS hit waits ~30 s on issuance (our first relay run timed out on exactly that
+and looked like buffering — it wasn't); and funnel proxies one hostname to one port,
+so tokens (step 3) must be live before `share` ever points it at a real daemon.
+Everything torn down after; the public URL refuses. IDEAS' standing check item is
+closed. Round 4 drills the consent-gate UX (detect-and-instruct vs drive-it) and the
+sequencing; approval starts step 3.
+
 **Step 2 (names on comments) is built, 2026-08-26 — drill round 2 open on V6.sv.**
 Migration v6 (`author_name TEXT` beside the author role; the live store migrated with a
 `-pre-v6` backup, the running 0.5.0 daemon unaffected since every query names its
