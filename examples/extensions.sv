@@ -13,33 +13,35 @@ tag, the injected `SIDEVIEW_BLOCK` context, `call_cli` and
 <sv-prose id="duckdb-intro">
 ## duckdb — streaming exec into a grid
 
-The block's body is SQL on stdin; rows arrive as `-jsonlines` and paint as
-they stream. Re-run aborts the previous child mid-flight — cancellation is
-the fetch's AbortController, nothing more.
+The block's body is a mapping (YAML — or JSON, which is valid YAML); the
+`query` key goes to stdin, rows arrive as `-jsonlines` and paint as they
+stream. Re-run aborts the previous child mid-flight — cancellation is the
+fetch's AbortController, nothing more.
 </sv-prose>
 
 <sv-duckdb id="grid" height="24rem">
-select
-  i as n,
-  i * i as square,
-  printf('%.4f', sqrt(i)) as root,
-  case when i % 15 = 0 then 'fizzbuzz'
-       when i % 3 = 0 then 'fizz'
-       when i % 5 = 0 then 'buzz'
-       else '' end as game
-from range(2000) t(i)
+query: |
+  select
+    i as n,
+    i * i as square,
+    printf('%.4f', sqrt(i)) as root,
+    case when i % 15 = 0 then 'fizzbuzz'
+         when i % 3 = 0 then 'fizz'
+         when i % 5 = 0 then 'buzz'
+         else '' end as game
+  from range(2000) t(i)
 </sv-duckdb>
 
 <sv-prose id="git-intro">
 ## git — the generality check
 
-A second extension, zero shared code with the first: the body becomes argv,
-`call_cli` runs it, the frame colorizes. The last commits of this very
-repository:
+A second extension, zero shared code with the first: the config's `cmd`
+becomes argv, `call_cli` runs it, the frame colorizes. The last commits of
+this very repository:
 </sv-prose>
 
 <sv-git id="log" height="18rem">
-log --oneline -15
+cmd: log --oneline -15
 </sv-git>
 
 <sv-prose id="git-diff-intro">
@@ -47,7 +49,7 @@ And a real diff — what the previous commit changed:
 </sv-prose>
 
 <sv-git id="lastdiff" height="26rem">
-show HEAD --stat --patch --no-color
+cmd: show HEAD --stat --patch --no-color
 </sv-git>
 
 </sv-page>

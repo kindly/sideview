@@ -37,6 +37,7 @@ toml = { version = "0.9.8", default-features = false, features = ["parse", "serd
 tokio = { version = "1.53.1", features = ["sync", "rt", "process", "io-util", "time"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 uuid = { version = "1.24.0", features = ["v4"] }
+serde_norway = "0.9.42"
 
 # Fat LTO earns its keep here: measured on the DataFusion probe it cut a
 # binary 90 -> 35 MB (V3.sv, 2026-08-16). CI pays the link time, every

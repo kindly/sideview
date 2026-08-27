@@ -263,4 +263,118 @@ Round 4: the funnel check's findings. Approving closes step 1 and starts step 3 
 tokens and the guest boundary.
 </sv-ask>
 
+
+<sv-prose id="step3">
+## Step 3 design: tokens and the guest boundary
+
+Before code, the shape. **Origin**: a request wearing tailscaled's funnel mark
+(`Tailscale-Funnel-Request: ?1` — verified live 2026-08-27 with a header-echo probe;
+a relayed request also carries the caller's real public IP in X-Forwarded-For, and a
+serve-proxied *tailnet* request instead carries `Tailscale-User-Login`/`-Name`, T2's
+identity headers, already flowing) is outside; everything else — loopback,
+tailnet-direct, serve-proxied tailnet — stays open exactly as today. The relay also
+takes ~15–20 s to start routing after each enable — share's UX inherits that wait
+beside the cert one. A local process forging the mark only locks itself out. **Tokens**:
+migration v7 adds a `shares` table (unguessable token, page or NULL for project-wide,
+created/revoked stamps) — db, never versioned. **Roles**: funnel with no valid token is
+one honest 403; a page token is the guest role on exactly that page (the conversation
+surface, per round 1); the project-wide token is *your* link, so it carries the owner
+role — everything your local browser can do, editing included. Enforcement is
+server-side by role at every endpoint; hiding buttons is UX on top. Round 5 settles the
+three open forks.
+</sv-prose>
+
+<sv-ask id="c5q1" round="5">
+**How the token travels.** The guest link should be one URL that keeps working.
+- * Query once, cookie after: the link is `/p/<id>?k=<token>`; the daemon sets a Secure HttpOnly cookie and redirects clean; SSE, api and assets ride the cookie; the bookmark re-sets it each visit
+- Token in every path (`/share/<token>/…`) — no cookies, but every asset and api URL needs rewriting
+</sv-ask>
+
+<sv-ask id="c5q2" round="5">
+**What a guest's SSE connection carries.** Live updates are half the product, but the
+stream must not leak the rest of the project.
+- * The same SSE endpoint, role-filtered server-side: a guest receives only their page's block and thread events; the page-strip event is withheld (other pages' existence doesn't leak)
+- No SSE for guests in v6 — a static page plus comment posting; live view arrives in a later version
+</sv-ask>
+
+<sv-ask id="c5q3" round="5">
+**The file endpoint for guests.** `/f/` serves any project file (root-confined) —
+right for you, a project-wide disclosure for a page-scoped guest.
+- * Guests get `.sideview/attachments/` only: comment images work; a markup block's `<img src="/f/shots/x.png">` breaks for guests in v6 — an honest, recorded gap (the owner token keeps full `/f/`)
+- Any valid token gets full `/f/` — handing someone the link is trusting them with what the page might reference
+</sv-ask>
+
+<sv-ask id="c5fin" round="5" role="close">
+Round 5: the step-3 forks, before a line of it is written. Approving sets the design;
+the build follows with its own drill.
+</sv-ask>
+
+
+<sv-prose id="drill6">
+## Drill: the guest boundary (step 3, built 2026-08-27 — round 6 approved same day,
+all as suggested, thread 144; step 3 closed)
+
+Built to round 5's answers: migration v7 and the shares concept (`models/share.rs`,
+token → Owner / Guest-on-one-page), the funnel gate on every route (`?k=` adopted into
+a Secure HttpOnly cookie with a clean redirect; a fresh `?k=` beats a stale cookie),
+role-filtered SSE (a guest connection replays and receives only its page; the pages
+event arrives re-scoped), the conversation surface open to guests with the page guard
+on every write, authoring refused server-side, full `/f/` for any valid token, and the
+shell marking guests so the client withholds the strip and the pencil. Extensions
+started as a blanket guest refusal; the author's whitelist design replaced it the same
+day, and the same thread then re-founded the extension body contract itself — a
+mapping, always, YAML 1.2 with JSON valid by superset (thread 143 — d6q1 below has the
+shape; EXTENSIONS.md carries the contract; serde_norway is the pinned fork). 83 tests,
+the gate pinned end to end (tokenless 403, adoption redirect, cross-page refusals,
+whole-call whitelist matching in both spellings, owner-full, revocation immediate).
+</sv-prose>
+
+<sv-ask id="d6q1" round="6">
+**Extensions for guests: the `_sv_allow` whitelist, and the body became a mapping**
+*(your design, thread 143, built same day)*. Extension-block bodies are now always a
+mapping — parsed as YAML 1.2, so plain JSON is equally valid (your superset point; no
+free-text form). The daemon parses once and injects `SIDEVIEW_BLOCK.config`; frames
+need no YAML library. A guest's browser gets the frame — the block renders — and a
+`call_cli` passes only on an exact whole-call match:
+
+```
+query: |
+  select region, sum(mw) from plants group by 1
+_sv_allow:
+  - args: [-jsonlines]
+    stdin: "select region, sum(mw) from plants group by 1"
+```
+
+`stdin` matches too (args alone would leave a SQL tool's stdin open to anything); a
+non-mapping body allows nothing; the list lives in canon, so a guest can never widen
+it; owner link and tailnet stay unrestricted. Explicit entries now, patterns later.
+Both reference extensions and the demo page migrated (`query:` / `cmd:` keys).
+- * As built — execution bounded by construction, and one body contract instead of two
+- Something reads wrong — rider says what
+</sv-ask>
+
+<sv-ask id="d6q2" round="6">
+**One refusal, three causes.** No token, a revoked token, and a valid token asking for
+the wrong page all get the identical 403 page — a capability URL reveals nothing about
+what else exists, not even "that page is real".
+- * As built (this question is the record)
+- Differentiate the messages
+</sv-ask>
+
+<sv-ask id="d6q3" round="6">
+**`/assets/` stays tokenless.** The static css/js answer any funnel caller — needed
+before any styled page can render, importable by the opaque-origin islands, and
+content-free (the same bytes ship in every copy of the binary).
+- * As built — static assets are public artifacts, not project data
+- Gate them too: nothing answers without a token
+</sv-ask>
+
+<sv-ask id="d6fin" round="6" role="close">
+Drill round 6: the guest boundary. To feel it live before approving: `sideview
+restart`, then I mint a guest token for this page, you run `tailscale funnel --bg
+<port>`, and the link opens this page — and only this page — from any browser off the
+tailnet (your phone with wifi off is the honest test). Approving closes step 3;
+step 4 (`sideview share`, the one command) is last.
+</sv-ask>
+
 </sv-page>

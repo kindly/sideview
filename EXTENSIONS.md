@@ -35,6 +35,32 @@ extension wrapping `git` (or any tool with hook-like configuration —
 says. Core sideview refuses exactly this and uses gitoxide instead; an
 extension may accept it, because installing the extension was the decision.
 
+### Guests, and the `_sv_allow` whitelist (v6)
+
+A page shared by link (V6.sv: funnel guests) draws the line at execution.
+A guest's browser receives the extension's frame files — the block renders —
+but `call_cli` from a guest passes only when the block declares it. Sideview
+reads the block config's `_sv_allow` key: a list of allowed calls, each
+matched *whole* — `args` exactly, `stdin` exactly (an entry without `stdin`
+admits only a call sending none, because args alone would leave e.g. a SQL
+tool's stdin open to anything). One mapping holds the extension's own config
+and sideview's list together:
+
+```
+query: |
+  select region, sum(mw) from plants group by 1
+_sv_allow:
+  - args: [-jsonlines]
+    stdin: "select region, sum(mw) from plants group by 1"
+```
+
+A body that isn't a mapping allows no guest calls at all. The whitelist
+lives in the page file — canon, one author — so a guest can never widen it.
+Entries are explicit; patterns are a later decision, deliberately.
+
+The author's own devices (the owner link) and everything on the tailnet are
+unrestricted, exactly as local use always was.
+
 
 ## Anatomy
 
@@ -83,19 +109,28 @@ deliberately out of scope for now: an extension is files in your repository.
 
 ```
 <sv-table db="data/readings.duckdb" height="30rem">
-select station, avg(temp) from readings group by 1
+query: |
+  select station, avg(temp)
+  from readings group by 1
 </sv-table>
 ```
 
-The tag is the extension's `name`. Attributes and body mean whatever the
-extension decides — sideview does not interpret them, it delivers them (see
-`SIDEVIEW_BLOCK`). The body is raw bytes to the closing tag, like every
-sideview block: authors never escape anything. Two format rules that bite
-(they bit this document's own author): tags count only at **column 0**, and
-the closing tag must sit **alone on its own line** — a one-line
-`<sv-git>log</sv-git>` is not a block. Give blocks an `id`: without one the
-id is a content hash, which works but makes ugly frame URLs and re-anchors
-comments on every edit.
+The tag is the extension's `name`. **The body is a mapping** (changed at v6,
+thread 143 — there is no free-text form): parsed as YAML 1.2, and since
+YAML 1.2 is a JSON superset, a plain JSON object is equally valid — write
+whichever reads better in the file; block scalars (`query: |`) are where
+YAML earns its keep, keeping a query readable in a diff. The mapping's keys
+mean whatever the extension decides — sideview parses the body once and
+delivers the object (see `SIDEVIEW_BLOCK.config`), reserving only the
+`_sv_` key prefix for itself (the same namespace as sv-csv's `_sv_row`;
+today: `_sv_allow`, the guest whitelist in the trust-model section). A body
+that doesn't parse as a mapping gives `config: null` — how loudly to fail is
+the extension's choice, and guests can call nothing on such a block. Two
+format rules that bite (they bit this document's own author): tags count
+only at **column 0**, and the closing tag must sit **alone on its own
+line** — a one-line `<sv-git>cmd: log</sv-git>` is not a block. Give blocks
+an `id`: without one the id is a content hash, which works but makes ugly
+frame URLs and re-anchors comments on every edit.
 
 One attribute is reserved: `height`, a CSS length. When present the frame is
 pinned to it; when absent sideview measures the frame's document and grows
@@ -134,9 +169,12 @@ Before your entry's first script runs:
   The one sanctioned exception: sideview's public endpoints are same-origin
   and fair game — `fetch("/f/<project-relative path>")` reads a project file
   without spawning anything.
-- `window.SIDEVIEW_BLOCK` — `{ page, id, attrs, body }`: the block's page id,
-  block id, attributes as an object of strings, and the raw body. This is
-  how your UI learns what it is showing without asking anyone.
+- `window.SIDEVIEW_BLOCK` — `{ page, id, attrs, body, config }`: the block's
+  page id, block id, attributes as an object of strings, the raw body, and
+  **`config`, the body parsed as a mapping** (YAML 1.2, so JSON too; null
+  when the body isn't one). Read `config` — the daemon parses so the frame
+  needs no YAML library; `body` stays alongside verbatim for transparency.
+  This is how your UI learns what it is showing without asking anyone.
 - `window.sideview` — the API below.
 - A live `data-bs-theme="light" | "dark"` attribute on your `<html>`,
   kept in sync with the page's theme. Key your CSS off it and the block
@@ -291,10 +329,10 @@ bin = "wc"
 <body>
   <pre id="out">counting…</pre>
   <script type="module">
-    const { attrs, body } = window.SIDEVIEW_BLOCK;
+    const { attrs, config } = window.SIDEVIEW_BLOCK;
     const { code, stdout, stderr } =
       await sideview.call_cli([attrs.mode === "lines" ? "-l" : "-w"],
-                              { stdin: body });
+                              { stdin: String(config?.text || "") });
     document.getElementById("out").textContent =
       code === 0 ? stdout.trim() + " " + (attrs.mode || "words") : stderr;
   </script>
@@ -305,8 +343,9 @@ A page uses it as:
 
 ```
 <sv-wordcount mode="lines">
-any text at all,
-counted by a subprocess.
+text: |
+  any text at all,
+  counted by a subprocess.
 </sv-wordcount>
 ```
 

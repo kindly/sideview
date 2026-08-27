@@ -5,3 +5,4 @@
 
 pub mod base;
 pub mod conversation;
+pub mod share;

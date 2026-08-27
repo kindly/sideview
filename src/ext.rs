@@ -231,15 +231,32 @@ pub fn inject_entry(entry_html: &str, base: &str, block_json: &str) -> String {
     format!("{prelude}{entry_html}")
 }
 
+/// The extension-block body contract (V6.sv thread 143): a **mapping**,
+/// parsed as YAML 1.2 — and since YAML 1.2 is a JSON superset, plain JSON
+/// is equally valid; authors write whichever reads better in the file
+/// (block scalars are where YAML earns it: a query stays a query in a
+/// diff). Sideview parses once, here, and hands frames the object — the
+/// browser has no YAML parser, so the raw-bytes body contract ended when
+/// the body became config. The `_sv_` key prefix is reserved (the house
+/// namespace, like sv-csv's `_sv_row`): `_sv_allow` lists the calls a
+/// funnel guest may make. A body that is not a mapping yields None —
+/// no config, no guest calls.
+pub fn parse_config(body: &str) -> Option<serde_json::Value> {
+    let v: serde_json::Value = serde_norway::from_str(body).ok()?;
+    v.is_object().then_some(v)
+}
+
 /// SIDEVIEW_BLOCK as a script-safe JSON literal: serde makes it JSON, and
 /// escaping `</` keeps a body containing "</script>" from ending the
-/// injected tag early.
+/// injected tag early. `config` is the parsed mapping (null when the body
+/// isn't one); `body` stays alongside, verbatim, for transparency.
 pub fn block_json(page: &str, id: &str, attrs: &[(String, String)], body: &str) -> String {
     let attrs_map: serde_json::Map<String, serde_json::Value> = attrs
         .iter()
         .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
         .collect();
-    serde_json::json!({ "page": page, "id": id, "attrs": attrs_map, "body": body })
+    let config = parse_config(body).unwrap_or(serde_json::Value::Null);
+    serde_json::json!({ "page": page, "id": id, "attrs": attrs_map, "body": body, "config": config })
         .to_string()
         .replace("</", "<\\/")
 }
@@ -279,6 +296,30 @@ mod tests {
             PathBuf::from("/proj/extensions/demo/tool")
         );
         assert!(resolve_bin(root, &ext(None)).is_err(), "no bin declared, no call");
+    }
+
+    #[test]
+    fn the_body_is_a_mapping_yaml_or_its_json_subset_and_config_rides_the_injection() {
+        // Native YAML: block scalars keep a query readable in canon.
+        let yaml = "query: |\n  select 1\n_sv_allow:\n  - args: [-jsonlines]\n";
+        let v = parse_config(yaml).unwrap();
+        assert_eq!(v["query"], "select 1\n");
+        assert!(v["_sv_allow"].is_array());
+        // JSON parses because YAML 1.2 is its superset — the author's out
+        // for disliking YAML (thread 143).
+        let v = parse_config(r#"{"query": "select 1"}"#).unwrap();
+        assert_eq!(v["query"], "select 1");
+        // Anything that isn't a mapping is no config at all.
+        assert!(parse_config("select 1 from x").is_none(), "a bare scalar is not config");
+        assert!(parse_config("- a\n- b\n").is_none(), "a sequence is not config");
+        // The frame gets the parsed object beside the verbatim body.
+        let json = block_json("V3", "b1", &[], "cmd: log --oneline\n");
+        let obj: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(obj["config"]["cmd"], "log --oneline");
+        assert_eq!(obj["body"], "cmd: log --oneline\n");
+        let obj: serde_json::Value =
+            serde_json::from_str(&block_json("V3", "b1", &[], "free text")).unwrap();
+        assert!(obj["config"].is_null(), "non-mapping body: config is honestly null");
     }
 
     #[test]

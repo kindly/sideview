@@ -283,6 +283,10 @@ html {
   margin-left: auto;
 }
 
+/* A guest (V6.sv step 3) sees one page: the strip would only ever hold it,
+   so it goes — the daemon already withholds the other pages' existence. */
+body.sv-guest #sv-pages { display: none; }
+
 #sv-pages {
   display: flex;
   gap: 0.4rem;

@@ -27,6 +27,10 @@ const HEARTBEAT_EVERY: u32 = 12; // × POLL_INTERVAL ≈ 3s
 #[derive(Debug, Clone)]
 pub(crate) struct Outgoing {
     pub(crate) kind: &'static str, // "block" | "pages" | "threads"
+    /// Which page this event concerns — the guest gate's filter key
+    /// (V6.sv step 3). None = project-wide (the pages event), which guests
+    /// receive re-scoped rather than whole.
+    pub(crate) page: Option<String>,
     pub(crate) data: String,
 }
 
@@ -85,8 +89,8 @@ pub(crate) fn conversation_json(store: &Store, page: &str) -> Result<String> {
     conversation::snapshot_json(store, page)
 }
 
-pub(crate) fn threads_event(data: String) -> Outgoing {
-    Outgoing { kind: "threads", data }
+pub(crate) fn threads_event(page: &str, data: String) -> Outgoing {
+    Outgoing { kind: "threads", page: Some(page.to_string()), data }
 }
 
 /// Change detection, liveness, supersession and the deleted-underneath-us
@@ -293,7 +297,7 @@ pub(crate) fn poll_loop(
                     if let Ok(json) = conversation_json(&store, page) {
                         if shared.conversations.get(page) != Some(&json) {
                             shared.conversations.insert(page.clone(), json.clone());
-                            events.push(threads_event(json));
+                            events.push(threads_event(page, json));
                         }
                     }
                 }
@@ -302,6 +306,7 @@ pub(crate) fn poll_loop(
                     let keep = conversing.contains(page);
                     if !keep {
                         events.push(threads_event(
+                            page,
                             serde_json::json!({
                                 "page": page, "threads": [], "comments": [], "attachments": [],
                             })
@@ -313,7 +318,7 @@ pub(crate) fn poll_loop(
             }
 
             if changed_pages {
-                events.insert(0, pages_event(&shared));
+                events.insert(0, pages_event(&shared, None));
             }
         }
         for e in events {
@@ -492,6 +497,7 @@ fn diff_events(page: &str, old: Option<&PageState>, new: &PageState) -> Vec<Outg
         if !new_ids.contains(b.id.as_str()) {
             events.push(Outgoing {
                 kind: "block",
+                page: Some(page.to_string()),
                 data: serde_json::json!({
                     "page": page,
                     "block": b.id,
@@ -507,6 +513,7 @@ fn diff_events(page: &str, old: Option<&PageState>, new: &PageState) -> Vec<Outg
 pub(crate) fn block_event(page: &str, b: &Rendered) -> Outgoing {
     Outgoing {
         kind: "block",
+        page: Some(page.to_string()),
         data: serde_json::json!({
             "page": page,
             "block": b.id,
@@ -519,10 +526,14 @@ pub(crate) fn block_event(page: &str, b: &Rendered) -> Outgoing {
     }
 }
 
-pub(crate) fn pages_event(shared: &Shared) -> Outgoing {
+/// `only`: the guest gate's scope (V6.sv step 3) — a guest's pages event
+/// names exactly their page, so the rest of the project's existence never
+/// leaks through the strip. None = everything, the local/owner view.
+pub(crate) fn pages_event(shared: &Shared, only: Option<&str>) -> Outgoing {
     let pages: Vec<serde_json::Value> = shared
         .order
         .iter()
+        .filter(|(id, _)| only.is_none_or(|o| id == o))
         .map(|(id, last_active_at)| {
             // Props pass through whole from the file, so a key a newer CLI
             // writes reaches the page even through a daemon that has never
@@ -549,6 +560,7 @@ pub(crate) fn pages_event(shared: &Shared) -> Outgoing {
         .collect();
     Outgoing {
         kind: "pages",
+        page: None,
         data: serde_json::json!({ "pages": pages }).to_string(),
     }
 }

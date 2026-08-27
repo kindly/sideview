@@ -156,6 +156,21 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE comments ADD COLUMN author_name TEXT;
     "#,
+    // v7: share links (V6.sv, rounds 1/4). A capability token a funnel-
+    // origin request must present: page-scoped tokens carry the guest role
+    // on exactly that page, the page-NULL token is the owner's own-devices
+    // link. Tokens are what should never be versioned — the db is their
+    // home by the placement principle. Revocation keeps the row: a token is
+    // an audit fact, not just an access key.
+    r#"
+    CREATE TABLE shares(
+        id         INTEGER PRIMARY KEY,
+        token      TEXT NOT NULL UNIQUE,
+        page       TEXT,              -- NULL = project-wide (the owner link)
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER            -- NULL = live
+    );
+    "#,
 ];
 
 pub fn now_ms() -> i64 {

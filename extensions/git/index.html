@@ -25,10 +25,10 @@
 <pre id="out">running…</pre>
 <script type="module">
 // The generality check (V3.sv): a second extension proves the mechanism is
-// not shaped around one tool. The block body's first line becomes argv —
-// split on whitespace, a demo-grade simplification (no quoted args).
-const { body } = window.SIDEVIEW_BLOCK;
-const args = body.trim().split(/\s+/);
+// not shaped around one tool. The config's `cmd` becomes argv — split on
+// whitespace, a demo-grade simplification (no quoted args).
+const { config } = window.SIDEVIEW_BLOCK;
+const args = String((config && config.cmd) || '').trim().split(/\s+/);
 document.getElementById('cmd').textContent = 'git ' + args.join(' ');
 
 const out = document.getElementById('out');

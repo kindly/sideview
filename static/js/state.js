@@ -41,7 +41,10 @@ function pageProps() {
 // Editing from the page is an .sv affordance: block splices don't exist on
 // imported md/html pages (found live on a bound .md, 2026-08-23), so the
 // edit verbs are withheld there. Absent format = older daemon: assume sv.
+// Guests never edit (V6.sv step 3) — the daemon refuses server-side; this
+// just keeps the pencil honest.
 function pageEditable() {
+  if (document.body.classList.contains('sv-guest')) return false;
   const s = state.pages.find((x) => x.id === state.selected);
   return !s || !s.format || s.format === 'sv';
 }

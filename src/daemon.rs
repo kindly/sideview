@@ -63,6 +63,101 @@ struct AppState {
 #[folder = "static/"]
 struct Assets;
 
+// ---- the guest gate (V6.sv step 3) -----------------------------------------------
+
+/// What a request may do. Everything not funnel-marked is Full — loopback
+/// and the tailnet stay open (curation round 1: security begins at the
+/// public web) — and so is the owner link: it is the author's own devices.
+enum Access {
+    Full,
+    Guest { page: String },
+}
+
+/// tailscaled stamps this on every funnel-relayed request (verified live
+/// 2026-08-27 with a header-echo probe; a tailnet serve-proxied request
+/// carries Tailscale-User-* instead and no mark). A local process forging
+/// the mark only locks itself out.
+const FUNNEL_MARK: &str = "tailscale-funnel-request";
+const SHARE_COOKIE: &str = "sv_share";
+
+fn query_token(req: &actix_web::HttpRequest) -> Option<String> {
+    req.query_string()
+        .split('&')
+        .find_map(|p| p.strip_prefix("k=").filter(|v| !v.is_empty()).map(str::to_string))
+}
+
+/// The gate. A fresh `?k=` beats a stale cookie; the page handlers adopt a
+/// valid `?k=` into the cookie (`adopt_token`) so SSE, api and files ride
+/// it from then on.
+fn access_of(req: &actix_web::HttpRequest, state: &AppState) -> Result<Access, HttpResponse> {
+    if req.headers().get(FUNNEL_MARK).is_none() {
+        return Ok(Access::Full);
+    }
+    let token = query_token(req).or_else(|| req.cookie(SHARE_COOKIE).map(|c| c.value().to_string()));
+    let Some(token) = token else { return Err(refused()) };
+    let store = state.store.lock().unwrap();
+    match crate::logic::share::lookup_live(&store, &token) {
+        Ok(Some(s)) => Ok(match s.role() {
+            crate::logic::share::Role::Owner => Access::Full,
+            crate::logic::share::Role::Guest { page } => Access::Guest { page },
+        }),
+        _ => Err(refused()),
+    }
+}
+
+/// Owner-only surfaces (editing, deletion, extensions): anything less than
+/// Full gets the honest 403.
+fn require_full(req: &actix_web::HttpRequest, state: &AppState) -> Option<HttpResponse> {
+    match access_of(req, state) {
+        Ok(Access::Full) => None,
+        Ok(Access::Guest { .. }) => Some(refused()),
+        Err(r) => Some(r),
+    }
+}
+
+/// The honest 403: no token, a revoked one, or a page the token doesn't
+/// reach — deliberately the same answer for all three, because a capability
+/// URL should reveal nothing about what else exists.
+fn refused() -> HttpResponse {
+    HttpResponse::Forbidden().content_type("text/html; charset=utf-8").body(
+        "<!doctype html><meta charset=\"utf-8\"><title>sideview</title>\
+         <body style=\"font-family:system-ui;display:grid;place-items:center;min-height:100vh;margin:0\">\
+         <p>This link doesn't open anything here — it may have been revoked.<br>\
+         Ask whoever shared it for a fresh one.</p>",
+    )
+}
+
+/// Fold a valid `?k=` into the cookie and redirect clean: the bookmarkable
+/// URL keeps working, and every later request rides the cookie. An invalid
+/// `?k=` falls through to `access_of`'s honest 403.
+fn adopt_token(req: &actix_web::HttpRequest, state: &AppState) -> Option<HttpResponse> {
+    if req.headers().get(FUNNEL_MARK).is_none() {
+        return None;
+    }
+    let k = query_token(req)?;
+    let live = {
+        let store = state.store.lock().unwrap();
+        matches!(crate::logic::share::lookup_live(&store, &k), Ok(Some(_)))
+    };
+    if !live {
+        return None;
+    }
+    let cookie = actix_web::cookie::Cookie::build(SHARE_COOKIE, k)
+        .path("/")
+        .secure(true)
+        .http_only(true)
+        .same_site(actix_web::cookie::SameSite::Lax)
+        .max_age(actix_web::cookie::time::Duration::days(365))
+        .finish();
+    Some(
+        HttpResponse::Found()
+            .cookie(cookie)
+            .insert_header(("Location", req.path().to_string()))
+            .insert_header(("Cache-Control", "no-store"))
+            .finish(),
+    )
+}
+
 /// Try to open a browser; failure just means the printed URL is the path.
 /// Inside an agent, don't even try — xdg-open needs a desktop session the
 /// sandbox doesn't reach.
@@ -253,7 +348,14 @@ pub fn run(store_dir: &Path, opts: &Opts) -> Result<()> {
 /// create or alter content. Deleting a page is deleting its file; the poll
 /// loop notices the binding is gone on its next tick and the pages
 /// snapshot converges every client.
-async fn delete_page(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
+async fn delete_page(
+    req: actix_web::HttpRequest,
+    path: web::Path<String>,
+    state: Data<AppState>,
+) -> impl Responder {
+    if let Some(r) = require_full(&req, &state) {
+        return r;
+    }
     let id = path.into_inner();
     let mut store = state.store.lock().unwrap();
     let Ok(Some(binding)) = base::binding(&store, &id) else {
@@ -361,12 +463,18 @@ struct UploadQuery {
 /// handed back. No row is born here — that happens when the comment is sent,
 /// so a canceled draft leaves only an unreferenced file for gc.
 async fn upload_attachment(
+    req: actix_web::HttpRequest,
     q: web::Query<UploadQuery>,
     body: web::Bytes,
     state: Data<AppState>,
 ) -> impl Responder {
     use sha2::Digest as _;
 
+    // Attachments are part of the conversation surface: any valid token
+    // may upload (round 1); only tokenless funnel callers are refused.
+    if let Err(r) = access_of(&req, &state) {
+        return r;
+    }
     if body.is_empty() {
         return HttpResponse::BadRequest().body("empty attachment");
     }
@@ -482,7 +590,19 @@ struct CommentBody {
     attachments: Vec<conversation::NewAttachment>,
 }
 
-async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> impl Responder {
+async fn post_comment(
+    req: actix_web::HttpRequest,
+    body: web::Json<CommentBody>,
+    state: Data<AppState>,
+) -> impl Responder {
+    // Commenting is the guest surface itself — but scoped: a guest token
+    // reaches exactly its page. New threads are checked here; replies reuse
+    // the page guard the CLI already has.
+    let guest_page = match access_of(&req, &state) {
+        Ok(Access::Full) => None,
+        Ok(Access::Guest { page }) => Some(page),
+        Err(r) => return r,
+    };
     let b = body.into_inner();
     if b.body.trim().is_empty() {
         return HttpResponse::BadRequest().body("empty comment body");
@@ -497,13 +617,18 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
     let mut store = state.store.lock().unwrap();
     let target = match (b.thread, b.page.as_deref(), b.target.as_deref()) {
         (Some(tid), _, _) => conversation::CommentTarget::Reply { thread: tid },
-        (None, Some(page), Some(target)) => conversation::CommentTarget::NewThread {
-            page,
-            target,
-            anchor: &b.anchor,
-            quote: b.quote.as_deref(),
-            context: b.context.as_deref(),
-        },
+        (None, Some(page), Some(target)) => {
+            if guest_page.as_deref().is_some_and(|g| g != page) {
+                return refused();
+            }
+            conversation::CommentTarget::NewThread {
+                page,
+                target,
+                anchor: &b.anchor,
+                quote: b.quote.as_deref(),
+                context: b.context.as_deref(),
+            }
+        }
         _ => return HttpResponse::BadRequest().body("pass thread, or page and target"),
     };
     let result = conversation::post_comment(
@@ -514,12 +639,15 @@ async fn post_comment(body: web::Json<CommentBody>, state: Data<AppState>) -> im
         b.author_name.as_deref(),
         kind,
         &b.attachments,
-        None,
+        guest_page.as_deref(),
     );
     match result {
         Ok((thread, id)) => HttpResponse::Ok().json(serde_json::json!({
             "thread": thread, "id": id,
         })),
+        // A guest's guard failure answers like every other refusal — the
+        // error text would name where the thread really lives.
+        Err(_) if guest_page.is_some() => refused(),
         Err(e) => HttpResponse::BadRequest().body(format!("{e:#}")),
     }
 }
@@ -534,7 +662,15 @@ struct SourceQuery {
 
 /// The editor's opening move: the block's raw markdown source plus the hash
 /// the save must echo. The page shows rendered HTML; editing needs canon.
-async fn block_source(q: web::Query<SourceQuery>, state: Data<AppState>) -> impl Responder {
+async fn block_source(
+    req: actix_web::HttpRequest,
+    q: web::Query<SourceQuery>,
+    state: Data<AppState>,
+) -> impl Responder {
+    // Editing is authorship: the guest boundary's hard line (V6.sv round 1).
+    if let Some(r) = require_full(&req, &state) {
+        return r;
+    }
     let (root, rel) = {
         let store = state.store.lock().unwrap();
         match base::binding(&store, &q.page) {
@@ -579,8 +715,15 @@ struct EditBody {
 /// a 409 carrying current canon, never a clobber. The page's first
 /// authoring power — strip this and /api/comments' kind under any future
 /// read-only share.
-async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Responder {
-        let e = body.into_inner();
+async fn edit_block(
+    req: actix_web::HttpRequest,
+    body: web::Json<EditBody>,
+    state: Data<AppState>,
+) -> impl Responder {
+    if let Some(r) = require_full(&req, &state) {
+        return r;
+    }
+    let e = body.into_inner();
     let (root, rel) = {
         let store = state.store.lock().unwrap();
         match base::binding(&store, &e.page) {
@@ -638,6 +781,52 @@ async fn edit_block(body: web::Json<EditBody>, state: Data<AppState>) -> impl Re
 // endpoints exec the manifest's binary — fresh process per call, argv array,
 // no shell, the caps in ext.rs.
 
+/// The ext routes' gate (V6.sv thread 143). A guest reaches only their own
+/// page's blocks: frame files serve — the block renders — and whether a
+/// *call* passes is the whitelist's decision, not a blanket refusal.
+fn ext_access(
+    req: &actix_web::HttpRequest,
+    state: &AppState,
+    page: &str,
+) -> std::result::Result<bool, HttpResponse> {
+    match access_of(req, state) {
+        Ok(Access::Full) => Ok(false),
+        Ok(Access::Guest { page: g }) => {
+            let dec = percent_encoding::percent_decode_str(page).decode_utf8_lossy();
+            if dec == g {
+                Ok(true)
+            } else {
+                Err(refused())
+            }
+        }
+        Err(r) => Err(r),
+    }
+}
+
+/// A guest call must match a `_sv_allow` entry in the block's config,
+/// whole: args exactly, stdin exactly (an entry without stdin admits only a
+/// stdin-less call — args alone would leave e.g. duckdb's stdin open to
+/// arbitrary SQL). The body contract is ext::parse_config's — a mapping,
+/// YAML 1.2 so JSON works verbatim (thread 143); a body that isn't one
+/// allows nothing. Explicit entries now; patterns are a later decision.
+fn guest_call_allowed(body: &str, call: &crate::ext::CallBody) -> bool {
+    let Some(v) = crate::ext::parse_config(body) else {
+        return false;
+    };
+    let Some(entries) = v.get("_sv_allow").and_then(|a| a.as_array()) else {
+        return false;
+    };
+    entries.iter().any(|e| {
+        let args_ok = e.get("args").and_then(|a| a.as_array()).is_some_and(|a| {
+            a.len() == call.args.len()
+                && a.iter().zip(&call.args).all(|(x, y)| x.as_str() == Some(y.as_str()))
+        });
+        let want = e.get("stdin").and_then(|s| s.as_str());
+        let got = call.stdin.as_deref().filter(|s| !s.is_empty());
+        args_ok && want == got
+    })
+}
+
 fn ext_lookup(
     state: &AppState,
     ext: &str,
@@ -662,10 +851,16 @@ fn ext_lookup(
 }
 
 async fn ext_serve(
+    req: actix_web::HttpRequest,
     path: web::Path<(String, String, String, String)>,
     state: Data<AppState>,
 ) -> impl Responder {
     let (ext, page, block, tail) = path.into_inner();
+    // Frame files serve to any valid token — rendering is not execution;
+    // the call endpoints below hold the exec line.
+    if let Err(r) = ext_access(&req, &state, &page) {
+        return r;
+    }
     let (x, attrs, body) = match ext_lookup(&state, &ext, &page, &block) {
         Ok(v) => v,
         Err(r) => return r,
@@ -707,20 +902,30 @@ async fn ext_serve(
 }
 
 async fn ext_call(
+    req: actix_web::HttpRequest,
     path: web::Path<(String, String, String)>,
     body: web::Json<crate::ext::CallBody>,
     state: Data<AppState>,
 ) -> impl Responder {
     let (ext, page, block) = path.into_inner();
-    let (x, _, _) = match ext_lookup(&state, &ext, &page, &block) {
+    let guest = match ext_access(&req, &state, &page) {
+        Ok(g) => g,
+        Err(r) => return r,
+    };
+    let (x, _, block_body) = match ext_lookup(&state, &ext, &page, &block) {
         Ok(v) => v,
         Err(r) => return r,
     };
+    let b = body.into_inner();
+    // Execution is the line (V6.sv thread 143): a guest's call passes only
+    // on an exact `_sv_allow` match in the block's own JSON body.
+    if guest && !guest_call_allowed(&block_body, &b) {
+        return refused();
+    }
     let bin = match crate::ext::resolve_bin(&state.root, &x) {
         Ok(b) => b,
         Err(e) => return HttpResponse::BadRequest().body(format!("{e:#}")),
     };
-    let b = body.into_inner();
     match crate::ext::run_call(&bin, &b.args, b.stdin.as_deref(), &state.root).await {
         Ok(result) => HttpResponse::Ok().json(result),
         // Mechanism failures (spawn, timeout, cap) — a non-zero *exit* is a
@@ -730,20 +935,28 @@ async fn ext_call(
 }
 
 async fn ext_call_stream(
+    req: actix_web::HttpRequest,
     path: web::Path<(String, String, String)>,
     body: web::Json<crate::ext::CallBody>,
     state: Data<AppState>,
 ) -> impl Responder {
     let (ext, page, block) = path.into_inner();
-    let (x, _, _) = match ext_lookup(&state, &ext, &page, &block) {
+    let guest = match ext_access(&req, &state, &page) {
+        Ok(g) => g,
+        Err(r) => return r,
+    };
+    let (x, _, block_body) = match ext_lookup(&state, &ext, &page, &block) {
         Ok(v) => v,
         Err(r) => return r,
     };
+    let b = body.into_inner();
+    if guest && !guest_call_allowed(&block_body, &b) {
+        return refused();
+    }
     let bin = match crate::ext::resolve_bin(&state.root, &x) {
         Ok(b) => b,
         Err(e) => return HttpResponse::BadRequest().body(format!("{e:#}")),
     };
-    let b = body.into_inner();
     match crate::ext::stream_call(bin, b.args, b.stdin, state.root.clone(), x.manifest.name.clone()) {
         Ok(stream) => HttpResponse::Ok()
             .content_type("application/octet-stream")
@@ -753,21 +966,42 @@ async fn ext_call_stream(
     }
 }
 
-async fn resolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl Responder {
-    set_resolution(path.into_inner(), false, &state)
+async fn resolve_thread(
+    req: actix_web::HttpRequest,
+    path: web::Path<i64>,
+    state: Data<AppState>,
+) -> impl Responder {
+    set_resolution(&req, path.into_inner(), false, &state)
 }
 
-async fn unresolve_thread(path: web::Path<i64>, state: Data<AppState>) -> impl Responder {
-    set_resolution(path.into_inner(), true, &state)
+async fn unresolve_thread(
+    req: actix_web::HttpRequest,
+    path: web::Path<i64>,
+    state: Data<AppState>,
+) -> impl Responder {
+    set_resolution(&req, path.into_inner(), true, &state)
 }
 
 /// Resolve is undoable and idempotent from the page's point of view: asking
-/// for a state the thread already holds is success, not conflict.
-fn set_resolution(id: i64, undo: bool, state: &Data<AppState>) -> HttpResponse {
+/// for a state the thread already holds is success, not conflict. Guests
+/// resolve too (the conversation surface, round 1) — on their page only,
+/// via the same page guard the CLI uses.
+fn set_resolution(
+    req: &actix_web::HttpRequest,
+    id: i64,
+    undo: bool,
+    state: &Data<AppState>,
+) -> HttpResponse {
+    let guest_page = match access_of(req, state) {
+        Ok(Access::Full) => None,
+        Ok(Access::Guest { page }) => Some(page),
+        Err(r) => return r,
+    };
     let mut store = state.store.lock().unwrap();
-    match conversation::resolve(&mut store, id, Some("user"), undo, None) {
+    match conversation::resolve(&mut store, id, Some("user"), undo, guest_page.as_deref()) {
         Ok(None) => HttpResponse::NotFound().body(format!("no thread {id}")),
         Ok(Some(_)) => HttpResponse::NoContent().finish(),
+        Err(_) if guest_page.is_some() => refused(),
         Err(e) => HttpResponse::InternalServerError().body(format!("{e:#}")),
     }
 }
@@ -782,6 +1016,20 @@ fn to_sse(o: Outgoing) -> sse::Event {
 /// to decide and the URL now simply *is*. An empty project gets the shell,
 /// which renders its honest "no pages yet".
 async fn root_redirect(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpResponse {
+    if let Some(resp) = adopt_token(&req, &state) {
+        return resp;
+    }
+    match access_of(&req, &state) {
+        Ok(Access::Full) => {}
+        // A guest's only home is their page.
+        Ok(Access::Guest { page }) => {
+            return HttpResponse::Found()
+                .insert_header(("Location", format!("/p/{}", crate::identity::encode(&page))))
+                .insert_header(("Cache-Control", "no-store"))
+                .finish()
+        }
+        Err(r) => return r,
+    }
     let most_active = {
         let shared = state.shared.lock().unwrap();
         shared
@@ -803,6 +1051,26 @@ async fn root_redirect(req: actix_web::HttpRequest, state: Data<AppState>) -> Ht
 }
 
 async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpResponse {
+    if let Some(resp) = adopt_token(&req, &state) {
+        return resp;
+    }
+    let guest = match access_of(&req, &state) {
+        Ok(Access::Full) => false,
+        Ok(Access::Guest { page: g }) => match req.match_info().get("page") {
+            // /home for a guest: their page is the only home there is.
+            None => {
+                return HttpResponse::Found()
+                    .insert_header(("Location", format!("/p/{}", crate::identity::encode(&g))))
+                    .insert_header(("Cache-Control", "no-store"))
+                    .finish()
+            }
+            Some(seg) if seg == g || seg == crate::identity::encode(&g) => true,
+            // Same answer as an invalid token: a capability URL reveals
+            // nothing about what else exists.
+            Some(_) => return refused(),
+        },
+        Err(r) => return r,
+    };
     match Assets::get("index.html") {
         Some(f) => {
             // no-cache asks politely; iOS sometimes pairs a fresh script with
@@ -843,7 +1111,7 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
                 }
                 None => suffix,
             };
-            let html = String::from_utf8_lossy(&f.data)
+            let mut html = String::from_utf8_lossy(&f.data)
                 .replace(
                     "<title>sideview</title>",
                     &format!("<title>{}</title>", crate::render::text_escape(&title)),
@@ -854,6 +1122,12 @@ async fn page(req: actix_web::HttpRequest, state: Data<AppState>) -> HttpRespons
                 // never pair with stale submodules (the thread-35 iOS lesson,
                 // applied to ESM). asset() strips the segment on the way in.
                 .replace("/assets/js/app.js", &format!("/assets/js/{v}/app.js"));
+            if guest {
+                // The role rides the shell: the client withholds the owner
+                // affordances (strip, editing). Enforcement stayed
+                // server-side above — this is UX, not the boundary.
+                html = html.replace("<body>", "<body class=\"sv-guest\">");
+            }
             HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
         }
         None => HttpResponse::InternalServerError().body("index.html missing from binary"),
@@ -890,7 +1164,19 @@ async fn asset(path: web::Path<String>) -> impl Responder {
 /// One long-lived stream per page. Every connection starts with the full
 /// current state — the client resets on connect — so reconnection after any
 /// gap (sleep, daemon restart, lagged stream) converges by construction.
-async fn events(state: Data<AppState>) -> actix_web::Result<impl Responder> {
+async fn events(
+    req: actix_web::HttpRequest,
+    state: Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    // The guest gate scopes the stream itself (round 5): a guest connection
+    // carries only its page's events, and the pages event arrives re-scoped
+    // so the rest of the project's existence never leaks.
+    let only: Option<String> = match access_of(&req, &state) {
+        Ok(Access::Full) => None,
+        Ok(Access::Guest { page }) => Some(page),
+        Err(r) => return Ok(actix_web::Either::Left(r)),
+    };
+
     // Subscribe before snapshotting: an event landing in between is delivered
     // twice, and upserts are idempotent; the other order loses it.
     let rx = state.tx.subscribe();
@@ -898,33 +1184,51 @@ async fn events(state: Data<AppState>) -> actix_web::Result<impl Responder> {
     let mut replay: Vec<sse::Event> = Vec::new();
     {
         let shared = state.shared.lock().unwrap();
-        replay.push(to_sse(pages_event(&shared)));
+        replay.push(to_sse(pages_event(&shared, only.as_deref())));
         for (id, _) in &shared.order {
+            if only.as_deref().is_some_and(|o| o != id) {
+                continue;
+            }
             if let Some(page) = shared.pages.get(id) {
                 for b in &page.blocks {
                     replay.push(to_sse(block_event(id, b)));
                 }
             }
         }
-        for json in shared.conversations.values() {
-            replay.push(to_sse(threads_event(json.clone())));
+        for (pid, json) in &shared.conversations {
+            if only.as_deref().is_some_and(|o| o != pid) {
+                continue;
+            }
+            replay.push(to_sse(threads_event(pid, json.clone())));
         }
     }
 
     let stream = futures_util::stream::iter(replay)
-        .chain(live_events(rx))
+        .chain(live_events(rx, only))
         .map(Ok::<_, Infallible>);
 
-    Ok(sse::Sse::from_stream(stream)
-        .with_keep_alive(Duration::from_secs(15))
-        .customize()
-        .insert_header(("X-Accel-Buffering", "no")))
+    Ok(actix_web::Either::Right(
+        sse::Sse::from_stream(stream)
+            .with_keep_alive(Duration::from_secs(15))
+            .customize()
+            .insert_header(("X-Accel-Buffering", "no")),
+    ))
 }
 
 /// Only paths inside the project root, ever. Resolve symlinks, compare
 /// against the root, and return a clear error rather than a 404 so a
 /// mistyped path is diagnosable.
-async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Responder {
+async fn project_file(
+    req: actix_web::HttpRequest,
+    path: web::Path<String>,
+    state: Data<AppState>,
+) -> impl Responder {
+    // Any valid token gets the full file endpoint (round 5, the author's
+    // call): handing someone the link is trusting them with what the page
+    // might reference. Root confinement below still holds for everyone.
+    if let Err(r) = access_of(&req, &state) {
+        return r;
+    }
     let rel = path.into_inner();
     if rel.starts_with('/') || rel.split('/').any(|c| c == "..") {
         return HttpResponse::Forbidden()
@@ -978,10 +1282,38 @@ async fn project_file(path: web::Path<String>, state: Data<AppState>) -> impl Re
 /// error and carrying on would silently desynchronize the page.
 fn live_events(
     rx: broadcast::Receiver<Outgoing>,
+    only: Option<String>,
 ) -> impl futures_util::Stream<Item = sse::Event> {
     BroadcastStream::new(rx)
         .take_while(|r| std::future::ready(r.is_ok()))
-        .filter_map(|r| async move { r.ok().map(to_sse) })
+        .filter_map(move |r| {
+            let only = only.clone();
+            async move {
+                let o = r.ok()?;
+                match (&only, &o.page) {
+                    (None, _) => Some(to_sse(o)),
+                    (Some(want), Some(has)) if has == want => Some(to_sse(o)),
+                    // The one project-wide event a guest still needs, live:
+                    // the pages event, re-scoped to their page.
+                    (Some(want), None) if o.kind == "pages" => Some(to_sse(Outgoing {
+                        kind: "pages",
+                        page: None,
+                        data: scope_pages_data(&o.data, want),
+                    })),
+                    _ => None,
+                }
+            }
+        })
+}
+
+/// Re-scope a broadcast pages event to one page for a guest connection.
+fn scope_pages_data(data: &str, only: &str) -> String {
+    let mut v: serde_json::Value =
+        serde_json::from_str(data).unwrap_or_else(|_| serde_json::json!({ "pages": [] }));
+    if let Some(arr) = v.get_mut("pages").and_then(|p| p.as_array_mut()) {
+        arr.retain(|e| e.get("id").and_then(|i| i.as_str()) == Some(only));
+    }
+    v.to_string()
 }
 
 #[cfg(test)]
@@ -994,10 +1326,10 @@ mod tests {
             let (tx, rx) = broadcast::channel::<Outgoing>(1);
             // Three sends into a one-slot buffer: the receiver has lost events.
             for _ in 0..3 {
-                tx.send(Outgoing { kind: "block", data: String::new() }).unwrap();
+                tx.send(Outgoing { kind: "block", page: None, data: String::new() }).unwrap();
             }
             drop(tx);
-            let got: Vec<_> = live_events(rx).collect().await;
+            let got: Vec<_> = live_events(rx, None).collect().await;
             assert_eq!(
                 got.len(),
                 0,
@@ -1198,6 +1530,223 @@ mod tests {
             let cs = crate::models::conversation::comments_for_page(&store, "v2").unwrap();
             assert_eq!(cs.last().unwrap().author_name, expect);
         }
+    }
+
+    #[test]
+    fn guest_calls_pass_only_on_a_whole_call_whitelist_match() {
+        let call = |args: &[&str], stdin: Option<&str>| crate::ext::CallBody {
+            args: args.iter().map(|s| s.to_string()).collect(),
+            stdin: stdin.map(str::to_string),
+        };
+        let body = r#"{
+            "query": "select 1",
+            "_sv_allow": [
+                {"args": ["-jsonlines", "-c", "select 1"]},
+                {"args": ["-jsonlines"], "stdin": "select 2"}
+            ]
+        }"#;
+        assert!(guest_call_allowed(body, &call(&["-jsonlines", "-c", "select 1"], None)));
+        assert!(
+            guest_call_allowed(body, &call(&["-jsonlines", "-c", "select 1"], Some(""))),
+            "empty stdin is no stdin"
+        );
+        assert!(guest_call_allowed(body, &call(&["-jsonlines"], Some("select 2"))));
+        // Every deviation refuses: an extra arg, a changed arg, stdin where
+        // none was declared, changed stdin, args-only prefix of a longer call.
+        assert!(!guest_call_allowed(body, &call(&["-jsonlines", "-c", "select 1", "-x"], None)));
+        assert!(!guest_call_allowed(body, &call(&["-jsonlines", "-c", "select 2"], None)));
+        assert!(!guest_call_allowed(body, &call(&["-jsonlines", "-c", "select 1"], Some("drop table x"))));
+        assert!(!guest_call_allowed(body, &call(&["-jsonlines"], Some("select 3"))));
+        assert!(!guest_call_allowed(body, &call(&["-jsonlines"], None)));
+        // A free-text body, an empty list, and a mapping without the key
+        // all allow nothing — the pre-whitelist default.
+        assert!(!guest_call_allowed("select 1", &call(&[], None)));
+        assert!(!guest_call_allowed(r#"{"_sv_allow": []}"#, &call(&[], None)));
+        assert!(!guest_call_allowed(r#"{"query": "x"}"#, &call(&[], None)));
+        // The body contract is YAML 1.2 (thread 143) — the JSON above parses
+        // because JSON is a YAML subset; native YAML spells the same list.
+        let yaml = "query: |\n  select 1\n_sv_allow:\n  - args: [-jsonlines]\n    stdin: select 1\n";
+        assert!(guest_call_allowed(yaml, &call(&["-jsonlines"], Some("select 1"))));
+        assert!(!guest_call_allowed(yaml, &call(&["-jsonlines"], Some("select 2"))));
+    }
+
+    #[test]
+    fn scope_pages_data_keeps_exactly_the_guests_page() {
+        let data = r#"{"pages":[{"id":"plan","props":{}},{"id":"other","props":{}}]}"#;
+        let v: serde_json::Value = serde_json::from_str(&scope_pages_data(data, "plan")).unwrap();
+        let ids: Vec<&str> =
+            v["pages"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["plan"], "the rest of the project must not leak");
+    }
+
+    #[actix_web::test]
+    async fn the_guest_gate_scopes_funnel_requests() {
+        let dir = std::env::temp_dir().join(format!("sv-gate-{}", uuid::Uuid::new_v4()));
+        let mut store = Store::open(&dir.join(crate::models::base::DIR_NAME)).unwrap();
+        std::fs::write(store.root.join("hello.txt"), "shared bytes").unwrap();
+        let guest = crate::logic::share::mint(&mut store, Some("plan")).unwrap();
+        let owner = crate::logic::share::mint(&mut store, None).unwrap();
+        let (other_thread, _) = crate::models::conversation::create_thread(
+            &mut store, "other", "b1", "", None, None, "private", Some("user"), None, "comment",
+            &[],
+        )
+        .unwrap();
+        let (own_thread, _) = crate::models::conversation::create_thread(
+            &mut store, "plan", "b1", "", None, None, "mine", Some("user"), None, "comment", &[],
+        )
+        .unwrap();
+
+        let (tx, _) = broadcast::channel(8);
+        let state = Data::new(AppState {
+            shared: Arc::new(Mutex::new(Shared::default())),
+            root: store.root.clone(),
+            tx,
+            store: Mutex::new(store),
+        });
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .app_data(state.clone())
+                .route("/", web::get().to(root_redirect))
+                .route("/home", web::get().to(page))
+                .route("/p/{page}", web::get().to(page))
+                .route("/api/comments", web::post().to(post_comment))
+                .route("/api/source", web::get().to(block_source))
+                .route("/api/pages/{page}", web::delete().to(delete_page))
+                .route("/api/threads/{id}/resolve", web::post().to(resolve_thread))
+                .route("/f/{path:.*}", web::get().to(project_file)),
+        )
+        .await;
+        let funnel = ("Tailscale-Funnel-Request", "?1");
+        let gcookie = actix_web::cookie::Cookie::new(SHARE_COOKIE, guest.token.clone());
+        let ocookie = actix_web::cookie::Cookie::new(SHARE_COOKIE, owner.token.clone());
+
+        // Tokenless funnel request: the honest 403.
+        let res = actix_web::test::call_service(
+            &app,
+            actix_web::test::TestRequest::get().uri("/p/plan").insert_header(funnel).to_request(),
+        )
+        .await;
+        assert_eq!(res.status().as_u16(), 403);
+
+        // A valid ?k= is adopted: cookie set, redirect to the clean path.
+        let res = actix_web::test::call_service(
+            &app,
+            actix_web::test::TestRequest::get()
+                .uri(&format!("/p/plan?k={}", guest.token))
+                .insert_header(funnel)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(res.status().as_u16(), 302);
+        let setc = res.headers().get("set-cookie").unwrap().to_str().unwrap();
+        assert!(setc.contains(&guest.token) && setc.contains("HttpOnly"));
+        assert_eq!(res.headers().get("location").unwrap(), "/p/plan");
+
+        // The guest's page serves, marked; every other page answers like an
+        // invalid token; /home leads only to their page.
+        let req = actix_web::test::TestRequest::get()
+            .uri("/p/plan")
+            .insert_header(funnel)
+            .cookie(gcookie.clone())
+            .to_request();
+        let body = actix_web::test::call_and_read_body(&app, req).await;
+        assert!(String::from_utf8_lossy(&body).contains("sv-guest"));
+        for (uri, expect) in [("/p/other", 403u16), ("/home", 302), ("/", 302)] {
+            let res = actix_web::test::call_service(
+                &app,
+                actix_web::test::TestRequest::get()
+                    .uri(uri)
+                    .insert_header(funnel)
+                    .cookie(gcookie.clone())
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(res.status().as_u16(), expect, "{uri}");
+            if expect == 302 {
+                assert_eq!(res.headers().get("location").unwrap(), "/p/plan", "{uri}");
+            }
+        }
+
+        // Commenting works on their page, and only there — replies included.
+        for (body, expect) in [
+            (serde_json::json!({"page":"plan","target":"b2","body":"hi"}), 200u16),
+            (serde_json::json!({"page":"other","target":"b2","body":"hi"}), 403),
+            (serde_json::json!({"thread": own_thread, "body":"reply"}), 200),
+            (serde_json::json!({"thread": other_thread, "body":"reply"}), 403),
+        ] {
+            let res = actix_web::test::call_service(
+                &app,
+                actix_web::test::TestRequest::post()
+                    .uri("/api/comments")
+                    .insert_header(funnel)
+                    .cookie(gcookie.clone())
+                    .set_json(&body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(res.status().as_u16(), expect, "{body}");
+        }
+
+        // Resolve: their page yes, elsewhere the same honest refusal.
+        for (t, expect) in [(own_thread, 204u16), (other_thread, 403)] {
+            let res = actix_web::test::call_service(
+                &app,
+                actix_web::test::TestRequest::post()
+                    .uri(&format!("/api/threads/{t}/resolve"))
+                    .insert_header(funnel)
+                    .cookie(gcookie.clone())
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(res.status().as_u16(), expect);
+        }
+
+        // Authoring is refused outright; the file endpoint is open to any
+        // valid token (round 5, the author's call).
+        for (m, uri, expect) in [
+            ("GET", "/api/source?page=plan&block=b1", 403u16),
+            ("DELETE", "/api/pages/plan", 403),
+            ("GET", "/f/hello.txt", 200),
+        ] {
+            let req = match m {
+                "GET" => actix_web::test::TestRequest::get(),
+                _ => actix_web::test::TestRequest::delete(),
+            };
+            let res = actix_web::test::call_service(
+                &app,
+                req.uri(uri).insert_header(funnel).cookie(gcookie.clone()).to_request(),
+            )
+            .await;
+            assert_eq!(res.status().as_u16(), expect, "{uri}");
+        }
+
+        // The owner link is the author's own devices: full surface.
+        let res = actix_web::test::call_service(
+            &app,
+            actix_web::test::TestRequest::get()
+                .uri("/p/other")
+                .insert_header(funnel)
+                .cookie(ocookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert!(res.status().is_success());
+
+        // A revoked token answers exactly like no token.
+        {
+            let mut store = state.store.lock().unwrap();
+            crate::logic::share::revoke(&mut store, &guest.token).unwrap();
+        }
+        let res = actix_web::test::call_service(
+            &app,
+            actix_web::test::TestRequest::get()
+                .uri("/p/plan")
+                .insert_header(funnel)
+                .cookie(gcookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(res.status().as_u16(), 403, "revocation is immediate");
     }
 
     #[actix_web::test]

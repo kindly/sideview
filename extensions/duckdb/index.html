@@ -32,11 +32,14 @@
 import { createApp, ref, computed, onMounted } from 'vue'
 
 // The whole extension: stream `duckdb -jsonlines` and paint rows as they
-// arrive. SQL is the block's body; an optional db attr opens a database
-// read-only. Fresh process per run — the EXTENSIONS.md contract.
+// arrive. SQL is the config's `query` key (the body is a mapping — YAML or
+// JSON, parsed by the daemon into SIDEVIEW_BLOCK.config); an optional db
+// attr opens a database read-only. Fresh process per run — the
+// EXTENSIONS.md contract.
 createApp({
   setup() {
-    const { attrs, body } = window.SIDEVIEW_BLOCK;
+    const { attrs, config } = window.SIDEVIEW_BLOCK;
+    const query = String((config && config.query) || '');
     const rows = ref([]);
     const cols = ref([]);
     const running = ref(false);
@@ -56,7 +59,7 @@ createApp({
       const started = performance.now();
       try {
         const res = await sideview.call_cli_streaming(args, {
-          stdin: body,
+          stdin: query,
           signal: aborter.signal,
         });
         if (!res.ok) throw new Error(await res.text());
@@ -81,7 +84,7 @@ createApp({
         // Zero rows and a closed stream: either an empty result or an error
         // the stream could not carry — one plain call retrieves the truth.
         if (!rows.value.length) {
-          const check = await sideview.call_cli(args, { stdin: body });
+          const check = await sideview.call_cli(args, { stdin: query });
           if (check.code !== 0) error.value = check.stderr.trim();
         }
         elapsed.value = ((performance.now() - started) / 1000).toFixed(2);

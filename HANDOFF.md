@@ -29,6 +29,41 @@ reconnect-replay-morphs item v5's round 5 owed it, and the trust/sharing entries
 their v6 annotations. Known skew, the author's to cure: `~/.cargo/bin/sideview` is still
 0.4.1 (`cargo install --path .`); the daemon and `target/debug` are 0.5.0.
 
+**Step 3 (tokens + the guest boundary) is built, 2026-08-27 — drill round 6 open on
+V6.sv.** Round 5 set the design before code (approved same day, thread 142; the one
+delta: any valid token gets full `/f/` — trust follows the link). Built: migration v7
+(`shares`: unguessable token, page or NULL for the owner link, revocation keeps the row
+as an audit fact), `models/share.rs` + thin `logic/share.rs` (Role: Owner /
+Guest-on-one-page), and the funnel gate in daemon.rs — requests wearing
+`Tailscale-Funnel-Request` (verified live with a header-echo probe; tailnet
+serve-proxied requests carry `Tailscale-User-*` instead, T2's identity headers already
+flowing) must present a live token: `?k=` adopted into a Secure HttpOnly cookie with a
+clean redirect (fresh `?k=` beats a stale cookie), the honest 403 identical for
+no-token / revoked / wrong-page (capability semantics), guests scoped to exactly their
+page — shell served with `sv-guest` (client withholds strip and pencil; enforcement is
+server-side), SSE role-filtered (`Outgoing` gained page attribution; the pages event
+re-scoped, other pages' existence never leaks), conversation surface open with the page
+guard on every write (new threads checked in the handler, replies/resolves via the
+existing guard), authoring (`/api/source`, `/api/edit`, page delete, page props)
+refused, `/f/` and uploads open to any valid token, `/assets/` deliberately tokenless.
+Extensions began as a blanket guest refusal and became **the author's whitelist design
+the same day (thread 143)**: a guest gets the frame files (the block renders), and a
+`call_cli` passes only on an exact whole-call `_sv_allow` match — args exactly AND
+stdin exactly (the stdin catch was found while designing: args alone leaves a SQL
+tool's stdin open), the list living in canon so a guest can never widen it. The same
+thread then re-founded the extension body contract: **bodies are always a mapping, no
+free-text form** — parsed as YAML 1.2, and since YAML 1.2 is a JSON superset the
+author's dislike of YAML costs nothing (their own resolution: write JSON, parse YAML).
+The daemon parses once (serde_norway, the maintained serde_yaml fork — serde_yaml
+itself is archived) and injects `SIDEVIEW_BLOCK.config` beside the verbatim body, so
+frames need no YAML library; `_sv_` is the reserved key namespace. Both reference
+extensions migrated (duckdb `query:`, git `cmd:`) with examples/extensions.sv;
+EXTENSIONS.md carries the contract in three places (block shape, injection, trust
+model). 83 tests, the gate pinned end to end, both spellings pinned. Not committed
+(ritual: after approval). Round 6 drills the surprises (the whitelist as built, the uniform 403,
+tokenless assets) and stages the live test: restart, mint a token, funnel the real
+port, open from off the tailnet.
+
 **Step 1 (the funnel check) ran live and passed, 2026-08-27 — round 4 open on V6.sv.**
 The v0-era SSE-buffering question is closed: a 1 Hz probe behind `tailscale funnel`
 delivered every event unbuffered on both paths — tailnet-direct through the serve proxy
