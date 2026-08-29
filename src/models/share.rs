@@ -69,6 +69,25 @@ pub fn mint(store: &mut Store, page: Option<&str>) -> Result<Share> {
     Ok(Share { id, token, page: page.map(str::to_string), created_at: now, revoked_at: None })
 }
 
+/// The live link for a scope, if one exists — what makes `sideview share`
+/// idempotent: sharing the same page twice hands back the same URL, and a
+/// fresh link is minted by revoking first (V6.sv step 4).
+pub fn live_for(store: &Store, page: Option<&str>) -> Result<Option<Share>> {
+    store
+        .conn
+        .query_row(
+            &format!(
+                "SELECT {COLS} FROM shares
+                 WHERE revoked_at IS NULL AND page IS ?1
+                 ORDER BY id DESC LIMIT 1"
+            ),
+            [page],
+            row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
 /// The gate's question: does this token grant anything right now?
 /// Revoked tokens answer no; the row itself stays, an audit fact.
 pub fn lookup_live(store: &Store, token: &str) -> Result<Option<Share>> {

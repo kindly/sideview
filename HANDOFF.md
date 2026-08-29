@@ -29,6 +29,22 @@ reconnect-replay-morphs item v5's round 5 owed it, and the trust/sharing entries
 their v6 annotations. Known skew, the author's to cure: `~/.cargo/bin/sideview` is still
 0.4.1 (`cargo install --path .`); the daemon and `target/debug` are 0.5.0.
 
+**Step 4 (`sideview share`) is built, 2026-08-27 — drill round 7, which is also v6's
+done-when, open on V6.sv.** Round 6 approved the same day (thread 144, all as
+suggested; step 3 committed). The verb: `share --page <id>` mints or hands back the
+guest link (idempotent per scope — fresh = revoke-then-share), brings the funnel up,
+prints the URL plus exactly what it exposes (SHARING.md's disclosure obligation);
+bare `share` = the owner link at `/?k=…`; `--revoke <token-or-URL>`, `--list`,
+`--off` (funnel down, links keep). Consent gates are detect-and-instruct (round 4):
+`tailscale funnel --bg` polls forever at the enable gate (observed live), so
+src/funnel.rs gives the child 5 s then judges the transcript — the three transcripts
+seen live are test-pinned in funnel::judge. Share warns-and-proceeds with the daemon
+down (mint + funnel need only the remembered port). The skill says share is the
+user's command, like restart, and says to answer guests by name. 84 tests. The
+done-when: restart (the running daemon predates the gate), `sideview share --page
+V6`, open from the phone with wifi off, name, comment — signed event through the
+funnel, reply landing live. Not committed (ritual: after approval).
+
 **Step 3 (tokens + the guest boundary) is built, 2026-08-27 — drill round 6 open on
 V6.sv.** Round 5 set the design before code (approved same day, thread 142; the one
 delta: any valid token gets full `/f/` — trust follows the link). Built: migration v7

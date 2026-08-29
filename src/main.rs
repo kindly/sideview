@@ -6,6 +6,7 @@ mod config;
 mod daemon;
 mod ext;
 mod monitor;
+mod funnel;
 mod logic;
 mod models;
 mod netcheck;
@@ -168,6 +169,25 @@ enum Cmd {
     Monitor {
         #[command(subcommand)]
         action: MonitorCmd,
+    },
+    /// Share a page (or the whole project) beyond the tailnet over Tailscale
+    /// Funnel: mints the capability link, brings the funnel up, says exactly
+    /// what is exposed. The user's command — agents relay it, never run it
+    Share {
+        /// Share exactly this page: a guest link (read and converse, never
+        /// author). Without it: the owner link — whole project, full control
+        #[arg(long)]
+        page: Option<String>,
+        /// Withdraw a link (the token, or the whole URL it rides in)
+        #[arg(long)]
+        revoke: Option<String>,
+        /// Every link, live and revoked
+        #[arg(long)]
+        list: bool,
+        /// Stop sharing entirely: funnel off (links keep, and answer again
+        /// when it returns)
+        #[arg(long)]
+        off: bool,
     },
     /// What's running here, and at which URLs
     Pages,
@@ -404,6 +424,9 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Monitor {
             action: MonitorCmd::Stop,
         }) => monitor::stop(),
+        Some(Cmd::Share { page, revoke, list, off }) => {
+            cli::share(page.as_deref(), revoke.as_deref(), list, off)
+        }
         Some(Cmd::Pages) => cli::pages(),
         Some(Cmd::Status) => cli::status(),
         Some(Cmd::Restart { bind }) => cli::restart(&bind),

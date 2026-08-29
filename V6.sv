@@ -377,4 +377,57 @@ tailnet (your phone with wifi off is the honest test). Approving closes step 3;
 step 4 (`sideview share`, the one command) is last.
 </sv-ask>
 
+
+<sv-prose id="drill7">
+## Drill: `sideview share` (step 4, built 2026-08-27)
+
+The one command, to round 4's law. `sideview share --page <id>` mints (or hands back)
+the guest link, brings the funnel up, and prints the URL with exactly what it exposes;
+bare `share` is the owner link (`/?k=…` — the daemon adopts it and lands you on the
+most active page); `--revoke <token-or-URL>`, `--list`, `--off` (funnel down, links
+keep). At each consent gate it prints the exact one-time command or admin URL,
+composed to be relayed verbatim, and stops — never sudo, never the browser. The skill
+now says share is the user's command, like restart.
+
+**Round 7 approved 2026-08-29 (thread 145), all as suggested — the three decisions
+stand and step 4's code is committed. The done-when itself is still open, honestly:**
+at approval time no link had been minted, the funnel was off, and the daemon predates
+the share verb. Two commands when you're ready — `sideview restart`, then `sideview
+share --page V6` — and the phone test (wifi off, set a name, comment) closes v6's
+done-when for real. The release round follows that, not this.
+</sv-prose>
+
+<sv-ask id="d7q1" round="7">
+**Share is idempotent per scope.** Sharing the same page twice hands back the same
+URL — a fresh link is revoke-then-share. The alternative (every share mints anew)
+multiplies live tokens nobody remembers.
+- * As built — one live link per scope, deliberate revocation
+- Every share mints fresh; old links keep working until revoked
+</sv-ask>
+
+<sv-ask id="d7q2" round="7">
+**`tailscale funnel --bg` polls forever at the enable gate** (observed live), so
+share gives the child 5 s, then kills it and judges the transcript — Up, or a Blocked
+message carrying the admin URL / operator command verbatim. The three transcripts
+seen live are test-pinned.
+- * As built (this question is the record)
+- Different timeout / approach — rider says what
+</sv-ask>
+
+<sv-ask id="d7q3" round="7">
+**Share works with the daemon down** — it warns ("the link answers once one is") and
+proceeds, because the funnel and the mint don't need the daemon, only its remembered
+port. The alternative was refusing outright.
+- * As built — warn and proceed; a link minted before the daemon starts is still a good link
+- Refuse without a live daemon
+</sv-ask>
+
+<sv-ask id="d7fin" round="7" role="close">
+Drill round 7, and v6's done-when: run `sideview restart` (the running daemon predates
+the gate), then `sideview share --page V6` and open the printed link from your phone
+with wifi off — set a name, comment. The event should reach me signed, through the
+funnel, and my reply should land on your phone live. Approving closes step 4 and
+starts the release sweep.
+</sv-ask>
+
 </sv-page>

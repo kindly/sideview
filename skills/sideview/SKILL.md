@@ -316,3 +316,10 @@ instruction (`run \`sideview\` in <project>`) to the user and continue.
 daemon, and that call belongs to the person whose tabs are on it. If you see
 version skew or a stale daemon, say "run `sideview restart`" and keep working —
 your writes land in the file either way.
+
+**`sideview share` is the user's command too.** It exposes the daemon to the
+public internet (Tailscale Funnel) and mints capability links — that act belongs
+to the human. If sharing would help, suggest `sideview share --page <id>` and let
+them run it; if they ask you to prepare, relay the command and what it will
+expose. Comments from shared links arrive on watch like any other, usually with
+`author_name` — answer guests by name.

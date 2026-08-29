@@ -909,6 +909,100 @@ fn print_urls(store: &Store, port: u16) -> String {
     format!("{}/", urls[0])
 }
 
+/// `sideview share` (V6.sv step 4): one command from page to shareable URL.
+/// Loud, per SHARING.md's disclosure obligation — it says exactly what is
+/// exposed and to whom — and detect-and-instruct at tailscale's two consent
+/// gates (round 4): it never sudos and never opens the admin console.
+pub fn share(page: Option<&str>, revoke: Option<&str>, list: bool, off: bool) -> Result<()> {
+    let mut store = open_project_store()?;
+
+    if let Some(what) = revoke {
+        // Accept the bare token or the whole URL it rides in.
+        let token = what
+            .split_once("k=")
+            .map(|(_, t)| t.split('&').next().unwrap_or(t))
+            .unwrap_or(what)
+            .trim();
+        if crate::logic::share::revoke(&mut store, token)? {
+            eprintln!("revoked — that link now answers like no link at all");
+            eprintln!("→ {}", store.root.display());
+            return Ok(());
+        }
+        bail!("no live link with that token — `sideview share --list` shows them");
+    }
+
+    if off {
+        eprintln!("{}", crate::funnel::off()?);
+        eprintln!("links keep; they answer again when the funnel returns");
+        return Ok(());
+    }
+
+    if list {
+        let shares = crate::logic::share::list(&store)?;
+        if shares.is_empty() {
+            eprintln!("no links minted — `sideview share --page <id>` mints a guest link");
+        }
+        for s in shares {
+            let scope = s
+                .page
+                .as_deref()
+                .map(|p| format!("page {p}"))
+                .unwrap_or_else(|| "owner (whole project)".into());
+            let state = if s.revoked_at.is_some() { "revoked" } else { "LIVE" };
+            println!("{}  {:7}  {}", s.token, state, scope);
+        }
+        return Ok(());
+    }
+
+    // Minting. The page must exist; the funnel needs the daemon's port.
+    if let Some(p) = page {
+        if base::binding(&store, p)?.is_none() {
+            bail!("no page {p:?} here — `sideview pages` lists them");
+        }
+    }
+    let alive = base::daemon_alive(&store)?;
+    let port = match alive.as_ref().map(|d| d.port).or_else(|| {
+        store.meta("port").ok().flatten().and_then(|p| p.parse().ok())
+    }) {
+        Some(p) => p,
+        None => bail!("no daemon has ever run here — start one first (`sideview`)"),
+    };
+    if alive.is_none() {
+        eprintln!("note: no daemon is running — the link answers once one is (`sideview` starts it)");
+    }
+    let base_url = match crate::funnel::ensure(port)? {
+        crate::funnel::Funnel::Up(u) => u,
+        // A consent gate: the instruction was composed to be relayed
+        // verbatim — to a user at the terminal or through an agent.
+        crate::funnel::Funnel::Blocked(msg) => {
+            eprintln!("{msg}");
+            return Ok(());
+        }
+    };
+
+    let s = crate::logic::share::ensure(&mut store, page)?;
+    match page {
+        Some(p) => {
+            println!("{base_url}/p/{}?k={}", identity::encode(p), s.token);
+            eprintln!();
+            eprintln!("guest link — page {p:?} only: read and converse (comments, replies,");
+            eprintln!("attachments, edit requests), never author. Works from anywhere on the");
+            eprintln!("internet while the funnel is up; everything else through the funnel");
+            eprintln!("stays refused. A fresh funnel's first open can wait ~30s (certificate)");
+            eprintln!("plus ~20s (routing).");
+        }
+        None => {
+            println!("{base_url}/?k={}", s.token);
+            eprintln!();
+            eprintln!("owner link — the WHOLE project with full control, meant for your own");
+            eprintln!("devices. Treat it like a password.");
+        }
+    }
+    eprintln!("withdraw it: sideview share --revoke {}", s.token);
+    eprintln!("→ {}", store.root.display());
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
