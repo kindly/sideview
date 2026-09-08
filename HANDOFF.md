@@ -29,6 +29,22 @@ reconnect-replay-morphs item v5's round 5 owed it, and the trust/sharing entries
 their v6 annotations. Known skew, the author's to cure: `~/.cargo/bin/sideview` is still
 0.4.1 (`cargo install --path .`); the daemon and `target/debug` are 0.5.0.
 
+**v6's done-when met live, 2026-09-08 — the release round (8) is open on V6.sv.** One
+test session on thread 148 walked every leg, each claim checked against the store
+before being believed (the watcher-skew lesson, applied): names signed and answered by
+name; the funnel transport proven by a comment that could only have carried a token
+(both owner links revoked at the time); the owner link splicing prose into V6.sv's
+title from an off-tailnet browser ("woo" — round 8 decides whether it's tidied before
+the release commit); revocation stamped in the store and felt as a 403 on the other
+end; and finally the page-scoped guest link commenting from off the tailnet with strip
+and pencil withheld. Two findings recorded on the page: the ts.net URL is the same in
+both worlds (a phone running the Tailscale app rides the open tailnet path even on
+cellular — the honest guest test is Tailscale-off), and an SSE stream opened before a
+revocation keeps flowing until reconnect (access checks at connect; round 8 asks
+accept-and-pool vs fix-now). SHARING.md's T2 now carries the shipped rationale, per
+the curation promise. Round 8's approve is the release order: push, tag v0.6.0,
+publish, re-sync skills.
+
 **Step 4 (`sideview share`) is built, 2026-08-27 — drill round 7, which is also v6's
 done-when, open on V6.sv.** Round 6 approved the same day (thread 144, all as
 suggested; step 3 committed). The verb: `share --page <id>` mints or hands back the
@@ -43,7 +59,11 @@ down (mint + funnel need only the remembered port). The skill says share is the
 user's command, like restart, and says to answer guests by name. 84 tests. The
 done-when: restart (the running daemon predates the gate), `sideview share --page
 V6`, open from the phone with wifi off, name, comment — signed event through the
-funnel, reply landing live. Not committed (ritual: after approval).
+funnel, reply landing live. **Round 7 approved 2026-08-29 (thread 145, all as
+suggested) and step 4 is committed — but the approval arrived with the done-when
+visibly not run** (no share minted, funnel off, daemon started 01:13 from a binary
+rebuilt 01:30): the honest hold, v5 round 5's precedent. The live phone test still
+gates the release round; V6.sv says so on the page.
 
 **Step 3 (tokens + the guest boundary) is built, 2026-08-27 — drill round 6 open on
 V6.sv.** Round 5 set the design before code (approved same day, thread 142; the one

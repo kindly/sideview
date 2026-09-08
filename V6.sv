@@ -430,4 +430,52 @@ funnel, and my reply should land on your phone live. Approving closes step 4 and
 starts the release sweep.
 </sv-ask>
 
+
+<sv-prose id="donewhen">
+## The done-when, met live (2026-09-08, thread 148)
+
+One test session walked every leg, each verified against the store before being
+believed: **names** (foo, david, No tailnet — signed comments, answered by name) ·
+**the funnel transport** (a comment that could only have ridden a token, off-tailnet,
+through the public relay) · **the owner link** (a direct prose splice into this page's
+title from the off-tailnet browser — "woo") · **revocation** (both owner tokens
+stamped, the browser met its 403, rows kept as audit) · **the guest boundary** (the
+page-scoped link commenting from off the tailnet, strip and pencil withheld,
+everything else refused). Two findings taught along the way: the ts.net URL is *the
+same in both worlds* — a phone running the Tailscale app rides the open tailnet path
+even on cellular, so the honest guest test is Tailscale-off — and **an SSE stream
+opened before a revocation keeps flowing until it reconnects** (access is checked at
+connect; the next comment, reload or reconnect is refused). Round 8 settles that
+finding and orders the release.
+
+**Round 8 approved 2026-09-08 (thread 150): the SSE-revocation behavior is accepted
+for v6 and its fix pooled; the "woo" tidied out of the title; and the approve is the
+release order — v0.6.0.**
+</sv-prose>
+
+<sv-ask id="d8q1" round="8">
+**Revocation and live streams.** A revoked guest's already-open tab keeps receiving
+its page's updates until the connection drops; every new request is refused. Severing
+live streams on revocation means the gate re-checking per event or a
+generation-stamped connection registry.
+- * Accept for v6 and pool the fix — revocation of *new* requests is the security line; a stream is at most one tab-lifetime of already-granted reading
+- Fix in v6: revocation severs live SSE connections too
+</sv-ask>
+
+<sv-ask id="d8q2" round="8">
+**The "woo".** The remote-splice proof left the page title reading "more than one
+commenter woo" — your edit, in canon.
+- * I tidy it out before the release commit (the proof lives in this record and thread 148)
+- Keep it — a battle scar
+</sv-ask>
+
+<sv-ask id="d8fin" round="8" role="close">
+Round 8: the release. Everything v6 committed to is built, drilled, and now
+live-verified end to end; 84 tests, docs speaking the shipped design (SHARING.md's T2
+carries the rationale, EXTENSIONS.md the body contract, the skill the share law).
+Your approve is the order to: push main, tag v0.6.0 (release.yml builds the
+binaries), publish to crates.io, and re-sync the installed skills on this machine's
+harnesses. Nothing is tagged or published before it.
+</sv-ask>
+
 </sv-page>

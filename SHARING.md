@@ -109,6 +109,32 @@ plan is code you own, a plugin is code you didn't write and didn't review. And a
 for free, since legitimate blocks fetch from the daemon rather than third-party hosts. Useful
 hygiene; not the boundary that matters.
 
+### What v6 actually shipped (2026-09-08) — T2, bent deliberately
+
+The live tier arrived, and it bends this section's spelling on purpose
+(V6.sv, curation round 1): the transport is **Tailscale Funnel**, not
+tailnet-only `serve` — the author's own tailnet stays open and tokenless,
+and security begins where the public web does. Identity is a **capability
+link plus a self-declared display name** rather than `Tailscale-User-Login`:
+page-scoped guest links grant the conversation surface — comment, reply,
+resolve, attach, send edit *requests* — and never authoring; one owner link
+carries full control for the author's own devices. `sideview share` mints,
+lists and revokes them, disclosure-loud per this document's obligation, and
+detect-and-instructs at tailscale's two one-time consent gates (funnel
+enablement, operator mode) rather than ever sudoing.
+
+What held from T2 as written: enforcement is server-side by role, never
+hidden buttons (Voila's rule — a guest's SSE stream is itself role-filtered,
+so the rest of the project's existence never reaches the wire); the
+never-shared list below stands untouched; and the identity headers are real
+— a tailnet serve-proxied request carries `Tailscale-User-Login` today, so
+the tailnet-identity form of this tier stays available whenever a reason
+arrives (headers compose with links). Extension blocks cross the boundary
+only by declaration: `_sv_allow` in the block's own body enumerates the
+exact calls a guest may make — args and stdin, matched whole (EXTENSIONS.md)
+— which is T3's "declared parameters, bound never interpolated" at its
+smallest possible size.
+
 ### T3 — Constrained interactive *(the ambitious end; not v1)*
 
 The viewer can re-run and vary things. Defensible only if what can run is bounded *by
