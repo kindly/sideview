@@ -6,6 +6,29 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**v6 shipped: 0.6.0 on crates.io, 2026-09-08.** The release order arrived as round 8's
+approve on V6.sv (thread 150 — signed "foo", the author's guest-test persona; noted
+because for the first time the order channel was guest-capable) and executed within
+minutes: main pushed (83ba6c6..1803a33), v0.6.0 tagged (release.yml building the
+binaries), cargo publish confirmed, skills re-synced on all four harnesses. Eight
+rounds from curation to release, twelve days, every feature and the release itself
+ordered through the page — including the done-when's live walk by three named
+commenters who were all the author. What 0.6.0 carries over 0.5.0: names on comments
+(migration v6, the ⚙ settings menu with the binary dark-mode switch, first-visit menu
+open, watch events signed); share links over Tailscale Funnel (migration v7, the
+funnel-mark gate, page-scoped guest links + the owner link, `?k=`→cookie adoption,
+role-filtered SSE, the uniform 403, guests getting the whole conversation surface and
+never authorship); the extension body re-founded as a mapping (YAML 1.2, JSON by
+superset, `SIDEVIEW_BLOCK.config`, serde_norway) with `_sv_allow` whole-call
+whitelisting; `sideview share` (idempotent per scope, detect-and-instruct at the
+consent gates, the 5s funnel judge); and the skill teaching names,
+share-is-the-user's-command, and answer-guests-by-name. Round 8's riders: the
+SSE-revocation behavior accepted and pooled; the "woo" tidied. Post-release state on
+this machine: **the funnel is ON and a V6 guest link is LIVE** (the author's, from the
+done-when session — `sideview share --list`; revoke or keep deliberately), the daemon
+runs a pre-release 0.6.0 build (`sideview restart` when convenient), and
+`~/.cargo/bin/sideview` still wants `cargo install --path .`.
+
 **v6 curated: more than one commenter, 2026-08-26.** Hours after 0.5.0, [V6.sv](V6.sv)
 opened with the focus the author set (multi-user commenting, basic auth via link share,
 optional self-chosen names) and curation round 1 came back approved the same day
