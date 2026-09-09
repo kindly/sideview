@@ -74,6 +74,15 @@ by one space to show a literal tag); keep the closing `</sv-...>` lines intact.
 it fully — headings, tables, task lists, code. Reach for `markup` only when you need
 components or layout markdown can't express (cards, grids, badges, metrics).
 
+**A document that already exists doesn't need embedding.** `sideview open
+DESIGN.md` (or any `.sv`, `.md`, or `.html` in the project) binds the file
+*itself* as a live page: markdown renders fully, readers comment on it, and
+saving the file updates the page — nothing is copied, and the page lives as
+long as the file. Reach for `open` when asked to show or review an existing
+document; `sideview html < page.html` is for a fragment you just generated,
+not for files with a home in the repo. Imported pages take their label and
+category from `.sideview.toml`.
+
 **The page is live — stream it.** Write blocks as you go rather than composing the
 whole page before emitting the first one; an early skeleton that sharpens through
 `update` beats a long silence and a reveal. The reader is watching from block one.

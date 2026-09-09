@@ -90,10 +90,11 @@ enum Cmd {
         #[command(subcommand)]
         action: PageCmd,
     },
-    /// Bind a committed .sv file as a page (the missing verb for documents
-    /// that live in the repo rather than under .sideview/pages/)
+    /// Bind an existing file as a live page: .sv composed, or .md / .html
+    /// imported as-is — a README or DESIGN.md becomes a viewable,
+    /// commentable page in place, nothing copied, edits appearing live
     Open {
-        /// The .sv file, relative to the project
+        /// The file (.sv, .md, or .html), relative to the project
         file: std::path::PathBuf,
     },
     /// Comment on a block (body on stdin): --at places it, --thread replies
