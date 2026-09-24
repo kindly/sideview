@@ -21,10 +21,16 @@ Monitor tool** (persistent, so it survives the whole session):
 Monitor: sideview watch --since 0 --skip-author agent --ack
 ```
 
-Each comment then arrives as a notification you act on. Other harnesses: Codex uses
-`sideview monitor codex` (below); anything that can genuinely block open-endedly may
-run watch in the foreground; otherwise loop `--timeout N` and re-arm. Never leave a
-watch running in a shell you cannot hear.
+Each comment then arrives as a notification you act on. **Arm it once, persistent,
+and leave it running until the user says stop.** The watcher is session
+infrastructure, not a per-task tool: never give it a timeout you plan to re-arm
+between rounds — every restart is a window of deafness, an expired watcher looks
+exactly like a silent user, and stopping it is the user's call, not the end of a
+task. Other harnesses: Codex uses `sideview monitor codex` (below); anything that
+can genuinely block open-endedly may run watch in the foreground; a
+`--timeout N`-and-re-arm loop is the last resort for harnesses with no persistent
+facility, never for Claude Code. Never leave a watch running in a shell you cannot
+hear.
 
 ## The five commands
 

@@ -89,7 +89,15 @@ function mountCommentBar() {
     applyCbarPref();
   });
 
-  const open = computed(() => svc.threads.filter((t) => t.resolved_at == null));
+  // Newest first, matching where drafts are born: a just-sent thread stays
+  // at the top instead of teleporting under older open conversations — the
+  // jump the author kept hitting with a second thread open (2026-09-24).
+  // Same freshest-first convention as the resolved fold below.
+  const open = computed(() =>
+    svc.threads
+      .filter((t) => t.resolved_at == null)
+      .sort((a, b) => b.created_at - a.created_at || b.id - a.id)
+  );
   const resolved = computed(() =>
     svc.threads
       .filter((t) => t.resolved_at != null)
