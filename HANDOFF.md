@@ -6,6 +6,18 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**0.6.1, 2026-09-24.** The post-release patch, the 0.2.1/0.4.1 tradition upheld —
+three papercuts the author hit using 0.6.0, released on their direct order: `sideview
+open`'s help and the skill now admit `.md`/`.html` work as-is (agents were embedding
+documents they should have bound — the verb always took any file, only the words said
+`.sv`); open threads in the comment bar sort newest-first (the server's oldest-first
+order made a just-sent thread teleport from its draft's birthplace at the top to the
+bottom of the list); and the skill says plainly to arm the watch once, persistent,
+until the user says stop (Claude agents were choosing timeout-and-re-arm loops, each
+restart a window of deafness). The cargo fingerprint bug recurred twice more en route
+— the cure (rm the sideview-* fingerprint dirs) now includes the deps, and "check the
+binary's mtime first" remains the tell.
+
 **v6 shipped: 0.6.0 on crates.io, 2026-09-08.** The release order arrived as round 8's
 approve on V6.sv (thread 150 — signed "foo", the author's guest-test persona; noted
 because for the first time the order channel was guest-capable) and executed within
