@@ -6,6 +6,27 @@ Everything here is either current state or something that exists nowhere else in
 
 ## State
 
+**0.6.2, 2026-09-25: `watch --once`, the wake-on-exit rung.** Claude Code ≥ 2.1.271
+removed persistent monitors (30-minute hard cap on the Monitor tool — found by the
+author's agent in another project, confirmed against the harness docs), which made
+0.6.1's "arm it once, persistent, never re-arm" skill guidance actively wrong on new
+harnesses, and left agents building fragile shell waiters (poll loops, temp files,
+process babysitting — one had a pipeline bug that sat on a comment). The product
+answer: `sideview watch --once` exits after the first tick that delivers at least one
+event — run it as a background command, the harness wakes the agent on exit, re-arm
+with `--since <last id>`; the tick includes `--since` replay by design, so a re-armed
+watch with gap events exits immediately and nothing is ever missed. Proven live in
+this repo before shipping: replay-exit in 7ms, a background arm woken by a real
+comment on thread 148 with the ack stamped, and a resolve event waking it too; this
+session now runs the pattern as its own watcher. The skill's listen section became a
+three-rung ladder — persistent monitor where the harness has one, `watch --once`
+re-armed on wake (with "don't build this loop out of shell polling; --once is the
+loop"), foreground `--timeout` last — and the watching-is-part-of-the-ask paragraph
+follows it. The longer-term answer, the harness's Channels (an external system
+pushing events into a session over WebSocket — sideview's daemon already has the
+stream), is pooled for a future curation, not built. Released on the author's direct
+order, the point-release tradition.
+
 **0.6.1, 2026-09-24.** The post-release patch, the 0.2.1/0.4.1 tradition upheld —
 three papercuts the author hit using 0.6.0, released on their direct order: `sideview
 open`'s help and the skill now admit `.md`/`.html` work as-is (agents were embedding

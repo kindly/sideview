@@ -670,6 +670,7 @@ pub fn outline(clear: bool, page: Option<&str>) -> Result<()> {
 /// `--category` (both repeatable) scope the watch — the decisions live in
 /// conversation::watch_tick, this loop only paces and prints.
 pub fn watch(
+    once: bool,
     timeout: Option<u64>,
     since: Option<i64>,
     pages: Vec<String>,
@@ -692,10 +693,19 @@ pub fn watch(
     let ack_by = ack.then_some(whoami.as_str());
 
     let mut out = std::io::stdout();
+    let mut delivered = false;
     loop {
         for line in conversation::watch_tick(&mut store, &mut state, &filter, ack_by)? {
             writeln!(out, "{line}")?;
             out.flush()?;
+            delivered = true;
+        }
+        // --once: done after the first delivering tick — the wake-on-exit
+        // pattern (harnesses without persistent monitors, 2026-09-25). The
+        // tick includes --since replay by design: a re-armed watch with gap
+        // events exits immediately, so nothing waits on a fresh comment.
+        if once && delivered {
+            return Ok(());
         }
         if deadline.map_or(false, |d| Instant::now() >= d) {
             return Ok(()); // --timeout gives up quietly

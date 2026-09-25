@@ -14,23 +14,37 @@ tables), **long-form** (plans, design arguments, comparisons), or **revisable**
 **How to listen — settle this before you present anything.** The reader's replies
 arrive through `sideview watch` (JSON-lines on stdout), and running it wrong is the
 classic failure: a plain foreground shell call blocks your turn, times out, and goes
-deaf — the user comments into silence. In **Claude Code, run it under the background
-Monitor tool** (persistent, so it survives the whole session):
+deaf — the user comments into silence. The watcher is session
+infrastructure — it runs until the user says stop, never stopped because a task
+finished. Harnesses differ in what they keep alive, so take the **first rung yours
+offers**:
 
-```
-Monitor: sideview watch --since 0 --skip-author agent --ack
-```
+1. **A persistent background monitor** (no expiry — older Claude Code and any
+   harness with an unbounded monitor facility): arm it once and leave it.
 
-Each comment then arrives as a notification you act on. **Arm it once, persistent,
-and leave it running until the user says stop.** The watcher is session
-infrastructure, not a per-task tool: never give it a timeout you plan to re-arm
-between rounds — every restart is a window of deafness, an expired watcher looks
-exactly like a silent user, and stopping it is the user's call, not the end of a
-task. Other harnesses: Codex uses `sideview monitor codex` (below); anything that
-can genuinely block open-endedly may run watch in the foreground; a
-`--timeout N`-and-re-arm loop is the last resort for harnesses with no persistent
-facility, never for Claude Code. Never leave a watch running in a shell you cannot
-hear.
+   ```
+   Monitor: sideview watch --since 0 --skip-author agent --ack
+   ```
+
+2. **Wake-on-exit** (the harness notifies you when a background command ends but
+   caps or expires monitors — Claude Code ≥ 2.1.271): run
+
+   ```
+   sideview watch --once --skip-author agent --ack
+   ```
+
+   as a *background command*. `--once` exits after the first tick that delivers
+   events; the wake is your notification. Act on the events, then re-arm with
+   `--since <highest id you saw>` — replay covers anything that landed in the
+   gap, so re-arming loses nothing. Do not build this loop out of shell polling
+   around a plain `watch`; `--once` is the loop.
+
+3. **Only where neither exists**: run `watch --timeout N` in the foreground and
+   re-arm when it returns.
+
+Codex conversations use `sideview monitor codex` instead (below). Never leave a
+watch running in a shell you cannot hear, and never park the watcher because your
+current task is done — an unwatched page is a question with nobody listening.
 
 ## The five commands
 
@@ -251,9 +265,9 @@ they survive in a snapshot where an island's state does not.
 the last block: their reply arrives *on* the page, so present, then run `watch`
 and act on what comes back. A page delivered without a watcher is a question
 with nobody listening for the answer. Run the watcher the way the top of this
-skill says — in Claude Code that is the background Monitor tool, never a
-foreground shell (`--timeout N` and re-arm only where no monitor facility
-exists and blocking open-endedly isn't possible).
+skill says — the first rung your harness offers (persistent monitor, else
+`watch --once` in the background re-armed on each wake), never a plain
+foreground call that blocks your turn.
 
 For a Codex conversation that should wake only when feedback arrives, use the
 product monitor instead of maintaining a shell wrapper:

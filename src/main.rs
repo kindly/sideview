@@ -144,6 +144,11 @@ enum Cmd {
     },
     /// Await feedback: typed JSON-lines (comment/resolve/unresolve) on stdout
     Watch {
+        /// Exit after the first tick that delivers at least one event — made
+        /// for harnesses that wake an agent when a background command ends:
+        /// arm in the background, get woken, re-arm with --since <last id>
+        #[arg(long)]
+        once: bool,
         /// Give up quietly after this many seconds
         #[arg(long)]
         timeout: Option<u64>,
@@ -404,13 +409,14 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Working { thread, page }) => cli::working(thread, page.as_deref()),
         Some(Cmd::Outline { clear, page }) => cli::outline(clear, page.as_deref()),
         Some(Cmd::Watch {
+            once,
             timeout,
             since,
             page,
             category,
             skip_author,
             ack,
-        }) => cli::watch(timeout, since, page, category, skip_author.as_deref(), ack),
+        }) => cli::watch(once, timeout, since, page, category, skip_author.as_deref(), ack),
         Some(Cmd::Monitor {
             action:
                 MonitorCmd::Codex {
