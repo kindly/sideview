@@ -6,10 +6,22 @@
 //! belt and braces; the asymmetry (a false positive costs one printed line, a
 //! false negative costs an afternoon of inexplicable rendering) says prefer
 //! refusing.
-
-/// The kernel's boundary between the initial and dynamically-created
-/// namespaces. Real, but an internal detail — never leaned on alone.
-const DYNAMIC_NS_BOUNDARY: u64 = 4_026_531_840;
+//!
+//! A tell this module used to have, removed 2026-10-05 after it refused an
+//! entire VM (found by the author's agent on exe.dev, sideview 0.6.2): an
+//! inode threshold for "dynamically-created namespace" at 0xF0000000. On
+//! kernels with fixed init-namespace inums (≈6.10+; this dev machine's init
+//! net is 0xEFFFFFF9) the threshold holds, but on older kernels the init net
+//! namespace takes the FIRST dynamic inum — exactly the boundary value — and
+//! freed inums are reused, so no threshold is sound there. Its honest
+//! replacement is the direct comparison below, used only when the kernel
+//! lets an unprivileged process look; the other tells carry every sandbox
+//! this project has actually met (bind probe: codex; interfaces/routes/
+//! bwrap/uid_map: bwrap-style namespaces).
+//!
+//! When detection is still wrong somewhere new, `SIDEVIEW_ASSUME_REACHABLE=1`
+//! overrides the verdict — the escape hatch exists so nobody patches vendored
+//! source again.
 
 #[derive(Debug, Clone)]
 pub struct Verdict {
@@ -24,7 +36,10 @@ pub struct Verdict {
 
 #[cfg(target_os = "linux")]
 pub fn verdict() -> Verdict {
-    let netns = netns_inode();
+    let netns = ns_inode("/proc/self/ns/net");
+    if std::env::var_os("SIDEVIEW_ASSUME_REACHABLE").is_some_and(|v| v == "1") {
+        return Verdict { netns, reachable: true, reasons: Vec::new() };
+    }
     let mut reasons = Vec::new();
 
     // The most decisive probe, and namespace-free sandboxes are why it must
@@ -43,9 +58,16 @@ pub fn verdict() -> Verdict {
     if let Some(false) = has_routes() {
         reasons.push("no routes".to_string());
     }
-    if let Some(inode) = netns {
-        if inode >= DYNAMIC_NS_BOUNDARY {
-            reasons.push(format!("dynamically-created network namespace ({inode})"));
+    // Compare to init's namespace when the kernel lets us look. Unprivileged
+    // readlink of /proc/1/ns/* is usually denied on hosts, and inside a
+    // pid-namespaced sandbox "/proc/1" is the sandbox's own init (equality
+    // there says nothing — the tells above carry those cases); when it IS
+    // readable and differs, that's a created namespace by definition.
+    if let (Some(mine), Some(init)) = (netns, ns_inode("/proc/1/ns/net")) {
+        if mine != init {
+            reasons.push(format!(
+                "network namespace differs from init's ({mine} vs {init})"
+            ));
         }
     }
     if std::fs::read_to_string("/proc/1/comm")
@@ -69,10 +91,14 @@ pub fn verdict() -> Verdict {
 }
 
 #[cfg(target_os = "linux")]
-fn netns_inode() -> Option<u64> {
-    // The link target reads "net:[4026531833]".
-    let target = std::fs::read_link("/proc/self/ns/net").ok()?;
-    let s = target.to_str()?;
+fn ns_inode(path: &str) -> Option<u64> {
+    let target = std::fs::read_link(path).ok()?;
+    parse_ns_inode(target.to_str()?)
+}
+
+/// The link target reads "net:[4026531833]".
+#[cfg(target_os = "linux")]
+fn parse_ns_inode(s: &str) -> Option<u64> {
     s.strip_prefix("net:[")?.strip_suffix(']')?.parse().ok()
 }
 
@@ -87,6 +113,20 @@ fn has_routes() -> Option<bool> {
     // /proc/net/route is a header line plus one line per v4 route.
     let content = std::fs::read_to_string("/proc/net/route").ok()?;
     Some(content.lines().skip(1).any(|l| !l.trim().is_empty()))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ns_link_targets_parse_and_garbage_does_not() {
+        assert_eq!(parse_ns_inode("net:[4026531833]"), Some(4026531833));
+        assert_eq!(parse_ns_inode("net:[4026531840]"), Some(4026531840));
+        assert_eq!(parse_ns_inode("mnt:[4026531840]"), None, "only net links");
+        assert_eq!(parse_ns_inode("net:[]"), None);
+        assert_eq!(parse_ns_inode("garbage"), None);
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -243,7 +243,8 @@ pub fn open(detach: bool, bind: &str, port: Option<u16>) -> Result<()> {
     if !verdict.reachable {
         bail!(
             "a daemon started here could never be reached by a browser ({}).\n\
-             Run `sideview` in {} from outside the sandbox.",
+             Run `sideview` in {} from outside the sandbox.\n\
+             (If this detection is wrong for your machine, SIDEVIEW_ASSUME_REACHABLE=1 overrides it.)",
             verdict.reasons.join(", "),
             store.root.display()
         );
@@ -299,7 +300,8 @@ pub fn restart(bind: &str) -> Result<()> {
     if !verdict.reachable {
         bail!(
             "a daemon started here could never be reached by a browser ({}).\n\
-             Run `sideview restart` in {} from outside the sandbox.",
+             Run `sideview restart` in {} from outside the sandbox.\n\
+             (If this detection is wrong for your machine, SIDEVIEW_ASSUME_REACHABLE=1 overrides it.)",
             verdict.reasons.join(", "),
             store.root.display()
         );
